@@ -66,6 +66,12 @@ jobs:
       - name: Dependencias
         run: npm ci
 
+      # Prisma 7 no genera el cliente al instalar: sin esto `tsc` ve un
+      # @prisma/client vacío y da cientos de errores que en un equipo con el
+      # cliente ya generado no aparecen.
+      - name: Cliente de Prisma
+        run: npx prisma generate
+
       - name: Tipos
         run: npx tsc --noEmit
 

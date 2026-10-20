@@ -106,6 +106,7 @@ En PowerShell, dentro de `nominahn/`:
 
 ```powershell
 npm ci
+npx prisma generate                               # Prisma 7 no genera el cliente al instalar
 node scripts/huella-esquema.mjs verificar         # ¿el esquema que vas a subir ya está aplicado?
 npx tsc --noEmit                                  # tipos (el build de producción no los revisa)
 npx vitest run                                    # 904 pruebas
