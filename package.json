@@ -1,0 +1,97 @@
+{
+  "name": "nominahn",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0 <25"
+  },
+  "scripts": {
+    "dev": "next dev --port 3009",
+    "build": "next build",
+    "start": "next start",
+    "build:prod": "node scripts/compilar-produccion.mjs",
+    "start:prod": "node --max-old-space-size=320 scripts/iniciar-produccion.mjs",
+    "db:remota": "node scripts/preparar-bd-remota.mjs",
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:push": "prisma db push",
+    "db:constraints": "tsx prisma/sql/apply.ts",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "db:generate": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "//overrides": [
+    "nodemailer 9 corrige inyección de comandos SMTP y CRLF (los correos de boletas",
+    "de pago lo usan directo en src/lib/email/send.ts). @auth/core declara el peer",
+    "OPCIONAL nodemailer ^7 || ^8 y sólo lo usa para el provider Email (magic links),",
+    "que esta app NO configura: sólo usa Credentials. Por eso alineamos el peer a la",
+    "versión parcheada en vez de quedarnos en la 8.x vulnerable.",
+    "Revisar y quitar este override cuando next-auth v5 acepte nodemailer 9."
+  ],
+  "overrides": {
+    "@auth/core": {
+      "nodemailer": "$nodemailer"
+    },
+    "next-auth": {
+      "nodemailer": "$nodemailer"
+    },
+    "tedious": {
+      ".": "20.3.3",
+      "@azure/identity": "4.13.3",
+      "@js-joda/core": "6.1.0",
+      "@types/node": "26.6.3",
+      "readable-stream": "4.7.0",
+      "@azure/msal-browser": "5.23.0"
+    }
+  },
+  "//types-nodemailer": [
+    "@types/nodemailer se queda en 8.x porque es la ÚLTIMA publicada en npm y",
+    "nodemailer no incluye tipos propios: no hay versión 9 a la que subir. El",
+    "desfase de major no afecta a la superficie que usamos, y src/lib/email/send.test.ts",
+    "lo comprueba contra el nodemailer real (jsonTransport, sin abrir SMTP) para que",
+    "un cambio futuro de API falle en los tests y no al enviar boletas."
+  ],
+  "dependencies": {
+    "@hookform/resolvers": "^5.4.0",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "exceljs": "^4.4.0",
+    "mssql": "12.7.1",
+    "next": "^16.3.8",
+    "next-auth": "^5.0.0-beta.32",
+    "nodemailer": "^9.1.1",
+    "pdfmake": "^0.3.11",
+    "pg": "^8.21.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-hook-form": "^7.78.0",
+    "tailwind-merge": "^3.6.0",
+    "tedious": "20.3.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/mssql": "12.3.0",
+    "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
+    "@types/pdfmake": "^0.3.3",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
+    "eslint": "^9",
+    "eslint-config-next": "^16.3.8",
+    "prisma": "^7.9.1",
+    "tailwindcss": "^4",
+    "tsx": "^4.22.4",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  }
+}

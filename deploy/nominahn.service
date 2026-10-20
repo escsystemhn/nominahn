@@ -1,0 +1,68 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# NominaHN — unidad systemd.  03-app.sh sustituye __APP__ y __USER__.
+#
+# Se invoca `next` directamente en vez de `npm run start`: npm querría escribir
+# en ~/.npm y ProtectSystem=strict deja todo el sistema de archivos en sólo
+# lectura salvo lo declarado en ReadWritePaths.
+# ═══════════════════════════════════════════════════════════════════════════
+[Unit]
+Description=NominaHN — sistema de nómina
+Documentation=file://__APP__/deploy/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__APP__
+
+# `next start` carga .env.local por sí mismo. TZ va aquí además de en el archivo
+# porque Node fija la zona horaria al arrancar el proceso, antes de leer nada.
+Environment=NODE_ENV=production
+Environment=TZ=America/Tegucigalpa
+Environment=PORT=3009
+Environment=HOME=/home/__USER__
+
+ExecStart=__APP__/node_modules/.bin/next start --port 3009
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# ─── Aislamiento ────────────────────────────────────────────────────────────
+# Si un fallo en la app permitiera ejecutar código, esto limita lo que alcanza:
+# no puede escalar privilegios, ni escribir fuera de los adjuntos y la caché de
+# compilación, ni ver los procesos ni el /tmp del resto del sistema.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Únicos puntos de escritura: los adjuntos privados y la caché de Next.
+ReadWritePaths=/var/uploads __APP__/.next
+
+# Techo de memoria: si la app se desboca, la mata systemd y no el OOM killer
+# del núcleo, que podría llevarse PostgreSQL por delante.
+MemoryMax=1200M
+LimitNOFILE=8192
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nominahn
+
+[Install]
+WantedBy=multi-user.target

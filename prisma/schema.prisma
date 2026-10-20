@@ -1,0 +1,2089 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN_RRHH
+  GERENTE
+  SUPERVISOR
+  CONTADOR
+  EMPLEADO
+  AUDITOR
+}
+
+enum EstadoEmpleado {
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+  VACACIONES
+  PERMISO
+}
+
+enum TipoContrato {
+  INDEFINIDO
+  TEMPORAL
+  PRUEBA
+  SERVICIO
+}
+
+enum TipoPlanilla {
+  SEMANAL
+  QUINCENAL
+  MENSUAL
+}
+
+enum EstadoPlanilla {
+  BORRADOR
+  CALCULADA
+  APROBADA
+  PAGADA
+  ANULADA
+}
+
+enum TipoDeduccion {
+  LEGAL
+  VOLUNTARIA
+  PRESTAMO
+  ADELANTO
+  COOPERATIVA
+  IMPUESTO
+  AFP
+  OTRO
+}
+
+enum ModoCalculoDeduccion {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+enum TipoPermiso {
+  VACACIONES
+  ENFERMEDAD
+  PERSONAL
+  MATERNIDAD
+  PATERNIDAD
+  DUELO
+  SIN_GOCE
+  OTRO
+}
+
+enum TipoEvaluacion {
+  DESEMPENO_MENSUAL
+  COMPETENCIA_TRIMESTRAL
+}
+
+enum EstadoEvaluacion {
+  BORRADOR
+  EN_PROGRESO
+  PENDIENTE_FIRMA
+  FINALIZADA
+  CANCELADA
+}
+
+enum RolEvaluador {
+  AUTOEVALUACION
+  JEFE_DIRECTO
+  PAR
+  SUBORDINADO
+  RRHH
+}
+
+enum NivelCompetencia {
+  INICIAL // 1
+  BASICO // 2
+  INTERMEDIO // 3
+  AVANZADO // 4
+  EXPERTO // 5
+}
+
+enum EstadoCampana {
+  PROGRAMADA
+  EN_PROGRESO
+  FINALIZADA
+  CANCELADA
+}
+
+enum AccionAudit {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  SIGN
+  LOGIN
+  LOGOUT
+  // Una exportación se lleva identidades, RTN, salarios y cuentas bancarias
+  // fuera del sistema, y una importación los altera en masa. Las dos son tan
+  // auditables como aprobar una planilla, y no cabían en las acciones de arriba.
+  EXPORT
+  IMPORT
+}
+
+enum TipoDocumento {
+  DPI
+  RTN
+  TITULO
+  CERTIFICADO
+  CONTRATO
+  OTRO
+}
+
+// ─── EMPRESA & ESTRUCTURA ────────────────────────────────────────────────────
+
+model Empresa {
+  id        String   @id @default(cuid())
+  nombre    String
+  rtn       String   @unique
+  direccion String?
+  telefono  String?
+  email     String?
+  logoUrl   String?
+  activa    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sucursales Sucursal[]
+  planillas  Planilla[]
+}
+
+model Sucursal {
+  id           String   @id @default(cuid())
+  nombre       String
+  codigo       String
+  direccion    String?
+  telefono     String?
+  email        String?
+  activa       Boolean  @default(true)
+  /// Sucursal (BPLID) equivalente en SAP Business One, si SAP usa varias sucursales.
+  sapBplId     Int?
+  sapBplNombre String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresaId     String
+  empresa       Empresa        @relation(fields: [empresaId], references: [id])
+  departamentos Departamento[]
+  empleados     Empleado[]
+  planillas     Planilla[]
+}
+
+model Departamento {
+  id          String   @id @default(cuid())
+  nombre      String
+  codigo      String?
+  descripcion String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sucursalId    String
+  sucursal      Sucursal     @relation(fields: [sucursalId], references: [id])
+  /**
+   * Centro de costo POR OMISIÓN de quien trabaja aquí. Es la asignación normal:
+   * casi todo el mundo imputa a su departamento. La excepción se resuelve en el
+   * propio empleado (ver `Empleado.centroCostoId`).
+   */
+  centroCostoId String?
+  centroCosto   CentroCosto? @relation(fields: [centroCostoId], references: [id])
+  empleados     Empleado[]
+  puestos       Puesto[]
+  vacantes      Vacante[]
+
+  @@index([centroCostoId])
+}
+
+/**
+ * Centro de costo: la SEGUNDA dimensión del asiento contable.
+ * No es una cuenta. La cuenta dice QUÉ es el gasto (5101 Sueldos); el centro de
+ * costo dice DÓNDE se imputa (Producción, Administración). El asiento pasa de
+ * una lista de cuentas a una matriz cuenta × centro.
+ * `cuentaGasto` es opcional y sirve para el caso en que la contabilidad quiera
+ * una cuenta distinta por centro (p. ej. 5101-01 para Producción). Vacío = se usa
+ * la cuenta del plan general.
+ */
+model CentroCosto {
+  id             String   @id @default(cuid())
+  codigo         String   @unique
+  nombre         String
+  descripcion    String?
+  /**
+   * Sufijo o cuenta propia para el plan contable. Opcional.
+   */
+  cuentaGasto    String?
+  /// Código del centro de costo (CostingCode de la dimensión elegida) en SAP B1.
+  /// Vacío = este centro no se puede repartir en SAP.
+  sapCostingCode String?
+  /// Proyecto de SAP B1 (ProjectCode) que acompaña a las líneas del centro. Opcional.
+  sapProjectCode String?
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  departamentos Departamento[]
+  empleados     Empleado[]
+}
+
+/// Clasificación de una cuenta del catálogo (NIIF para PYMES).
+enum TipoCuentaContable {
+  ACTIVO
+  PASIVO
+  PATRIMONIO
+  INGRESO
+  COSTO
+  GASTO
+}
+
+/// Lado en el que la cuenta acumula su saldo normal.
+enum NaturalezaSaldo {
+  DEUDORA
+  ACREEDORA
+}
+
+/**
+ * Catálogo contable (plan de cuentas) de la empresa, con la misma estructura que
+ * el de Gestión360: árbol por `padreCodigo`, cuentas de grupo y de detalle, tipo
+ * NIIF y naturaleza del saldo. Sólo las cuentas de DETALLE reciben asientos.
+ * `esSistema` marca las sembradas por la aplicación: se les cambia el nombre y
+ * se desactivan, pero no se borran ni se recodifican, porque el mapeo de la
+ * nómina las toma como valores por omisión.
+ */
+model CuentaContable {
+  id              String             @id @default(cuid())
+  codigo          String             @unique
+  nombre          String
+  descripcion     String?
+  // Con valor por omisión para que la columna pueda añadirse a una tabla con
+  // filas sin pedir --accept-data-loss; toda alta la fija explícitamente.
+  tipo            TipoCuentaContable @default(ACTIVO)
+  naturaleza      NaturalezaSaldo    @default(DEUDORA)
+  /// Código de la cuenta madre; vacío = nivel 1.
+  padreCodigo     String?
+  esDetalle       Boolean            @default(true)
+  esSistema       Boolean            @default(false)
+  activa          Boolean            @default(true)
+  // ─── SAP Business One ───────────────────────────────────────────────────
+  /// AcctCode (código interno) de la cuenta equivalente en SAP B1. Vacío = sin mapeo.
+  sapAcctCode     String?
+  /// Nombre y estado leídos de SAP en la última verificación, para mostrarlos.
+  sapNombre       String?
+  sapActiva       Boolean?
+  sapVerificadaAt DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  mapeos MapeoContable[]
+
+  @@index([padreCodigo])
+  @@index([tipo, activa])
+}
+
+/**
+ * Qué cuenta del catálogo recibe cada CONCEPTO de la nómina.
+ * `clave` es el concepto del motor (`sueldos`, `isrPorPagar`, ver `CUENTAS` en
+ * lib/payroll/partida-contable.ts) y no cambia nunca; la cuenta la elige el
+ * contador entre las de detalle del catálogo. Sin fila, o con `cuentaId` nulo,
+ * el motor cae a la cuenta por omisión del concepto.
+ */
+model MapeoContable {
+  clave     String          @id
+  cuentaId  String?
+  cuenta    CuentaContable? @relation(fields: [cuentaId], references: [id])
+  updatedAt DateTime        @updatedAt
+
+  @@index([cuentaId])
+}
+
+model Puesto {
+  id            String   @id @default(cuid())
+  nombre        String
+  descripcion   String?
+  salarioMinimo Decimal  @default(0) @db.Decimal(12, 2)
+  salarioMaximo Decimal  @default(0) @db.Decimal(12, 2)
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  departamentoId     String
+  departamento       Departamento        @relation(fields: [departamentoId], references: [id])
+  empleados          Empleado[]
+  puestosCompetencia PuestoCompetencia[]
+}
+
+// ─── USUARIOS ────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String        @id @default(cuid())
+  name                String?
+  email               String        @unique
+  emailVerified       DateTime?
+  image               String?
+  password            String?
+  // `role` SIGUE SIENDO la fuente de permisos mientras `perfilId` sea null.
+  // Es lo que permite introducir los perfiles sin migrar de golpe las decenas de
+  // comprobaciones por rol que ya existen: un usuario sin perfil se comporta
+  // exactamente igual que antes (ver PERMISOS_POR_ROL en src/lib/auth/permisos.ts).
+  role                UserRole      @default(EMPLEADO)
+  activo              Boolean       @default(true)
+  // Perfil de acceso. Cuando está presente, MANDA sobre `role`.
+  perfilId            String?
+  perfil              PerfilAcceso? @relation(fields: [perfilId], references: [id])
+  // Sucursales visibles cuando el alcance del perfil es SUCURSAL. Vacío con
+  // alcance SUCURSAL = no ve ninguna, que es el fallo seguro.
+  sucursalesIds       String[]      @default([])
+  // Se activa al crear el usuario y al resetear su contraseña: la clave temporal
+  // que fija un administrador no puede quedarse como definitiva.
+  debeCambiarPassword Boolean       @default(false)
+  passwordCambiadaAt  DateTime?
+  ultimoAcceso        DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  empleado         Empleado?
+  sessions         Session[]
+  accounts         Account[]
+  lotesImportacion LoteImportacion[]
+
+  @@index([perfilId])
+}
+
+/**
+ * Alcance de DATOS: sobre QUIÉNES actúa un permiso.
+ * El eje de acciones (`empleados.editar`) y el de filas son independientes: un
+ * supervisor y una jefa de RRHH pueden compartir el permiso de ver empleados y
+ * aun así deber ver plantillas distintas. Sin este segundo eje, «granular»
+ * significa sólo «qué botones aparecen».
+ */
+enum AlcanceDatos {
+  TODO // toda la empresa
+  SUCURSAL // sólo las sucursales asignadas al usuario
+  DEPARTAMENTO // sólo el departamento del empleado vinculado
+  PROPIO // sólo su propio expediente
+}
+
+/**
+ * Perfil de acceso: un conjunto de permisos con nombre, reutilizable.
+ * Los permisos se guardan como códigos `modulo.accion` (ver el catálogo en
+ * src/lib/auth/permisos.ts). Un array de texto en vez de una tabla puente porque
+ * el catálogo es una constante del código, no un dato que administre el usuario:
+ * una tabla `Permiso` exigiría mantener sincronizadas filas y constantes sin
+ * ganar nada — y el nombre `Permiso` ya está tomado por los permisos LABORALES
+ * (vacaciones, enfermedad), que son otra cosa completamente distinta.
+ */
+model PerfilAcceso {
+  id                String       @id @default(cuid())
+  codigo            String       @unique
+  nombre            String
+  descripcion       String?
+  permisos          String[]     @default([])
+  /**
+   * Catálogo de permisos que EXISTÍA la última vez que se guardó este perfil.
+   * Es lo que distingue «no tiene este permiso porque alguien se lo quitó» de
+   * «no lo tiene porque no existía cuando se configuró». Sin esa distinción, al
+   * añadir un permiso al catálogo el módulo queda invisible para los perfiles ya
+   * creados y nadie relaciona una cosa con la otra; y refrescarlos a lo bruto
+   * revertiría la configuración del administrador.
+   * Vacío = perfil anterior a esta columna: se completa hasta su línea base la
+   * primera vez, y a partir de ahí la comparación es exacta.
+   */
+  permisosConocidos String[]     @default([])
+  alcance           AlcanceDatos @default(TODO)
+  // Los perfiles de sistema se pueden asignar pero no editar ni borrar: son la
+  // red de seguridad para no dejar la instalación sin un perfil administrador.
+  esSistema         Boolean      @default(false)
+  activo            Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  usuarios User[]
+}
+
+enum TipoImportacion {
+  EMPLEADOS
+  DEDUCCIONES
+}
+
+enum EstadoLote {
+  VALIDADO // pasó la validación y espera confirmación
+  APLICADO
+  RECHAZADO // tenía errores bloqueantes
+  CANCELADO
+  EXPIRADO
+}
+
+/**
+ * Lote de importación: el resultado de validar un archivo, a la espera de que
+ * alguien lo confirme.
+ * POR QUÉ EN LA BASE Y NO EN MEMORIA: la importación es en dos fases (validar →
+ * confirmar) y entre una y otra puede pasar cualquier cosa. Un caché en memoria
+ * se pierde al reiniciar y no existe para la otra instancia detrás del balanceador,
+ * de modo que el usuario confirmaría contra un lote que ya no está. Guardarlo
+ * además deja historial: quién subió qué archivo, con qué resultado y cuándo.
+ */
+model LoteImportacion {
+  id              String          @id @default(cuid())
+  tipo            TipoImportacion
+  estado          EstadoLote      @default(VALIDADO)
+  nombreArchivo   String
+  // Filas ya normalizadas y validadas, listas para escribir. Se guardan tal cual
+  // se validaron: si el archivo cambia entre fase y fase, se aplica lo que se
+  // revisó, no lo que haya subido después.
+  filas           Json
+  // Errores y advertencias por número de línea, para reconstruir la vista previa.
+  incidencias     Json
+  totalFilas      Int             @default(0)
+  totalCrear      Int             @default(0)
+  totalActualizar Int             @default(0)
+  totalErrores    Int             @default(0)
+  // Un lote sin confirmar caduca: evita aplicar semanas después un archivo
+  // validado contra un estado de la base que ya no existe.
+  expiraEn        DateTime
+  aplicadoEn      DateTime?
+  resultado       Json?
+  usuarioId       String?
+  usuario         User?           @relation(fields: [usuarioId], references: [id])
+  usuarioEmail    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([tipo, estado])
+  @@index([usuarioId, createdAt])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── EMPLEADOS ────────────────────────────────────────────────────────────────
+
+model Empleado {
+  id                 String         @id @default(cuid())
+  codigo             String         @unique
+  // Datos personales
+  primerNombre       String
+  segundoNombre      String?
+  primerApellido     String
+  segundoApellido    String?
+  fechaNacimiento    DateTime
+  genero             String
+  estadoCivil        String?
+  nacionalidad       String         @default("Hondureño")
+  identidad          String?        @unique
+  rtn                String?
+  ihssNro            String?
+  rapNro             String?
+  telefonoPersonal   String?
+  telefonoEmergencia String?
+  contactoEmergencia String?
+  direccion          String?
+  fotoPerfil         String?
+  // Datos laborales
+  fechaIngreso       DateTime
+  fechaSalida        DateTime?
+  estado             EstadoEmpleado @default(ACTIVO)
+  tipoContrato       TipoContrato   @default(INDEFINIDO)
+  salarioBase        Decimal        @db.Decimal(12, 2)
+  salarioDiario      Decimal?       @db.Decimal(12, 2)
+  salarioHora        Decimal?       @db.Decimal(12, 2)
+  tipoPlanilla       TipoPlanilla   @default(MENSUAL)
+  cuentaBancaria     String?
+  banco              String?
+  // Relaciones organizacionales
+  sucursalId         String
+  sucursal           Sucursal       @relation(fields: [sucursalId], references: [id])
+  departamentoId     String
+  departamento       Departamento   @relation(fields: [departamentoId], references: [id])
+  puestoId           String?
+  puesto             Puesto?        @relation(fields: [puestoId], references: [id])
+  supervisorId       String? // jefe directo
+  supervisor         Empleado?      @relation("SupervisorSubordinados", fields: [supervisorId], references: [id])
+  /**
+   * Centro de costo PROPIO, que prevalece sobre el del departamento.
+   * Existe para el caso real que rompe la regla: alguien adscrito a Ingeniería
+   * cuyo coste se carga a un proyecto o a otra área. Vacío = hereda el del
+   * departamento, que es lo habitual.
+   */
+  centroCostoId      String?
+  centroCosto        CentroCosto?   @relation(fields: [centroCostoId], references: [id])
+  /**
+   * Datos de DIRECTORIO. Separados de los personales a propósito: el correo y la
+   * extensión corporativos son información de contacto laboral, no dato privado,
+   * y por eso no van detrás del permiso de datos personales como el teléfono.
+   */
+  emailCorporativo   String?
+  extension          String?
+  /**
+   * Correo PERSONAL. Dato privado —va con el teléfono personal, detrás de
+   * `empleados.pii`—, a diferencia del corporativo, que es de directorio. Existe
+   * porque la mayoría de operarios no tiene correo de empresa, y los comprobantes
+   * de pago sólo llegaban a quien tenía una cuenta de usuario en el sistema.
+   */
+  emailPersonal      String?
+  /**
+   * IHSS MENSUAL fijo pactado para esta persona. Si tiene valor, reemplaza la
+   * parte del empleado calculada por porcentaje (la patronal sigue por
+   * porcentaje). Vacío = cálculo normal. Ver `calcularIHSS`.
+   */
+  ihssMontoFijo      Decimal?       @db.Decimal(12, 2)
+  userId             String?        @unique
+  user               User?          @relation(fields: [userId], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  contratos            Contrato[]
+  permisos             Permiso[]
+  marcajes             Marcaje[]
+  eventosBiometricos   MarcajeEvento[]
+  pinesBiometricos     EmpleadoPin[]
+  deducciones          DeduccionEmpleado[]
+  planillasDetalle     PlanillaDetalle[]
+  evaluaciones         Evaluacion[]
+  documentos           Documento[]
+  historialSalarios    HistorialSalario[]
+  portalPosts          PortalPost[]
+  anuncios             Anuncio[]
+  subordinados         Empleado[]                 @relation("SupervisorSubordinados")
+  evaluacionesComoEval EvaluacionParticipante[]   @relation("EvaluadorParticipante")
+  dotaciones           AsignacionDotacion[]
+  capacitaciones       ParticipanteCapacitacion[]
+  liquidacionesDecimo  LiquidacionDecimo[]
+  liquidacionesFinales LiquidacionFinal[]
+  documentosEmitidos   DocumentoEmitido[]
+  solicitudesPrestamo  SolicitudPrestamo[]
+  incapacidades        Incapacidad[]
+  asignacionesTurno    AsignacionTurno[]
+  fichaMedica          FichaMedica?
+  familiares           FamiliarEmpleado[]
+  beneficiarios        BeneficiarioEmpleado[]
+
+  // El organigrama y el filtro de "mi equipo" recorren esta columna en cada carga.
+  @@index([supervisorId])
+  @@index([centroCostoId])
+}
+
+model Contrato {
+  id            String       @id @default(cuid())
+  empleadoId    String
+  empleado      Empleado     @relation(fields: [empleadoId], references: [id])
+  tipoContrato  TipoContrato
+  fechaInicio   DateTime
+  fechaFin      DateTime?
+  salario       Decimal      @db.Decimal(12, 2)
+  cargo         String
+  jornada       String?
+  horario       String?
+  observaciones String?      @db.Text
+  activo        Boolean      @default(true)
+  archivoUrl    String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model HistorialSalario {
+  id              String   @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado @relation(fields: [empleadoId], references: [id])
+  salarioAnterior Decimal  @db.Decimal(12, 2)
+  salarioNuevo    Decimal  @db.Decimal(12, 2)
+  fechaCambio     DateTime
+  motivo          String?
+  tipo            String   @default("INDIVIDUAL") // INDIVIDUAL | COLECTIVO
+  // Atribución del cambio. Sin esto el historial registra QUÉ cambió y CUÁNDO,
+  // pero nunca QUIÉN — que es lo primero que pide una auditoría externa y lo
+  // que distingue un aumento autorizado de uno que no lo fue.
+  usuarioId       String?
+  usuarioEmail    String?
+  createdAt       DateTime @default(now())
+
+  @@index([empleadoId, fechaCambio])
+}
+
+// ─── ASISTENCIA Y MARCAJES ────────────────────────────────────────────────────
+
+model Marcaje {
+  id                 String    @id @default(cuid())
+  empleadoId         String
+  empleado           Empleado  @relation(fields: [empleadoId], references: [id])
+  fecha              DateTime  @db.Date
+  horaEntrada        DateTime?
+  horaSalida         DateTime?
+  horasNormales      Decimal   @default(0) @db.Decimal(5, 2)
+  // Total de horas extraordinarias del día. Debe ser la SUMA del desglose de
+  // abajo; se conserva para no romper reportes ni integraciones existentes.
+  horasExtra         Decimal   @default(0) @db.Decimal(5, 2)
+  // Desglose por jornada — Art. 330 C.T. Cada jornada lleva un recargo distinto
+  // (25 % / 50 % / 75 %), así que sin este desglose es imposible liquidar la
+  // hora extra correctamente: antes todas se pagaban como diurnas.
+  horasExtraDiurna   Decimal   @default(0) @db.Decimal(5, 2)
+  horasExtraMixta    Decimal   @default(0) @db.Decimal(5, 2)
+  horasExtraNocturna Decimal   @default(0) @db.Decimal(5, 2)
+  // Horas trabajadas en día feriado o de descanso semanal (Art. 339: al doble).
+  horasFeriado       Decimal   @default(0) @db.Decimal(5, 2)
+  // Almuerzo u otra pausa descontada del lapso entre entrada y salida: no es
+  // tiempo de trabajo. Se guarda para poder explicar la diferencia entre lo que
+  // estuvo la persona en la empresa y las horas que se le pagan.
+  minutosDescanso    Int       @default(0)
+  esAusencia         Boolean   @default(false)
+  esDiaLibre         Boolean   @default(false)
+  observacion        String?
+  fuente             String    @default("BIOMETRICO") // BIOMETRICO | MANUAL
+  dispositivoId      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([empleadoId, fecha])
+  @@index([fecha])
+}
+
+/// Calendario de feriados nacionales y asuetos de empresa.
+/// Sin él, el trabajo en día feriado se pagaba como jornada ordinaria.
+model Feriado {
+  id         String   @id @default(cuid())
+  fecha      DateTime @db.Date
+  nombre     String
+  /// `null` = aplica a toda la empresa; con valor, sólo a esa sucursal
+  /// (permite asuetos locales como la feria patronal del municipio).
+  sucursalId String?
+  esNacional Boolean  @default(true)
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([fecha, sucursalId])
+  @@index([fecha])
+}
+
+model DispositivoBiometrico {
+  id              String          @id @default(cuid())
+  nombre          String
+  /// ZKTeco y Hikvision no comparten NADA: protocolo binario en TCP 4370 el
+  /// primero, HTTP+JSON (ISAPI) con Digest auth el segundo. Sin este campo no
+  /// hay forma de elegir el driver.
+  marca           MarcaBiometrico @default(ZKTECO)
+  modelo          String?
+  /// Número de serie que reporta el equipo. Identifica al dispositivo con
+  /// independencia de que le cambien la IP.
+  serie           String?         @unique
+  ip              String
+  puerto          Int             @default(4370)
+  /// Hikvision exige credenciales en cada petición ISAPI (HTTP Digest). Se
+  /// guarda cifrada — ver lib/seguridad/cifrado.ts. ZKTeco no las usa.
+  usuario         String?
+  passwordCifrado String?
+  /// Desfase de la hora de pared del equipo respecto a UTC. Honduras es UTC−6
+  /// fijo y sin horario de verano, de ahí el valor por omisión. Se guarda como
+  /// minutos en vez de un nombre IANA porque sin DST no hace falta más, y así
+  /// la conversión no depende de la zona del proceso ni de una librería.
+  offsetMinutos   Int             @default(-360)
+  sucursalId      String?
+  activo          Boolean         @default(true)
+  ultimaSync      DateTime?
+  /// Marca de agua alta: instante del evento más reciente ya ingerido. Permite
+  /// pedirle al equipo sólo lo nuevo en vez de releer todo el buffer.
+  ultimoEventoEn  DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  eventos MarcajeEvento[]
+  pines   EmpleadoPin[]
+}
+
+enum MarcaBiometrico {
+  ZKTECO
+  HIKVISION
+}
+
+/// Qué es una marca: entrada, salida, o todavía no se sabe.
+///
+/// DESCONOCIDO no es un caso raro, es el caso NORMAL en ZKTeco: `getAttendances()`
+/// devuelve un timestamp pelado, sin bandera de entrada/salida. El tipo se
+/// resuelve al agregar el día, ordenando las marcas.
+enum TipoMarca {
+  ENTRADA
+  SALIDA
+  DESCONOCIDO
+}
+
+enum EstadoEvento {
+  /// Ingerido, pendiente de agregarse a un Marcaje.
+  PENDIENTE
+  /// Ya contribuyó al Marcaje de su día.
+  PROCESADO
+  /// El PIN no corresponde a ningún empleado. NO se descarta: espera a que
+  /// alguien lo asigne, y entonces se reprocesa.
+  CUARENTENA
+  /// Descartado con motivo (fuera de rango, dispositivo dado de baja…).
+  DESCARTADO
+}
+
+/// Marcación cruda tal como la emitió el reloj, antes de convertirse en jornada.
+///
+/// POR QUÉ EXISTE UNA TABLA APARTE. `Marcaje` es un AGREGADO DIARIO: una fila por
+/// empleado y día, con una entrada y una salida. Un reloj no emite eso; emite N
+/// eventos sueltos. Escribirlos directamente sobre `Marcaje` perdía cuatro cosas
+/// que no se pueden reconstruir después:
+///
+///   1. Idempotencia — los equipos reenvían lotes cuando no reciben confirmación.
+///      La clave única de abajo hace que releer el buffer no duplique nada.
+///   2. Auditoría — ante un reclamo hay que poder mostrar «el reloj reportó estas
+///      marcas y el sistema calculó estas horas».
+///   3. Recálculo — si se registra un feriado DESPUÉS de procesar la asistencia,
+///      hay que rehacer el día; sin los crudos no hay de dónde.
+///   4. Almuerzo y turnos partidos — cuatro marcas colapsadas a primera/última
+///      le regalan la hora de almuerzo al empleado.
+model MarcajeEvento {
+  id            String                @id @default(cuid())
+  dispositivoId String
+  dispositivo   DispositivoBiometrico @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+  /// Correlativo del propio equipo, tal cual lo reporta. NO es `Empleado.codigo`.
+  pin           String
+  /// Resuelto vía EmpleadoPin. `null` mientras está en cuarentena.
+  empleadoId    String?
+  empleado      Empleado?             @relation(fields: [empleadoId], references: [id], onDelete: SetNull)
+  /// Instante real de la marca.
+  ocurridoEn    DateTime
+  /// Día laboral al que se imputa, como fecha de CALENDARIO (medianoche UTC),
+  /// que es la convención de `Marcaje.fecha`. Ver la doctrina en lib/utils.ts.
+  fechaLocal    DateTime              @db.Date
+  tipo          TipoMarca             @default(DESCONOCIDO)
+  estado        EstadoEvento          @default(PENDIENTE)
+  /// Modo de verificación si el equipo lo informa (huella, rostro, tarjeta).
+  verificacion  String?
+  /// Registro original del equipo, para poder auditar sin volver a consultarlo.
+  crudo         Json?
+  motivo        String?
+  procesadoEn   DateTime?
+  createdAt     DateTime              @default(now())
+
+  /// CLAVE DE IDEMPOTENCIA. Un mismo equipo no puede reportar dos veces la misma
+  /// persona en el mismo instante; si lo hace, es un reenvío.
+  @@unique([dispositivoId, pin, ocurridoEn])
+  @@index([estado, fechaLocal])
+  @@index([empleadoId, fechaLocal])
+  @@index([dispositivoId, pin])
+}
+
+/// Vínculo entre el correlativo de un reloj y un empleado de la nómina.
+///
+/// POR QUÉ NO ES UN CAMPO EN `Empleado`. Los equipos numeran a sus usuarios
+/// desde 1 cada uno. Con dos sucursales, el PIN 1 del reloj de Tegucigalpa y el
+/// PIN 1 del de San Pedro son personas distintas, así que un `pinBiometrico`
+/// único global mapearía mal en cuanto haya un segundo equipo — y `Dispositivo-
+/// Biometrico` ya contempla varios, porque tiene `sucursalId`. La unicidad que
+/// corresponde es por dispositivo.
+model EmpleadoPin {
+  id            String                @id @default(cuid())
+  empleadoId    String
+  empleado      Empleado              @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  dispositivoId String
+  dispositivo   DispositivoBiometrico @relation(fields: [dispositivoId], references: [id], onDelete: Cascade)
+  pin           String
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  /// Un PIN identifica a UNA persona dentro de UN equipo.
+  @@unique([dispositivoId, pin])
+  @@index([empleadoId])
+}
+
+// ─── PERMISOS Y VACACIONES ───────────────────────────────────────────────────
+
+model Permiso {
+  id              String      @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado    @relation(fields: [empleadoId], references: [id])
+  tipo            TipoPermiso
+  fechaInicio     DateTime    @db.Date
+  fechaFin        DateTime    @db.Date
+  diasSolicitados Int
+  diasAprobados   Int?
+  motivo          String?     @db.Text
+  estado          String      @default("PENDIENTE") // PENDIENTE | APROBADO | RECHAZADO
+  aprobadoPor     String?
+  observacion     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model SaldoVacaciones {
+  id              String   @id @default(cuid())
+  empleadoId      String   @unique
+  diasDisponibles Decimal  @default(0) @db.Decimal(5, 2)
+  diasTomados     Decimal  @default(0) @db.Decimal(5, 2)
+  anio            Int
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── DEDUCCIONES ──────────────────────────────────────────────────────────────
+
+model TipoDeduccionConfig {
+  id                  String               @id @default(cuid())
+  nombre              String
+  codigo              String               @unique
+  tipo                TipoDeduccion
+  porcentaje          Decimal?             @db.Decimal(5, 4) // p.ej. 0.025 = 2.5%
+  /// Cómo se calculan IHSS, IVM, RAP e INFOP: por porcentaje del salario o como
+  /// monto fijo mensual igual para todos. Lo decide el administrador en
+  /// Configuración → Parámetros de ley. El resto de tipos no lo usa.
+  modo                ModoCalculoDeduccion @default(PORCENTAJE)
+  /// Monto fijo MENSUAL del empleado (con `modo = MONTO_FIJO`).
+  montoFijo           Decimal?             @db.Decimal(12, 2)
+  /// Monto fijo MENSUAL patronal (con `modo = MONTO_FIJO`).
+  montoFijoEmpleador  Decimal?             @db.Decimal(12, 2)
+  aplicaEmpleado      Boolean              @default(true)
+  aplicaEmpleador     Boolean              @default(false)
+  porcentajeEmpleador Decimal?             @db.Decimal(5, 4)
+  topeMaximo          Decimal?             @db.Decimal(12, 2)
+  // Piso de la base cotizable. RAP: la base es el EXCEDENTE sobre este valor.
+  topeMinimo          Decimal?             @db.Decimal(12, 2)
+  activo              Boolean              @default(true)
+  esLegal             Boolean              @default(false)
+  descripcion         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  deduccionesEmpleado DeduccionEmpleado[]
+}
+
+model DeduccionEmpleado {
+  id              String              @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado            @relation(fields: [empleadoId], references: [id])
+  tipoDeduccionId String
+  tipoDeduccion   TipoDeduccionConfig @relation(fields: [tipoDeduccionId], references: [id])
+  monto           Decimal             @db.Decimal(12, 2)
+  cuotasMeses     Int?
+  cuotasPagadas   Int                 @default(0)
+  saldo           Decimal?            @db.Decimal(12, 2)
+  fechaInicio     DateTime            @db.Date
+  fechaFin        DateTime?           @db.Date
+  activo          Boolean             @default(true)
+  observacion     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  amortizaciones AmortizacionPlanilla[]
+  solicitud      SolicitudPrestamo?
+
+  // Se consulta una vez por empleado en cada cálculo de planilla.
+  @@index([empleadoId, activo])
+}
+
+// ─── PLANILLAS ────────────────────────────────────────────────────────────────
+
+model Planilla {
+  id               String         @id @default(cuid())
+  empresaId        String
+  empresa          Empresa        @relation(fields: [empresaId], references: [id])
+  // Sucursal cubierta por la planilla. `null` = planilla de toda la empresa.
+  // Sin este campo era imposible saber a cuál de las 13 sucursales correspondía
+  // una planilla, ni conciliar por sucursal, ni impedir duplicados por sucursal.
+  sucursalId       String?
+  sucursal         Sucursal?      @relation(fields: [sucursalId], references: [id])
+  tipo             TipoPlanilla
+  estado           EstadoPlanilla @default(BORRADOR)
+  fechaInicio      DateTime       @db.Date
+  fechaFin         DateTime       @db.Date
+  fechaPago        DateTime?      @db.Date
+  totalBruto       Decimal        @default(0) @db.Decimal(14, 2)
+  totalDeducciones Decimal        @default(0) @db.Decimal(14, 2)
+  totalNeto        Decimal        @default(0) @db.Decimal(14, 2)
+  totalEmpleador   Decimal        @default(0) @db.Decimal(14, 2)
+  observaciones    String?        @db.Text
+  aprobadoPor      String?
+  // ─── Blindaje de planilla cerrada ───────────────────────────────────────────
+  // Momento en que la planilla pasó a un estado cerrado (APROBADA/PAGADA).
+  cerradaAt        DateTime?
+  // SHA-256 del set de detalles al momento del cierre. Permite detectar
+  // cualquier alteración posterior de los montos ya aprobados.
+  hashCalculo      String?
+  pagadoPor        String?
+  anuladaPor       String?
+  motivoAnulacion  String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  detalles       PlanillaDetalle[]
+  amortizaciones AmortizacionPlanilla[]
+  enviosSap      SapEnvioAsiento[]
+
+  @@index([estado])
+  // La UNICIDAD del período NO se declara aquí: requiere ser un índice PARCIAL
+  // (excluye ANULADA, para poder reemitir un período corregido) y tratar
+  // `sucursalId` NULL como un valor comparable — dos cosas que Prisma no puede
+  // expresar. Vive en `prisma/sql/01-planilla-periodo-unico.sql` y se aplica con
+  // `npm run db:constraints` DESPUÉS de cada `db push`.
+  @@index([empresaId, sucursalId, tipo, fechaInicio, fechaFin])
+}
+
+model PlanillaDetalle {
+  id                  String    @id @default(cuid())
+  planillaId          String
+  planilla            Planilla  @relation(fields: [planillaId], references: [id])
+  empleadoId          String
+  empleado            Empleado  @relation(fields: [empleadoId], references: [id])
+  // Ingresos
+  salarioBase         Decimal   @db.Decimal(12, 2)
+  diasTrabajados      Decimal   @default(0) @db.Decimal(5, 2)
+  horasExtra          Decimal   @default(0) @db.Decimal(5, 2)
+  montoHorasExtra     Decimal   @default(0) @db.Decimal(12, 2)
+  bonificaciones      Decimal   @default(0) @db.Decimal(12, 2)
+  otrosIngresos       Decimal   @default(0) @db.Decimal(12, 2)
+  totalBruto          Decimal   @default(0) @db.Decimal(12, 2)
+  // Deducciones empleado
+  ihssEmpleado        Decimal   @default(0) @db.Decimal(12, 2) // TOTAL empleado EM+IVM
+  rapEmpleado         Decimal   @default(0) @db.Decimal(12, 2)
+  afpEmpleado         Decimal   @default(0) @db.Decimal(12, 2)
+  isr                 Decimal   @default(0) @db.Decimal(12, 2)
+  impuestoVecinal     Decimal   @default(0) @db.Decimal(12, 2)
+  cooperativa         Decimal   @default(0) @db.Decimal(12, 2)
+  prestamos           Decimal   @default(0) @db.Decimal(12, 2)
+  adelantos           Decimal   @default(0) @db.Decimal(12, 2)
+  ausencias           Decimal   @default(0) @db.Decimal(12, 2)
+  /// Días de incapacidad a cargo del IHSS en el período (del 4.º en adelante).
+  diasIncapacidadIhss Int       @default(0)
+  /// Salario que el patrono deja de pagar por esos días; el IHSS paga el subsidio al trabajador.
+  incapacidad         Decimal   @default(0) @db.Decimal(12, 2)
+  otrosDeducciones    Decimal   @default(0) @db.Decimal(12, 2)
+  totalDeducciones    Decimal   @default(0) @db.Decimal(12, 2)
+  // Aportaciones empleador
+  ihssEmpleador       Decimal   @default(0) @db.Decimal(12, 2) // TOTAL patronal EM+IVM
+  rapEmpleador        Decimal   @default(0) @db.Decimal(12, 2)
+  infop               Decimal   @default(0) @db.Decimal(12, 2)
+  /// Aporte patronal al Fondo de Reserva Laboral del RAP (Decreto 47-2024).
+  reservaLaboral      Decimal   @default(0) @db.Decimal(12, 2)
+  // Desglose IHSS régimen IVM (Invalidez, Vejez y Muerte)
+  ivmEmpleado         Decimal   @default(0) @db.Decimal(12, 2)
+  ivmEmpleador        Decimal   @default(0) @db.Decimal(12, 2)
+  ivmEstado           Decimal   @default(0) @db.Decimal(12, 2)
+  /// El IHSS del empleado salió de su monto fijo, no del porcentaje. Se guarda
+  /// en la planilla —no se consulta en la ficha— porque la boleta de un período
+  /// cerrado debe seguir diciendo lo que se aplicó aunque después se cambie.
+  ihssFijo            Boolean   @default(false)
+  // Resultado
+  salarioNeto         Decimal   @default(0) @db.Decimal(12, 2)
+  // Provisiones
+  provision13vo       Decimal   @default(0) @db.Decimal(12, 2)
+  provision14vo       Decimal   @default(0) @db.Decimal(12, 2)
+  provisionVacaciones Decimal   @default(0) @db.Decimal(12, 2)
+  // Control
+  emailEnviado        Boolean   @default(false)
+  emailEnviadoAt      DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([planillaId, empleadoId])
+  // El @@unique de arriba sólo sirve para buscar por planilla (es su primera
+  // columna). `/api/mis-boletas` filtra por empleado y hacía escaneo completo.
+  @@index([empleadoId])
+}
+
+/// Registro de lo que CADA planilla amortizó de CADA deducción a plazo.
+///
+/// POR QUÉ EXISTE: el flujo de corrección del sistema es anular y reemitir. Sin
+/// este registro, al recalcular un período anulado las cuotas volvían a
+/// consumirse y el préstamo del trabajador se amortizaba de más, sin que nada
+/// lo detectara.
+///
+/// Se guarda el DELTA aplicado, no el estado previo. La reversión es entonces
+/// independiente del orden: si dos planillas cobraron cuotas de un mismo
+/// préstamo y se anula la primera, devolver su importe deja el saldo correcto
+/// aunque la segunda siga vigente. Restaurar un "estado anterior" habría
+/// pisado lo que la segunda cobró.
+model AmortizacionPlanilla {
+  id            String            @id @default(cuid())
+  planillaId    String
+  planilla      Planilla          @relation(fields: [planillaId], references: [id])
+  deduccionId   String
+  deduccion     DeduccionEmpleado @relation(fields: [deduccionId], references: [id])
+  /// Importe efectivamente cobrado. Al anular se devuelve al saldo.
+  montoAplicado Decimal           @db.Decimal(12, 2)
+  /// La deducción lleva columna `saldo`. Si es false, revertir no la toca.
+  llevaSaldo    Boolean           @default(true)
+  /// Fue ESTA amortización la que agotó la deducción y la desactivó.
+  desactivo     Boolean           @default(false)
+  /// Sellada al revertir. Impide devolver dos veces el mismo importe.
+  revertidaAt   DateTime?
+  createdAt     DateTime          @default(now())
+
+  // Una planilla amortiza una deducción a lo sumo una vez.
+  @@unique([planillaId, deduccionId])
+  @@index([deduccionId])
+  @@index([planillaId, revertidaAt])
+}
+
+// ─── DÉCIMO TERCER Y DÉCIMO CUARTO MES ────────────────────────────────────────
+
+enum TipoDecimo {
+  DECIMO_TERCERO // Aguinaldo — se paga en diciembre, devenga de enero a diciembre
+  DECIMO_CUARTO // Compensación educativa — se paga en junio, devenga de julio a junio
+}
+
+enum EstadoDecimo {
+  CALCULADA
+  PAGADA
+  ANULADA
+}
+
+/// Liquidación del 13.º y 14.º mes.
+///
+/// Antes sólo existía la PROVISIÓN mensual dentro de PlanillaDetalle, que es un
+/// apunte contable: no permitía consultar el acumulado de un empleado ni emitir
+/// el pago. Este modelo cierra ese ciclo y guarda la traza de cómo se calculó.
+model LiquidacionDecimo {
+  id              String       @id @default(cuid())
+  empleadoId      String
+  empleado        Empleado     @relation(fields: [empleadoId], references: [id])
+  tipo            TipoDecimo
+  anio            Int
+  /// Ventana de devengo efectivamente computada (acotada por ingreso y salida).
+  periodoDesde    DateTime     @db.Date
+  periodoHasta    DateTime     @db.Date
+  diasComputados  Int
+  /// Promedio de salario ordinario del período, base del cálculo.
+  salarioPromedio Decimal      @db.Decimal(12, 2)
+  montoDevengado  Decimal      @db.Decimal(12, 2)
+  /// Porción exenta de ISR (hasta diez salarios mínimos entre ambos décimos).
+  montoExento     Decimal      @default(0) @db.Decimal(12, 2)
+  montoGravado    Decimal      @default(0) @db.Decimal(12, 2)
+  isrRetenido     Decimal      @default(0) @db.Decimal(12, 2)
+  montoPagado     Decimal      @default(0) @db.Decimal(12, 2)
+  estado          EstadoDecimo @default(CALCULADA)
+  /// Marca la liquidación proporcional emitida al terminar la relación laboral.
+  esProporcional  Boolean      @default(false)
+  fechaPago       DateTime?    @db.Date
+  observaciones   String?      @db.Text
+  calculadoPor    String?
+  pagadoPor       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Un empleado tiene una sola liquidación de cada décimo por año.
+  @@unique([empleadoId, tipo, anio])
+  @@index([anio, tipo, estado])
+}
+
+// ─── LIQUIDACIÓN FINAL DE PRESTACIONES ────────────────────────────────────────
+
+/// Causas de terminación que maneja la calculadora de la Secretaría de Trabajo.
+enum CausaTerminacion {
+  DESPIDO_INJUSTIFICADO
+  RENUNCIA
+  DESPIDO_JUSTIFICADO
+  MUERTE
+}
+
+enum EstadoLiquidacion {
+  BORRADOR
+  APROBADA
+  PAGADA
+  ANULADA
+}
+
+/// Finiquito de prestaciones al terminar la relación laboral.
+///
+/// Criterio: el de consulta.trabajo.gob.hn, que es el que aplica la inspectoría
+/// en un reclamo. El desglose por concepto se guarda en `conceptos` para que el
+/// documento sea reproducible aunque después cambien las tablas legales.
+model LiquidacionFinal {
+  id                 String            @id @default(cuid())
+  empleadoId         String
+  empleado           Empleado          @relation(fields: [empleadoId], references: [id])
+  causa              CausaTerminacion
+  fechaIngreso       DateTime          @db.Date
+  fechaSalida        DateTime          @db.Date
+  /// Empresa de hasta 10 trabajadores: tope de cesantía reducido y sin 35 %.
+  esMicroempresa     Boolean           @default(false)
+  /// Salario ordinario promedio de los últimos seis meses.
+  salarioPromedio    Decimal           @db.Decimal(12, 2)
+  salarioDiario      Decimal           @db.Decimal(12, 2)
+  diasServicio       Int
+  mesesServicio      Int
+  aniosServicio      Int
+  // Conceptos liquidados
+  preaviso           Decimal           @default(0) @db.Decimal(12, 2)
+  auxilioCesantia    Decimal           @default(0) @db.Decimal(12, 2)
+  vacaciones         Decimal           @default(0) @db.Decimal(12, 2)
+  decimoTercero      Decimal           @default(0) @db.Decimal(12, 2)
+  decimoCuarto       Decimal           @default(0) @db.Decimal(12, 2)
+  salariosPendientes Decimal           @default(0) @db.Decimal(12, 2)
+  otrosAdeudos       Decimal           @default(0) @db.Decimal(12, 2)
+  totalPrestaciones  Decimal           @default(0) @db.Decimal(12, 2)
+  deducciones        Decimal           @default(0) @db.Decimal(12, 2)
+  totalAPagar        Decimal           @default(0) @db.Decimal(12, 2)
+  /// Desglose completo tal y como se calculó, con su fundamento legal.
+  conceptos          Json?
+  /// Topes aplicados y derechos que no correspondían.
+  observaciones      String?           @db.Text
+  estado             EstadoLiquidacion @default(BORRADOR)
+  fechaPago          DateTime?         @db.Date
+  calculadoPor       String?
+  aprobadoPor        String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([empleadoId])
+  @@index([estado])
+}
+
+// ─── EVALUACIONES ────────────────────────────────────────────────────────────
+
+model Evaluacion {
+  id             String             @id @default(cuid())
+  empleadoId     String
+  empleado       Empleado           @relation(fields: [empleadoId], references: [id])
+  tipo           TipoEvaluacion
+  estado         EstadoEvaluacion   @default(BORRADOR)
+  periodo        String // "2024-01", "2024-T1"
+  campanaId      String?
+  campana        EvaluacionCampana? @relation(fields: [campanaId], references: [id])
+  // Calificación consolidada (promedio ponderado de todos los evaluadores)
+  calificacion   Decimal            @default(0) @db.Decimal(5, 2)
+  // Dimensiones Nine-Box
+  desempeno      Decimal?           @db.Decimal(5, 2) // eje X
+  potencial      Decimal?           @db.Decimal(5, 2) // eje Y
+  comentarios    String?            @db.Text
+  fortalezas     String?            @db.Text
+  mejoras        String?            @db.Text
+  objetivos      String?            @db.Text
+  // Bono resultante
+  bonoPorcentaje Decimal?           @db.Decimal(5, 4) // 0.10 = 10%
+  bonoMonto      Decimal?           @db.Decimal(12, 2)
+  bonoAplicado   Boolean            @default(false)
+  fechaFirma     DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  criterios     CriterioEvaluacion[]
+  participantes EvaluacionParticipante[]
+}
+
+model CriterioEvaluacion {
+  id             String                  @id @default(cuid())
+  evaluacionId   String
+  evaluacion     Evaluacion              @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
+  participanteId String? // null = promedio consolidado
+  participante   EvaluacionParticipante? @relation(fields: [participanteId], references: [id])
+  competenciaId  String?
+  competencia    CompetenciaDefinicion?  @relation(fields: [competenciaId], references: [id])
+  criterio       String // nombre del criterio si no está en catálogo
+  nivelRequerido Int? // 1-5 según NivelCompetencia
+  calificacion   Decimal                 @default(0) @db.Decimal(4, 2) // 0-100
+  peso           Decimal                 @default(1) @db.Decimal(4, 2)
+  comentario     String?
+}
+
+// Evaluadores asignados a una evaluación (360°: self, boss, peers)
+model EvaluacionParticipante {
+  id              String       @id @default(cuid())
+  evaluacionId    String
+  evaluacion      Evaluacion   @relation(fields: [evaluacionId], references: [id], onDelete: Cascade)
+  evaluadorId     String // empleadoId del evaluador
+  evaluador       Empleado     @relation("EvaluadorParticipante", fields: [evaluadorId], references: [id])
+  rol             RolEvaluador
+  estado          String       @default("PENDIENTE") // PENDIENTE | EN_PROGRESO | COMPLETADO
+  calificacion    Decimal?     @db.Decimal(5, 2)
+  comentarios     String?      @db.Text
+  fechaCompletado DateTime?
+  tokenAcceso     String?      @unique // token para link sin login
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  criteriosParticipante CriterioEvaluacion[]
+}
+
+// Catálogo de competencias organizacionales
+model CompetenciaDefinicion {
+  id          String   @id @default(cuid())
+  nombre      String
+  descripcion String?  @db.Text
+  categoria   String   @default("CORE") // CORE | LIDERAZGO | TECNICA | COMPORTAMIENTO
+  activa      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  puestosCompetencia PuestoCompetencia[]
+  criterios          CriterioEvaluacion[]
+}
+
+// Matriz de competencias por puesto (niveles requeridos)
+model PuestoCompetencia {
+  id             String                @id @default(cuid())
+  puestoId       String
+  puesto         Puesto                @relation(fields: [puestoId], references: [id])
+  competenciaId  String
+  competencia    CompetenciaDefinicion @relation(fields: [competenciaId], references: [id])
+  nivelRequerido NivelCompetencia      @default(INTERMEDIO)
+  peso           Decimal               @default(1) @db.Decimal(4, 2) // peso en la evaluación
+  activa         Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+
+  @@unique([puestoId, competenciaId])
+}
+
+// Campañas de evaluación (lanzamiento automático)
+model EvaluacionCampana {
+  id             String         @id @default(cuid())
+  nombre         String
+  tipo           TipoEvaluacion
+  estado         EstadoCampana  @default(PROGRAMADA)
+  periodo        String // "2024-01"
+  fechaInicio    DateTime
+  fechaFin       DateTime
+  // Cron: "0 8 25 * *" = día 25 de cada mes
+  cronExpression String?
+  // Configuración 360°
+  incluirAuto    Boolean        @default(true)
+  incluirJefe    Boolean        @default(true)
+  incluirPares   Boolean        @default(false)
+  incluirSubord  Boolean        @default(false)
+  // Sucursal / Depto scope (null = todos)
+  sucursalId     String?
+  departamentoId String?
+  emailEnviado   Boolean        @default(false)
+  recordatorioAt DateTime?
+  createdBy      String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  evaluaciones Evaluacion[]
+}
+
+// Motor de bonos: rango de calificación → % bono
+model BonusConfig {
+  id              String         @id @default(cuid())
+  nombre          String
+  tipoEvaluacion  TipoEvaluacion
+  calificacionMin Decimal        @db.Decimal(5, 2)
+  calificacionMax Decimal        @db.Decimal(5, 2)
+  bonoPorcentaje  Decimal        @db.Decimal(5, 4) // 0.10 = 10% del salario
+  aplicarEn       String         @default("SIGUIENTE_PLANILLA") // SIGUIENTE_PLANILLA | INMEDIATO
+  activo          Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// ─── PORTAL EMPLEADO ─────────────────────────────────────────────────────────
+
+model PortalPost {
+  id         String   @id @default(cuid())
+  titulo     String
+  contenido  String   @db.Text
+  categoria  String   @default("BLOG") // BLOG | ANUNCIO
+  destacado  Boolean  @default(false)
+  activo     Boolean  @default(true)
+  autorId    String
+  autor      Empleado @relation(fields: [autorId], references: [id])
+  archivoUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Anuncio {
+  id          String    @id @default(cuid())
+  titulo      String
+  contenido   String    @db.Text
+  urgente     Boolean   @default(false)
+  activo      Boolean   @default(true)
+  fechaExpira DateTime?
+  autorId     String
+  autor       Empleado  @relation(fields: [autorId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Documento {
+  id          String        @id @default(cuid())
+  empleadoId  String
+  empleado    Empleado      @relation(fields: [empleadoId], references: [id])
+  tipo        TipoDocumento
+  nombre      String
+  descripcion String?
+  archivoUrl  String
+  tamaño     Int?
+  createdAt   DateTime      @default(now())
+}
+
+model ContactoRRHH {
+  id        String   @id @default(cuid())
+  nombre    String
+  cargo     String
+  email     String?
+  telefono  String?
+  extension String?
+  foto      String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── CONFIGURACIÓN GENERAL ───────────────────────────────────────────────────
+
+model ConfiguracionSistema {
+  id          String   @id @default(cuid())
+  clave       String   @unique
+  valor       String   @db.Text
+  descripcion String?
+  updatedAt   DateTime @updatedAt
+}
+
+model TablasISR {
+  id             String   @id @default(cuid())
+  anio           Int
+  rangoDesde     Decimal  @db.Decimal(14, 2)
+  rangoHasta     Decimal? @db.Decimal(14, 2)
+  cuotaFija      Decimal  @db.Decimal(12, 2)
+  porcentaje     Decimal  @db.Decimal(5, 4)
+  excedenteDesde Decimal  @db.Decimal(14, 2)
+  activa         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+/// Impuesto personal o vecinal — tabla progresiva por municipio.
+///
+/// Art. 77 de la Ley de Municipalidades: cada municipalidad aprueba su Plan de
+/// Arbitrios cada año, con su propio Anexo de tarifas. Por eso la tabla vive en
+/// base de datos y no en el código: un Plan nuevo se carga sin desplegar.
+///
+/// `porMillar` son lempiras por cada mil de la PORCIÓN del ingreso anual que
+/// cae en este tramo. El impuesto total es la SUMA de todos los tramos que el
+/// ingreso atraviesa, no una tarifa única aplicada al total.
+model TablaImpuestoVecinal {
+  id         String   @id @default(cuid())
+  /// Municipio al que corresponde la tabla (p. ej. "SAN_PEDRO_SULA").
+  municipio  String
+  anio       Int
+  rangoDesde Decimal  @db.Decimal(14, 2)
+  /// `null` = último tramo, sin techo.
+  rangoHasta Decimal? @db.Decimal(14, 2)
+  porMillar  Decimal  @db.Decimal(8, 4)
+  activa     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([municipio, anio, rangoDesde])
+  @@index([municipio, anio, activa])
+}
+
+model SalarioMinimo {
+  id            String   @id @default(cuid())
+  anio          Int
+  sector        String   @default("GENERAL")
+  monto         Decimal  @db.Decimal(12, 2)
+  fechaVigencia DateTime @db.Date
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+// ─── AUDIT TRAIL ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  accion        AccionAudit
+  tabla         String // nombre de la tabla afectada
+  registroId    String // ID del registro afectado
+  usuarioId     String? // quién lo hizo
+  usuarioEmail  String?
+  valorAnterior Json? // snapshot antes del cambio
+  valorNuevo    Json? // snapshot después del cambio
+  ip            String?
+  userAgent     String?
+  createdAt     DateTime    @default(now())
+
+  @@index([tabla, registroId])
+  @@index([usuarioId])
+  @@index([createdAt])
+}
+
+// ─── NOTIFICACIONES INTERNAS ──────────────────────────────────────────────────
+
+model Notificacion {
+  id         String   @id @default(cuid())
+  empleadoId String
+  titulo     String
+  mensaje    String   @db.Text
+  tipo       String   @default("INFO") // INFO | ALERTA | EVALUACION | PLANILLA
+  leida      Boolean  @default(false)
+  accionUrl  String?
+  createdAt  DateTime @default(now())
+
+  @@index([empleadoId, leida])
+}
+
+// ─── DOTACIONES (uniformes, EPP, equipo asignado) ─────────────────────────────
+
+enum CategoriaDotacion {
+  UNIFORME
+  EPP // Equipo de protección personal
+  EQUIPO
+  HERRAMIENTA
+  OTRO
+}
+
+enum EstadoDotacion {
+  ASIGNADO
+  DEVUELTO
+  REPOSICION
+  BAJA
+}
+
+model ArticuloDotacion {
+  id            String            @id @default(cuid())
+  nombre        String
+  categoria     CategoriaDotacion @default(OTRO)
+  descripcion   String?
+  requiereTalla Boolean           @default(false)
+  vidaUtilMeses Int? // meses hasta reposición (para programar recambio)
+  activo        Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  asignaciones AsignacionDotacion[]
+}
+
+model AsignacionDotacion {
+  id               String           @id @default(cuid())
+  empleadoId       String
+  empleado         Empleado         @relation(fields: [empleadoId], references: [id])
+  articuloId       String
+  articulo         ArticuloDotacion @relation(fields: [articuloId], references: [id])
+  cantidad         Int              @default(1)
+  talla            String?
+  fechaEntrega     DateTime         @db.Date
+  fechaVencimiento DateTime?        @db.Date
+  estado           EstadoDotacion   @default(ASIGNADO)
+  observacion      String?
+  entregadoPor     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([empleadoId])
+  @@index([estado])
+  @@index([fechaVencimiento])
+}
+
+// ─── RECLUTAMIENTO Y SELECCIÓN ────────────────────────────────────────────────
+
+enum EstadoVacante {
+  ABIERTA
+  PAUSADA
+  CERRADA
+}
+
+enum EtapaCandidato {
+  RECIBIDO
+  PRESELECCION
+  ENTREVISTA
+  OFERTA
+  CONTRATADO
+  RECHAZADO
+}
+
+model Vacante {
+  id             String        @id @default(cuid())
+  titulo         String
+  descripcion    String?       @db.Text
+  requisitos     String?       @db.Text
+  departamentoId String?
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  tipoContrato   TipoContrato  @default(INDEFINIDO)
+  salarioMin     Decimal?      @db.Decimal(12, 2)
+  salarioMax     Decimal?      @db.Decimal(12, 2)
+  plazas         Int           @default(1)
+  esInterna      Boolean       @default(false)
+  estado         EstadoVacante @default(ABIERTA)
+  fechaApertura  DateTime      @default(now())
+  fechaCierre    DateTime?     @db.Date
+  creadoPor      String?
+  /// Visible en el portal público /empleos. Hay que publicarla a propósito.
+  publicada      Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  candidatos Candidato[]
+}
+
+model Candidato {
+  id               String         @id @default(cuid())
+  vacanteId        String
+  vacante          Vacante        @relation(fields: [vacanteId], references: [id])
+  nombre           String
+  email            String?
+  telefono         String?
+  cvUrl            String?
+  fuente           String?
+  etapa            EtapaCandidato @default(RECIBIDO)
+  notas            String?        @db.Text
+  /// Momento en que aceptó el tratamiento de sus datos al postularse en /empleos.
+  consentimientoAt DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([vacanteId, etapa])
+}
+
+// ─── CAPACITACIÓN ─────────────────────────────────────────────────────────────
+
+enum TipoCapacitacion {
+  INTERNA
+  EXTERNA
+}
+
+enum EstadoCapacitacion {
+  PLANIFICADA
+  EN_CURSO
+  FINALIZADA
+  CANCELADA
+}
+
+model Capacitacion {
+  id                 String             @id @default(cuid())
+  nombre             String
+  descripcion        String?            @db.Text
+  tipo               TipoCapacitacion   @default(INTERNA)
+  proveedor          String?
+  fechaInicio        DateTime           @db.Date
+  fechaFin           DateTime?          @db.Date
+  costoPresupuestado Decimal            @default(0) @db.Decimal(12, 2)
+  costoReal          Decimal?           @db.Decimal(12, 2)
+  estado             EstadoCapacitacion @default(PLANIFICADA)
+  creadoPor          String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  participantes ParticipanteCapacitacion[]
+}
+
+model ParticipanteCapacitacion {
+  id             String       @id @default(cuid())
+  capacitacionId String
+  capacitacion   Capacitacion @relation(fields: [capacitacionId], references: [id])
+  empleadoId     String
+  empleado       Empleado     @relation(fields: [empleadoId], references: [id])
+  asistio        Boolean      @default(false)
+  aprobado       Boolean?
+  calificacion   Decimal?     @db.Decimal(5, 2)
+  observacion    String?
+  createdAt      DateTime     @default(now())
+
+  @@unique([capacitacionId, empleadoId])
+}
+
+// ─── REPOSITORIO DE POLÍTICAS Y PROCEDIMIENTOS ────────────────────────────────
+
+model Politica {
+  id          String   @id @default(cuid())
+  titulo      String
+  categoria   String   @default("General")
+  descripcion String?
+  activa      Boolean  @default(true)
+  creadoPor   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versiones VersionPolitica[]
+}
+
+model VersionPolitica {
+  id           String   @id @default(cuid())
+  politicaId   String
+  politica     Politica @relation(fields: [politicaId], references: [id])
+  numero       Int
+  contenido    String   @db.Text
+  notasCambio  String?
+  vigente      Boolean  @default(true)
+  publicadaPor String?
+  createdAt    DateTime @default(now())
+
+  @@unique([politicaId, numero])
+  @@index([politicaId, vigente])
+}
+
+// ─── CORREO SALIENTE ─────────────────────────────────────────────────────────
+
+/// Servidor SMTP con el que se envían los comprobantes de pago.
+///
+/// Una sola fila (id = "default"). Antes el servidor sólo podía fijarse con
+/// variables de entorno, lo que exigía acceso al servidor para cambiar de
+/// proveedor de correo. Si esta fila no existe o está inactiva, el envío cae a
+/// las variables SMTP_* para no romper las instalaciones que ya las usan.
+model ConfiguracionCorreo {
+  id              String   @id @default("default")
+  host            String
+  puerto          Int      @default(587)
+  /// SSL/TLS directo (típico puerto 465). Con `false` se negocia STARTTLS (587).
+  seguro          Boolean  @default(false)
+  usuario         String?
+  /// Cifrada con AES-256-GCM. Ver lib/seguridad/cifrado.ts. Nunca sale de la API.
+  passwordCifrado String?
+  remitenteNombre String   @default("Recursos Humanos")
+  remitenteCorreo String
+  activo          Boolean  @default(true)
+  actualizadoPor  String?
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+// ─── INTEGRACIÓN SAP BUSINESS ONE ─────────────────────────────────────────────
+
+/// Cuándo se manda a SAP el asiento de una planilla.
+enum ModoEnvioSap {
+  /// Sólo con el botón «Enviar a SAP» de la planilla.
+  MANUAL
+  /// Al pasar a APROBADA (la planilla ya está sellada con su huella).
+  AL_APROBAR
+  /// Al pasar a PAGADA (fecha contable = fecha real de pago).
+  AL_PAGAR
+}
+
+enum EstadoEnvioSap {
+  /// En cola; `proximoIntentoAt` dice cuándo le toca.
+  PENDIENTE
+  /// Un proceso lo tiene tomado (`bloqueadoHasta`).
+  ENVIANDO
+  /// SAP devolvió el número de asiento.
+  ENVIADO
+  /// Error de negocio o reintentos agotados: hace falta una persona.
+  ERROR
+  /// La planilla cambió después de encolar: el payload ya no vale.
+  CANCELADO
+}
+
+enum TipoEnvioSap {
+  ASIENTO
+  /// Asiento inverso, al anular una planilla que ya estaba en SAP.
+  REVERSO
+}
+
+/// Conexión con el Service Layer de SAP B1 y comportamiento del envío.
+/// Una sola fila (id = "default"). La contraseña va cifrada (lib/seguridad/cifrado.ts).
+model IntegracionSap {
+  id                    String       @id @default("default")
+  activo                Boolean      @default(false)
+  /// https://servidor:50000/b1s/v1/
+  urlBase               String
+  companyDb             String
+  usuario               String
+  passwordCifrado       String?
+  modoEnvio             ModoEnvioSap @default(MANUAL)
+  incluirProvisiones    Boolean      @default(true)
+  porCentroCosto        Boolean      @default(false)
+  /// Dimensión de B1 (1 a 5) en la que viven los centros de costo.
+  dimensionCentro       Int          @default(1)
+  /// "PAGO" = fecha de pago de la planilla; "FIN_PERIODO" = último día del período.
+  fechaContable         String       @default("PAGO")
+  /// TransactionCode de B1 (4 caracteres), opcional.
+  codigoTransaccion     String?
+  /// Serie de numeración de asientos en B1, opcional.
+  serie                 Int?
+  /// Variables: {tipo} {desde} {hasta} {empresa}.
+  memoPlantilla         String       @default("Planilla {tipo} {desde} al {hasta}")
+  /// Longitudes leídas del $metadata del servidor en la última prueba.
+  longitudMemo          Int          @default(50)
+  longitudLineMemo      Int          @default(50)
+  longitudReferencia    Int          @default(100)
+  // ─── Base de datos de SAP (SQL Server), SÓLO LECTURA ─────────────────────
+  // Valida la base de la empresa y lista las empresas del servidor. La
+  // aplicación nunca escribe ahí: los asientos van por el Service Layer.
+  /// Servidor o IP del SQL Server de SAP. Vacío = sin conexión a la base.
+  dbServidor            String?
+  dbPuerto              Int          @default(1433)
+  /// Instancia nombrada (SERVIDOR\INSTANCIA); con ella el puerto lo resuelve SQL Browser.
+  dbInstancia           String?
+  dbUsuario             String?
+  /// Cifrada con AES-256-GCM, como la del Service Layer. Nunca sale de la API.
+  dbPasswordCifrado     String?
+  dbCifrar              Boolean      @default(false)
+  dbConfiarCertificado  Boolean      @default(true)
+  dbUltimaPruebaAt      DateTime?
+  dbUltimaPruebaOk      Boolean?
+  dbUltimaPruebaDetalle String?      @db.Text
+  /// SAP tiene varias sucursales: cada línea del asiento lleva BPLID.
+  usaSucursales         Boolean      @default(false)
+  /// Sucursal de SAP para las planillas de toda la empresa (sin sucursal local).
+  sapBplIdPorDefecto    Int?
+  /// "LOCAL" = catálogo propio; "SAP" = espejo del plan de cuentas de SAP (sólo lectura aquí).
+  catalogoOrigen        String       @default("LOCAL")
+  catalogoImportadoAt   DateTime?
+  catalogoCuentas       Int?
+  ultimaPruebaAt        DateTime?
+  ultimaPruebaOk        Boolean?
+  ultimaPruebaDetalle   String?      @db.Text
+  versionSap            String?
+  actualizadoPor        String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+}
+
+/// Cola de salida: un asiento (o su reverso) por planilla.
+///
+/// `hashCalculo` es la huella de cierre con la que se construyó `payload`:
+/// si la planilla se reabre y recalcula, el envío se cancela en vez de mandar
+/// cifras viejas. `payload` se guarda tal cual se envía, para la auditoría.
+model SapEnvioAsiento {
+  id               String         @id @default(cuid())
+  planillaId       String
+  planilla         Planilla       @relation(fields: [planillaId], references: [id])
+  tipo             TipoEnvioSap   @default(ASIENTO)
+  estado           EstadoEnvioSap @default(PENDIENTE)
+  hashCalculo      String
+  payload          Json
+  respuesta        Json?
+  /// JdtNum (TransId) del asiento en SAP.
+  sapTransId       Int?
+  /// Número visible del asiento en SAP.
+  sapNumero        Int?
+  intentos         Int            @default(0)
+  proximoIntentoAt DateTime?
+  bloqueadoHasta   DateTime?
+  errorCodigo      String?
+  errorMensaje     String?        @db.Text
+  errorTraducido   String?        @db.Text
+  esTransitorio    Boolean?
+  reversoDeId      String?
+  creadoPor        String?
+  enviadoAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  bitacora SapBitacora[]
+
+  @@unique([planillaId, tipo])
+  @@index([estado, proximoIntentoAt])
+}
+
+/// Un renglón por intento de envío, con lo que respondió SAP.
+model SapBitacora {
+  id          String          @id @default(cuid())
+  envioId     String
+  envio       SapEnvioAsiento @relation(fields: [envioId], references: [id], onDelete: Cascade)
+  intento     Int
+  httpStatus  Int?
+  duracionMs  Int
+  /// OK | RECONCILIADO | ERROR | CANCELADO
+  resultado   String
+  errorCodigo String?
+  mensaje     String?         @db.Text
+  createdAt   DateTime        @default(now())
+
+  @@index([envioId, createdAt])
+}
+
+// ─── DOCUMENTOS DESDE PLANTILLA ───────────────────────────────────────────────
+
+enum TipoPlantillaDocumento {
+  CONSTANCIA_TRABAJO
+  CONSTANCIA_SALARIO
+  CONTRATO
+  CARTA
+  OTRO
+}
+
+/// Constancias, contratos y cartas con variables del expediente ({{empleado.nombreCompleto}}).
+model PlantillaDocumento {
+  id             String                 @id @default(cuid())
+  codigo         String                 @unique
+  nombre         String
+  tipo           TipoPlantillaDocumento
+  /// Título impreso en el documento.
+  titulo         String
+  /// Texto con variables; los párrafos se separan con una línea en blanco.
+  contenido      String                 @db.Text
+  /// El empleado puede emitirla para sí mismo desde Mi espacio.
+  autoservicio   Boolean                @default(false)
+  /// Sembradas por la aplicación: se editan, no se borran.
+  esSistema      Boolean                @default(false)
+  activo         Boolean                @default(true)
+  actualizadoPor String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  emitidos DocumentoEmitido[]
+}
+
+/// Cada documento emitido, con el texto ya resuelto: el PDF se regenera idéntico.
+model DocumentoEmitido {
+  id              String             @id @default(cuid())
+  /// Correlativo por año, p. ej. 2026-000123.
+  folio           String             @unique
+  plantillaId     String
+  plantilla       PlantillaDocumento @relation(fields: [plantillaId], references: [id])
+  empleadoId      String
+  empleado        Empleado           @relation(fields: [empleadoId], references: [id])
+  destinatario    String?
+  titulo          String
+  contenido       String             @db.Text
+  firmanteNombre  String?
+  firmanteCargo   String?
+  emitidoPor      String?
+  porAutoservicio Boolean            @default(false)
+  anulado         Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+
+  @@index([empleadoId, createdAt])
+}
+
+// ─── SOLICITUDES DE PRÉSTAMO Y ANTICIPO ───────────────────────────────────────
+
+enum TipoSolicitudPrestamo {
+  PRESTAMO
+  ADELANTO
+}
+
+enum EstadoSolicitudPrestamo {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  CANCELADA
+}
+
+/// El empleado la pide en Mi espacio; al aprobarla se crea la deducción a plazo.
+model SolicitudPrestamo {
+  id                 String                  @id @default(cuid())
+  empleadoId         String
+  empleado           Empleado                @relation(fields: [empleadoId], references: [id])
+  tipo               TipoSolicitudPrestamo
+  monto              Decimal                 @db.Decimal(12, 2)
+  cuotas             Int
+  /// Cuota por período de pago de la planilla del empleado.
+  cuotaPeriodo       Decimal                 @db.Decimal(12, 2)
+  motivo             String?                 @db.Text
+  estado             EstadoSolicitudPrestamo @default(PENDIENTE)
+  /// Límite de descuento estimado al solicitar (Arts. 371 y 372 C.T.).
+  limiteCuotaPeriodo Decimal?                @db.Decimal(12, 2)
+  excedeLimite       Boolean                 @default(false)
+  resueltoPor        String?
+  resueltoAt         DateTime?
+  observacion        String?                 @db.Text
+  deduccionId        String?                 @unique
+  deduccion          DeduccionEmpleado?      @relation(fields: [deduccionId], references: [id])
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([estado, createdAt])
+  @@index([empleadoId])
+}
+
+// ─── INCAPACIDADES DEL IHSS ───────────────────────────────────────────────────
+
+enum TipoIncapacidad {
+  ENFERMEDAD_COMUN
+  ACCIDENTE_COMUN
+  RIESGO_PROFESIONAL
+  MATERNIDAD
+}
+
+enum EmisorIncapacidad {
+  IHSS
+  MEDICO_PRIVADO
+  SISTEMA_MEDICO_EMPRESA
+}
+
+/// Certificado de incapacidad temporal. Las reglas con que se registró quedan
+/// congeladas: la planilla de un período cerrado se puede reproducir aunque
+/// después cambien los parámetros.
+model Incapacidad {
+  id                    String            @id @default(cuid())
+  empleadoId            String
+  empleado              Empleado          @relation(fields: [empleadoId], references: [id])
+  tipo                  TipoIncapacidad
+  emisor                EmisorIncapacidad @default(IHSS)
+  fechaInicio           DateTime          @db.Date
+  fechaFin              DateTime          @db.Date
+  dias                  Int
+  numeroCertificado     String?
+  /// Prórroga de otra incapacidad: no reinicia los días a cargo del patrono.
+  prorrogaDeId          String?
+  prorrogaDe            Incapacidad?      @relation("ProrrogaIncapacidad", fields: [prorrogaDeId], references: [id])
+  prorrogas             Incapacidad[]     @relation("ProrrogaIncapacidad")
+  /// Días iniciales que paga el patrono al 100 % (Art. 71 Reglamento IHSS 2020).
+  diasPatrono           Int
+  /// Porcentaje del salario que paga el IHSS como subsidio desde el día siguiente.
+  porcentajeSubsidio    Decimal           @db.Decimal(5, 2)
+  /// Porcentaje del salario que el patrono sigue pagando en los días del IHSS.
+  porcentajeComplemento Decimal           @db.Decimal(5, 2)
+  archivoUrl            String?
+  observacion           String?           @db.Text
+  anulada               Boolean           @default(false)
+  registradoPor         String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([empleadoId, fechaInicio])
+  @@index([fechaInicio, fechaFin])
+}
+
+// ─── HORARIOS Y TURNOS ────────────────────────────────────────────────────────
+
+/// Arts. 321 y 322 C.T.: diurna 8 h, mixta 7 h, nocturna 6 h diarias como máximo.
+enum TipoJornada {
+  DIURNA
+  MIXTA
+  NOCTURNA
+}
+
+model Turno {
+  id                 String      @id @default(cuid())
+  codigo             String      @unique
+  nombre             String
+  tipoJornada        TipoJornada @default(DIURNA)
+  /// "HH:MM". Una salida anterior a la entrada significa que cruza la medianoche.
+  horaEntrada        String
+  horaSalida         String
+  /// Horas ordinarias; por encima empieza la extra.
+  jornadaHoras       Decimal     @db.Decimal(4, 2)
+  almuerzoMinutos    Int         @default(60)
+  almuerzoDesdeHoras Decimal     @default(6) @db.Decimal(4, 2)
+  /// Minutos de gracia antes de contar una llegada tarde.
+  toleranciaMinutos  Int         @default(5)
+  /// Días laborales ISO (1 = lunes … 7 = domingo), separados por coma.
+  diasLaborales      String      @default("1,2,3,4,5")
+  /// Turno de quien no tiene asignación. Sólo uno.
+  esPorDefecto       Boolean     @default(false)
+  activo             Boolean     @default(true)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  asignaciones AsignacionTurno[]
+}
+
+/// Qué turno tiene un empleado desde una fecha. La vigente es la de `desde` más reciente.
+model AsignacionTurno {
+  id         String    @id @default(cuid())
+  empleadoId String
+  empleado   Empleado  @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  turnoId    String
+  turno      Turno     @relation(fields: [turnoId], references: [id])
+  desde      DateTime  @db.Date
+  hasta      DateTime? @db.Date
+  creadoPor  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([empleadoId, desde])
+}
+
+// ─── FORMATOS DE ARCHIVO PARA EL BANCO ────────────────────────────────────────
+
+/// Disposición del archivo de pago que exige cada banco. Se configura, no se programa.
+model FormatoBanco {
+  id             String   @id @default(cuid())
+  nombre         String
+  /// Sólo empleados cuyo banco contenga este texto, sin distinguir mayúsculas. Vacío = todos.
+  filtroBanco    String?
+  /// DELIMITADO | ANCHO_FIJO
+  tipo           String   @default("DELIMITADO")
+  delimitador    String   @default(",")
+  encabezado     Boolean  @default(true)
+  /// [{ campo, titulo, ancho?, alinear?, relleno?, valor?, formato? }]
+  columnas       Json
+  extension      String   @default("csv")
+  /// utf8 | latin1
+  codificacion   String   @default("utf8")
+  /// CRLF | LF
+  finLinea       String   @default("CRLF")
+  /// Línea final con número de registros y total.
+  lineaTotal     Boolean  @default(false)
+  esSistema      Boolean  @default(false)
+  activo         Boolean  @default(true)
+  actualizadoPor String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ─── SALUD Y FAMILIA ──────────────────────────────────────────────────────────
+
+/// Datos de salud: sólo con `empleados.salud` o el propio empleado.
+model FichaMedica {
+  id                   String   @id @default(cuid())
+  empleadoId           String   @unique
+  empleado             Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  tipoSangre           String?
+  alergias             String?  @db.Text
+  enfermedadesCronicas String?  @db.Text
+  medicamentos         String?  @db.Text
+  discapacidad         String?
+  medicoNombre         String?
+  medicoTelefono       String?
+  observaciones        String?  @db.Text
+  actualizadoPor       String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+enum Parentesco {
+  CONYUGE
+  COMPANERO_HOGAR
+  HIJO
+  PADRE
+  MADRE
+  HERMANO
+  OTRO
+}
+
+model FamiliarEmpleado {
+  id                   String     @id @default(cuid())
+  empleadoId           String
+  empleado             Empleado   @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  nombre               String
+  parentesco           Parentesco
+  fechaNacimiento      DateTime?  @db.Date
+  identidad            String?
+  telefono             String?
+  esDependiente        Boolean    @default(false)
+  esContactoEmergencia Boolean    @default(false)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@index([empleadoId])
+}
+
+/// A quién se pagan las prestaciones en caso de muerte del trabajador.
+model BeneficiarioEmpleado {
+  id         String     @id @default(cuid())
+  empleadoId String
+  empleado   Empleado   @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  nombre     String
+  parentesco Parentesco
+  identidad  String?
+  telefono   String?
+  porcentaje Decimal    @db.Decimal(5, 2)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([empleadoId])
+}

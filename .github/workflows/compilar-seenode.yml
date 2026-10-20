@@ -1,0 +1,85 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Compila NominaHN para Seenode y deja el resultado en la rama seenode-deploy.
+#
+# POR QUÉ SE COMPILA AQUÍ Y NO EN SEENODE. `next build` necesita unos 2 GB de
+# RAM (medido en un contenedor Linux con este mismo proyecto): con 512 MB, los
+# del plan Basic, y aun con 1,5 GB, lo termina el OOM killer. Seenode no
+# documenta si su build tiene más memoria que la instancia. Un runner de GitHub
+# tiene 7 GB y es gratis en el plan Free; Seenode sólo arranca el resultado.
+#
+# Flujo: push a main → esquema aplicado → tipos, pruebas y vulnerabilidades
+# críticas → build standalone → commit en seenode-deploy → Seenode
+# (Auto-deploy) lo despliega. Si algo falla aquí, no se despliega nada.
+#
+# ESQUEMA. El despliegue no toca la base. Si el push cambia prisma/schema.prisma
+# o prisma/sql/ y la huella de prisma/esquema-aplicado.txt (la escribe
+# `npm run db:remota -- aplicar`) no coincide, el flujo se detiene antes de
+# compilar: el código nuevo no llega a producción buscando columnas que no
+# existen. Ver scripts/huella-esquema.mjs.
+#
+# NO usa secretos. Las variables de abajo son relleno para que src/lib/env.ts
+# deje compilar; ninguna queda incrustada en el paquete (verificado buscando
+# los valores en el standalone). Los secretos reales sólo viven en Envs de
+# Seenode.
+# ═══════════════════════════════════════════════════════════════════════════
+name: Compilar para Seenode
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Dos pushes seguidos no deben escribir la rama a la vez.
+concurrency:
+  group: seenode-deploy
+  cancel-in-progress: false
+
+jobs:
+  compilar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TZ: America/Tegucigalpa
+      DATABASE_URL: postgresql://compilacion:compilacion@127.0.0.1:1/compilacion
+      NEXTAUTH_SECRET: compilacion-compilacion-compilacion-0000
+      AUTH_URL: https://compilacion.invalid
+      CRON_SECRET: compilacion-compilacion-0000
+      CIFRADO_KEY: compilacion-compilacion-compilacion-0000
+      UPLOAD_DIR: /tmp/compilacion
+      MAX_FILE_SIZE: "5242880"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      # Acciones fijadas por SHA: una etiqueta se puede mover, un commit no.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Antes de instalar nada: si falta migrar, se sabe en segundos.
+      - name: Esquema aplicado en Seenode
+        run: node scripts/huella-esquema.mjs verificar
+
+      - name: Dependencias
+        run: npm ci
+
+      - name: Tipos
+        run: npx tsc --noEmit
+
+      - name: Pruebas
+        run: npx vitest run
+
+      - name: Vulnerabilidades críticas en dependencias de producción
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Compilar (standalone)
+        run: node scripts/compilar-produccion.mjs
+
+      - name: Publicar en la rama seenode-deploy
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash scripts/publicar-rama-despliegue.sh

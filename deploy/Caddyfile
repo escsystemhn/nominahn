@@ -1,0 +1,42 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# NominaHN — proxy inverso con TLS automático (Let's Encrypt).
+#
+#   sudo cp Caddyfile /etc/caddy/Caddyfile
+#   sudo sed -i 's/__DOMINIO__/demo.tudominio.hn/' /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# NO se repiten aquí HSTS, X-Frame-Options, nosniff, Referrer-Policy ni
+# Permissions-Policy: next.config.ts ya las emite en todas las respuestas y
+# duplicarlas hace que algunos navegadores descarten el par entero.
+# ═══════════════════════════════════════════════════════════════════════════
+
+__DOMINIO__ {
+	encode zstd gzip
+
+	# Una demo con datos de nómina no debe acabar en ningún buscador.
+	header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+
+	# MAX_FILE_SIZE por defecto es 5 MB (src/lib/uploads.ts); se corta un poco
+	# por encima para que el rechazo lo dé la app con su mensaje, no el proxy.
+	request_body {
+		max_size 6MB
+	}
+
+	reverse_proxy 127.0.0.1:3009 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output file /var/log/caddy/nominahn.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+	}
+
+	# ─── Opcional: limitar quién puede ver la demo ───────────────────────────
+	# Si conoces la IP de salida del cliente, descomenta y sustituye. Es la
+	# medida que más reduce la superficie de ataque durante los 30 días.
+	#
+	# @ajenos not remote_ip 200.115.x.x/32 190.x.x.x/32
+	# respond @ajenos "No disponible" 403
+}

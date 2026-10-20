@@ -1,0 +1,3 @@
+# Los scripts de shell corren en Linux (Seenode, GitHub Actions, el VPS): con
+# saltos de línea de Windows, bash falla con «$'\r': command not found».
+*.sh text eol=lf
