@@ -1,0 +1,10 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/configuracion/sap/mapeo/route.js")
+R.c("server/chunks/src_lib_03wt464._.js")
+R.c("server/chunks/[root-of-the-server]__0mkkrq_._.js")
+R.c("server/chunks/_1ncgpk1._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/_next-internal_server_app_api_configuracion_sap_mapeo_route_actions_0cos3g_.js")
+R.m(50048)
+module.exports=R.m(50048).exports

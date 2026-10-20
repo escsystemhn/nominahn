@@ -1,0 +1,11 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/biometrico/sync/[id]/route.js")
+R.c("server/chunks/_0oglqoy._.js")
+R.c("server/chunks/src_lib_payroll_calculos-hn_ts_0z3ahsf._.js")
+R.c("server/chunks/src_lib_1zf0u23._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/[root-of-the-server]__0jtqx3u._.js")
+R.c("server/chunks/_next-internal_server_app_api_biometrico_sync_[id]_route_actions_1m-vbhd.js")
+R.m(92314)
+module.exports=R.m(92314).exports

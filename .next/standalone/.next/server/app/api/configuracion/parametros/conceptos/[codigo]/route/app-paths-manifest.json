@@ -1,0 +1,3 @@
+{
+  "/api/configuracion/parametros/conceptos/[codigo]/route": "app/api/configuracion/parametros/conceptos/[codigo]/route.js"
+}

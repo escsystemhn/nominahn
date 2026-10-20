@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/permisos/[id]/route.js")
+R.c("server/chunks/[root-of-the-server]__157fkky._.js")
+R.c("server/chunks/src_lib_payroll_calculos-hn_ts_0z3ahsf._.js")
+R.c("server/chunks/_0-__-7l._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/_next-internal_server_app_api_permisos_[id]_route_actions_1a7zlh1.js")
+R.m(60941)
+module.exports=R.m(60941).exports

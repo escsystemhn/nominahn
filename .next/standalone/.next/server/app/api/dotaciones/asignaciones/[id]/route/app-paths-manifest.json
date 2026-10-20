@@ -1,0 +1,3 @@
+{
+  "/api/dotaciones/asignaciones/[id]/route": "app/api/dotaciones/asignaciones/[id]/route.js"
+}

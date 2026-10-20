@@ -1,0 +1,3 @@
+module.exports=[34811,i=>{"use strict";var o=i.i(69719);let t=o.z.object({nombre:o.z.string().trim().min(1,"requerido").max(120),titulo:o.z.string().trim().min(1,"requerido").max(150),tipo:o.z.enum(["CONSTANCIA_TRABAJO","CONSTANCIA_SALARIO","CONTRATO","CARTA","OTRO"]),contenido:o.z.string().trim().min(1,"requerido").max(2e4),autoservicio:o.z.boolean().optional(),activo:o.z.boolean().optional()});i.s(["schemaPlantilla",0,t])}];
+
+//# sourceMappingURL=src_lib_documentos_esquemas_ts_1lt2cny._.js.map

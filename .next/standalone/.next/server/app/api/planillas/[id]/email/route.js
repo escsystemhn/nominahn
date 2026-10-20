@@ -1,0 +1,11 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/planillas/[id]/email/route.js")
+R.c("server/chunks/src_lib_prisma_ts_1zbg3mu._.js")
+R.c("server/chunks/[root-of-the-server]__1qbzmzp._.js")
+R.c("server/chunks/_0k4eq_o._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__003vc_y._.js")
+R.c("server/chunks/_next-internal_server_app_api_planillas_[id]_email_route_actions_01tdj35.js")
+R.m(77220)
+module.exports=R.m(77220).exports

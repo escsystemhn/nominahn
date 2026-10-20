@@ -1,0 +1,3 @@
+module.exports=[89050,e=>{"use strict";let r=[{v:"CONYUGE",l:"Cónyuge"},{v:"COMPANERO_HOGAR",l:"Compañero(a) de hogar"},{v:"HIJO",l:"Hijo(a)"},{v:"PADRE",l:"Padre"},{v:"MADRE",l:"Madre"},{v:"HERMANO",l:"Hermano(a)"},{v:"OTRO",l:"Otro"}];e.s(["etiquetaParentesco",0,function(e){return r.find(r=>r.v===e)?.l??e},"validarPorcentajes",0,function(e){if(0===e.length)return{ok:!0};if(e.some(e=>!(e>0)||e>100))return{ok:!1,error:"Cada porcentaje debe ser mayor que 0 y no mayor que 100."};let r=Math.round(100*e.reduce((e,r)=>e+r,0))/100;return Math.abs(r-100)>.01?{ok:!1,error:`Los porcentajes suman ${r.toFixed(2)} %; deben sumar 100 %.`}:{ok:!0}}])}];
+
+//# sourceMappingURL=src_lib_empleados_familia_ts_0lrn2cd._.js.map

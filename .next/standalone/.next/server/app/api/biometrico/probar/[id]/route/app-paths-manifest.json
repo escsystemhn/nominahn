@@ -1,0 +1,3 @@
+{
+  "/api/biometrico/probar/[id]/route": "app/api/biometrico/probar/[id]/route.js"
+}

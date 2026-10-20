@@ -1,0 +1,12 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/planillas/[id]/route.js")
+R.c("server/chunks/src_lib_payroll_estado-planilla_ts_0i85aod._.js")
+R.c("server/chunks/[root-of-the-server]__1d_ycoz._.js")
+R.c("server/chunks/_19w5d_7._.js")
+R.c("server/chunks/src_lib_payroll_1lbqnnh._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/src_lib_1x4idxh._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_next-internal_server_app_api_planillas_[id]_route_actions_0-crwbm.js")
+R.m(90725)
+module.exports=R.m(90725).exports

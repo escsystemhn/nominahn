@@ -1,0 +1,10 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/decimos/route.js")
+R.c("server/chunks/src_lib_payroll_calculos-hn_ts_0z3ahsf._.js")
+R.c("server/chunks/_1x6-pim._.js")
+R.c("server/chunks/[root-of-the-server]__1--wl7b._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/_next-internal_server_app_api_decimos_route_actions_013com2.js")
+R.m(19091)
+module.exports=R.m(19091).exports

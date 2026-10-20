@@ -1,0 +1,3 @@
+{
+  "/api/planillas/[id]/sap/route": "app/api/planillas/[id]/sap/route.js"
+}

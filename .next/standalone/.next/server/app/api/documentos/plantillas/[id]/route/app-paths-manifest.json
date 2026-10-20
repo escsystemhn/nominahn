@@ -1,0 +1,3 @@
+{
+  "/api/documentos/plantillas/[id]/route": "app/api/documentos/plantillas/[id]/route.js"
+}

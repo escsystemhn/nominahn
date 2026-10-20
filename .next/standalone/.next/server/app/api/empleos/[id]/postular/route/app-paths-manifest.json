@@ -1,0 +1,3 @@
+{
+  "/api/empleos/[id]/postular/route": "app/api/empleos/[id]/postular/route.js"
+}

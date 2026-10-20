@@ -1,0 +1,217 @@
+{
+  "app": {
+    "[project]/src/app/(auth)/login/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/asistencia/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/biometrico/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/capacitaciones/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/centros-costo/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/configuracion/competencias/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/configuracion/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/dashboard/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/deducciones/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/documentos/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/dotaciones/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/empleados/[id]/editar/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/empleados/[id]/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/empleados/nuevo/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/empleados/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/evaluaciones/nine-box/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/evaluaciones/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/evaluaciones/skill-gap/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/incapacidades/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/mi-cuenta/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/mi-espacio/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/organigrama/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/plan-cuentas/configuracion/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/plan-cuentas/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/planillas/[id]/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/planillas/nueva/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/planillas/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/politicas/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/portal/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/prestaciones/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/reclutamiento/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/reportes/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/talento/competencias/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/turnos/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/usuarios/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/(dashboard)/usuarios/perfiles/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/_not-found/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/empleos/[id]/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/empleos/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/evaluar/[token]/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/licencia/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ],
+    "[project]/src/app/page": [
+      "static/media/03fc1b4a8d284b5e-s.p.0wiir8udbzjvx.woff2",
+      "static/media/99e609270109b47d-s.p.40sczeszzbjw1.woff2",
+      "static/media/effe91970fc4db64-s.p.0oace-s_gkfks.woff2"
+    ]
+  },
+  "appUsingSizeAdjust": true,
+  "pages": {},
+  "pagesUsingSizeAdjust": false
+}

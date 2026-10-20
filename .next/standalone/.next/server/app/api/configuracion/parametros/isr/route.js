@@ -1,0 +1,10 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/configuracion/parametros/isr/route.js")
+R.c("server/chunks/_1jvxg3v._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__174jalm._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/src_lib_payroll_calculos-hn_ts_0z3ahsf._.js")
+R.c("server/chunks/_next-internal_server_app_api_configuracion_parametros_isr_route_actions_0_vod5r.js")
+R.m(9370)
+module.exports=R.m(9370).exports

@@ -1,0 +1,3 @@
+{
+  "/api/planillas/[id]/route": "app/api/planillas/[id]/route.js"
+}

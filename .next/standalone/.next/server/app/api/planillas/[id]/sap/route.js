@@ -1,0 +1,11 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/planillas/[id]/sap/route.js")
+R.c("server/chunks/[root-of-the-server]__1d_ycoz._.js")
+R.c("server/chunks/src_lib_payroll_1lbqnnh._.js")
+R.c("server/chunks/_1vcxx1x._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/src_lib_1x4idxh._.js")
+R.c("server/chunks/_next-internal_server_app_api_planillas_[id]_sap_route_actions_0wpjx_9.js")
+R.m(41776)
+module.exports=R.m(41776).exports

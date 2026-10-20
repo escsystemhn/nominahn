@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/plan-cuentas/mapeo/route.js")
+R.c("server/chunks/_01h0b_3._.js")
+R.c("server/chunks/src_lib_payroll_1lbqnnh._.js")
+R.c("server/chunks/[root-of-the-server]__1d_ycoz._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_next-internal_server_app_api_plan-cuentas_mapeo_route_actions_0jtkuyg.js")
+R.m(47180)
+module.exports=R.m(47180).exports

@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/mis-boletas/[id]/route.js")
+R.c("server/chunks/_0jpnh0h._.js")
+R.c("server/chunks/[root-of-the-server]__1qbzmzp._.js")
+R.c("server/chunks/[root-of-the-server]__003vc_y._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/_next-internal_server_app_api_mis-boletas_[id]_route_actions_07iuukl.js")
+R.m(20485)
+module.exports=R.m(20485).exports

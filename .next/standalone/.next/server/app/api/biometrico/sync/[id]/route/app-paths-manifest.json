@@ -1,0 +1,3 @@
+{
+  "/api/biometrico/sync/[id]/route": "app/api/biometrico/sync/[id]/route.js"
+}

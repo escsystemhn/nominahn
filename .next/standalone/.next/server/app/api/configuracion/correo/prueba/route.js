@@ -1,0 +1,10 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/configuracion/correo/prueba/route.js")
+R.c("server/chunks/src_lib_prisma_ts_0k1v4yc._.js")
+R.c("server/chunks/[root-of-the-server]__1qbzmzp._.js")
+R.c("server/chunks/[root-of-the-server]__10w5hgz._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/_next-internal_server_app_api_configuracion_correo_prueba_route_actions_1stdk_s.js")
+R.m(21687)
+module.exports=R.m(21687).exports

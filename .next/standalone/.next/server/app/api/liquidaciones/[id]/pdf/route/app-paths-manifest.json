@@ -1,0 +1,3 @@
+{
+  "/api/liquidaciones/[id]/pdf/route": "app/api/liquidaciones/[id]/pdf/route.js"
+}

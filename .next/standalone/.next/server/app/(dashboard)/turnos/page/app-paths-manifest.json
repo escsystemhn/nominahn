@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/turnos/page": "app/(dashboard)/turnos/page.js"
+}

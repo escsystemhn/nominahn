@@ -1,0 +1,7 @@
+{
+  "name": "nominahn-seenode",
+  "private": true,
+  "description": "Servidor compilado por GitHub Actions. No editar: se regenera en cada push a main.",
+  "engines": { "node": ">=22.12.0 <25" },
+  "scripts": { "start": "node --max-old-space-size=320 scripts/iniciar-produccion.mjs" }
+}

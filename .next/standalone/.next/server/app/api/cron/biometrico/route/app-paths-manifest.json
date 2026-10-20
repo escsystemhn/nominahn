@@ -1,0 +1,3 @@
+{
+  "/api/cron/biometrico/route": "app/api/cron/biometrico/route.js"
+}
