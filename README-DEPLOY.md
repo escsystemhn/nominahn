@@ -184,6 +184,15 @@ write permissions**: el flujo necesita escribir esa rama.
 La URL va en `DATABASE_URL_REMOTA`, **no** en `.env.local` (que apunta a tu
 base real de desarrollo); el script se niega a trabajar contra `localhost`.
 
+**Lo más fácil** es el asistente: pide la URI sin mostrarla, y pregunta antes de
+revisar, aplicar, subir la huella y sembrar.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\preparar-bd-seenode.ps1
+```
+
+Si prefieres los comandos sueltos:
+
 ```powershell
 $env:DATABASE_URL_REMOTA = '<URI PÚBLICA de la pestaña Connection>'
 
