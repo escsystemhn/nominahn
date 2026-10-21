@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { JORNADA_HORAS } from "@/lib/payroll/calculos-hn";
 import type { ReglaDescanso } from "./descanso";
 import { cruzaMedianoche, describirTurno, type TipoJornada } from "./turnos-reglas";
+import { tipoJornada as tipoJornadaPorHoras, horaDeMinutos, MAX_DIARIO_H, PAUSA_COMPUTABLE_MAX_MIN } from "@/lib/horarios/ley";
 
 export interface Turno {
   /** Horas de la jornada ordinaria. Por encima de esto empieza la extra. */
@@ -88,10 +89,51 @@ export function turnoDesdeFila(t: FilaTurno): Turno {
   };
 }
 
-type ClienteLectura = Pick<typeof prisma, "asignacionTurno" | "turno">;
+type ClienteLectura = Pick<typeof prisma, "asignacionTurno" | "turno" | "horarioDia">;
+
+/**
+ * Turno de un día que viene de un horario rotativo PUBLICADO (src/lib/horarios).
+ * Es la fuente más específica: dice qué hizo esa persona ESE día, no qué turno
+ * tiene en general. La pausa de hasta 30 min de una jornada continua cuenta como
+ * trabajo (Art. 326) y no se descuenta; un almuerzo más largo sí.
+ */
+function turnoDePlan(d: {
+  entrada: number; salida: number; pausa: number;
+  turno: { id: string; nombre: string; jornadaHoras: { toString(): string } | number; almuerzoDesdeHoras: { toString(): string } | number; toleranciaMinutos: number } | null;
+}): Turno {
+  const tipo = tipoJornadaPorHoras(d.entrada, d.salida);
+  const legal = MAX_DIARIO_H[tipo];
+  return {
+    id: d.turno?.id ?? null,
+    nombre: d.turno?.nombre ?? "Horario del plan",
+    tipoJornada: tipo,
+    horaEntrada: horaDeMinutos(d.entrada),
+    horaSalida: horaDeMinutos(d.salida),
+    jornadaHoras: d.turno ? Math.min(legal, Number(d.turno.jornadaHoras)) : legal,
+    descanso: { almuerzoMinutos: d.pausa > PAUSA_COMPUTABLE_MAX_MIN ? d.pausa : 0, almuerzoDesdeHoras: d.turno ? Number(d.turno.almuerzoDesdeHoras) : 6 },
+    cruzaMedianoche: d.salida > 1440,
+    toleranciaMinutos: d.turno?.toleranciaMinutos ?? 0,
+    diasLaborales: "1,2,3,4,5,6,7",
+  };
+}
 
 /** El turno vigente de un empleado en una fecha de calendario. */
 export async function turnoDe(empleadoId: string, fecha: Date, db: ClienteLectura = prisma): Promise<Turno> {
+  const planificado = await db.horarioDia
+    .findFirst({
+      where: { empleadoId, fecha, estado: "TURNO", entrada: { not: null }, salida: { not: null }, plan: { estado: "PUBLICADO" } },
+      include: { turno: true },
+    })
+    .catch((e: unknown) => {
+      // Base sin las tablas de horarios todavía (P2021): se sigue como antes de
+      // que existieran, en vez de tumbar la asistencia y la planilla.
+      if ((e as { code?: string })?.code === "P2021") return null;
+      throw e;
+    });
+  if (planificado && planificado.entrada !== null && planificado.salida !== null) {
+    return turnoDePlan({ entrada: planificado.entrada, salida: planificado.salida, pausa: planificado.pausa, turno: planificado.turno });
+  }
+
   const asignacion = await db.asignacionTurno.findFirst({
     where: { empleadoId, desde: { lte: fecha }, OR: [{ hasta: null }, { hasta: { gte: fecha } }], turno: { activo: true } },
     orderBy: { desde: "desc" },

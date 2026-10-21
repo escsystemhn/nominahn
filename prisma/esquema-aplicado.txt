@@ -1,3 +1,3 @@
 # Huella del esquema aplicado en la base de Seenode con `npm run db:remota -- aplicar`.
 # La comprueba .github/workflows/compilar-seenode.yml antes de desplegar. No la edite a mano.
-3369f67ca58db766885612e35008773366f22466ed477209a867b6c50b357417
+e9c62bfa6cfde31ea74c4930507931f62af693b7a88679bd6d7bcae473b3dc3d

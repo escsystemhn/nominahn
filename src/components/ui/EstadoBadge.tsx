@@ -29,6 +29,9 @@ const ESTADOS: Record<string, { label: string; tono: Tono }> = {
   RECHAZADO: { label: "Rechazado", tono: "error" },
   RECHAZADA: { label: "Rechazada", tono: "error" },
   CANCELADA: { label: "Cancelada", tono: "neutro" },
+  // Plan de horarios
+  PUBLICADO: { label: "Publicado", tono: "ok" },
+  ARCHIVADO: { label: "Archivado", tono: "neutro" },
   // Tipo de planilla
   MENSUAL: { label: "Mensual", tono: "neutro" },
   QUINCENAL: { label: "Quincenal", tono: "neutro" },

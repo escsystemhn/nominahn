@@ -182,6 +182,11 @@ const navItems: NavEntry[] = [
         permisos: ["asistencia.turnos", "asistencia.ver"],
       },
       {
+        href: "/horarios",
+        label: "Horarios rotativos",
+        permisos: ["asistencia.turnos", "asistencia.ver"],
+      },
+      {
         href: "/incapacidades",
         label: "Incapacidades",
         permisos: ["asistencia.incapacidades"],

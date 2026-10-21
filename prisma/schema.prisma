@@ -171,6 +171,8 @@ model Sucursal {
   departamentos Departamento[]
   empleados     Empleado[]
   planillas     Planilla[]
+  coberturas       CoberturaSucursal[]
+  horariosAtencion HorarioAtencion[]
 }
 
 model Departamento {
@@ -313,6 +315,7 @@ model Puesto {
   departamento       Departamento        @relation(fields: [departamentoId], references: [id])
   empleados          Empleado[]
   puestosCompetencia PuestoCompetencia[]
+  coberturas         CoberturaSucursal[]
 }
 
 // ─── USUARIOS ────────────────────────────────────────────────────────────────
@@ -588,6 +591,8 @@ model Empleado {
   solicitudesPrestamo  SolicitudPrestamo[]
   incapacidades        Incapacidad[]
   asignacionesTurno    AsignacionTurno[]
+  preferenciaHorario   PreferenciaHorario?
+  horarioDias          HorarioDia[]
   fichaMedica          FichaMedica?
   familiares           FamiliarEmpleado[]
   beneficiarios        BeneficiarioEmpleado[]
@@ -1980,6 +1985,7 @@ model Turno {
   updatedAt          DateTime    @updatedAt
 
   asignaciones AsignacionTurno[]
+  horarioDias  HorarioDia[]
 }
 
 /// Qué turno tiene un empleado desde una fecha. La vigente es la de `desde` más reciente.
@@ -2086,4 +2092,128 @@ model BeneficiarioEmpleado {
   updatedAt  DateTime   @updatedAt
 
   @@index([empleadoId])
+}
+
+// ─── HORARIOS ROTATIVOS ───────────────────────────────────────────────────────
+// Planificación por día de varias sucursales: cobertura mínima por puesto y
+// franja, preferencias del personal y planes generados (src/lib/horarios). Un
+// plan PUBLICADO es la fuente más específica del turno de cada día (turnoDe).
+
+/// Personal mínimo de un puesto en una franja horaria de una sucursal.
+model CoberturaSucursal {
+  id         String   @id @default(cuid())
+  sucursalId String
+  sucursal   Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+  puestoId   String
+  puesto     Puesto   @relation(fields: [puestoId], references: [id], onDelete: Cascade)
+  /// Días ISO separados por coma (1 = lunes … 7 = domingo).
+  dias       String   @default("1,2,3,4,5,6,7")
+  /// "HH:MM". Una hora final igual o anterior a la inicial cruza la medianoche.
+  desde      String
+  hasta      String
+  minimo     Int
+  /// «Pico almuerzo», «Valle»…
+  etiqueta   String?
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([sucursalId])
+}
+
+/// Horario de atención al público de una sucursal, por día de la semana.
+model HorarioAtencion {
+  id         String   @id @default(cuid())
+  sucursalId String
+  sucursal   Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+  /// Día ISO (1 = lunes … 7 = domingo).
+  dia        Int
+  apertura   String?
+  cierre     String?
+  cerrado    Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([sucursalId, dia])
+}
+
+/// Disponibilidad y restricciones de horario de una persona (estudios, salud, traslados).
+model PreferenciaHorario {
+  id                   String   @id @default(cuid())
+  empleadoId           String   @unique
+  empleado             Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  permiteTraslado      Boolean  @default(false)
+  /// Sucursales aceptadas para traslado; vacío = cualquiera.
+  sucursalesTraslado   String[] @default([])
+  /// "HH:MM"; vacío = sin restricción.
+  noAntesDe            String?
+  noDespuesDe          String?
+  /// Días ISO en que rige la restricción de horas; vacío = todos.
+  diasRestriccion      String   @default("")
+  /// Nada nocturno ni mixto.
+  soloDiurna           Boolean  @default(false)
+  diasNoDisponible     String   @default("")
+  diaDescansoPreferido Int?
+  motivo               String?
+  updatedAt            DateTime @updatedAt
+}
+
+enum EstadoPlanHorario {
+  BORRADOR
+  PUBLICADO
+  ARCHIVADO
+}
+
+enum EstadoDiaHorario {
+  TURNO
+  DESCANSO
+  AUSENCIA
+}
+
+/// Plan de horarios rotativos de un período (semana, quincena o mes).
+model PlanHorario {
+  id            String            @id @default(cuid())
+  nombre        String
+  desde         DateTime          @db.Date
+  hasta         DateTime          @db.Date
+  sucursalesIds String[]
+  estado        EstadoPlanHorario @default(BORRADOR)
+  /// Reglas con que se generó (descanso entre jornadas, víspera, rotación…).
+  reglas        Json
+  /// Conteo de alertas al último guardado: { errores, avisos, faltantes }.
+  resumen       Json?
+  creadoPor     String?
+  publicadoPor  String?
+  publicadoAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  dias          HorarioDia[]
+
+  @@index([estado, desde])
+}
+
+/// Un día de una persona en un plan.
+model HorarioDia {
+  id         String           @id @default(cuid())
+  planId     String
+  plan       PlanHorario      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  empleadoId String
+  empleado   Empleado         @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  fecha      DateTime         @db.Date
+  estado     EstadoDiaHorario
+  /// Sucursal donde trabaja ese día (otra que la suya = traslado).
+  sucursalId String?
+  turnoId    String?
+  turno      Turno?           @relation(fields: [turnoId], references: [id])
+  /// Minutos desde la medianoche del día; la salida puede pasar de 1440.
+  entrada    Int?
+  salida     Int?
+  pausa      Int              @default(0)
+  esTraslado Boolean          @default(false)
+  /// Editado a mano después de generarse.
+  manual     Boolean          @default(false)
+  /// Ausencia (vacaciones, incapacidad) o razón de un descanso adicional.
+  motivo     String?
+
+  @@unique([planId, empleadoId, fecha])
+  @@index([empleadoId, fecha])
 }
