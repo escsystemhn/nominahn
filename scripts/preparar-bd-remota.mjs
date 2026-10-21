@@ -53,6 +53,15 @@ try {
 if (!["postgres:", "postgresql:"].includes(url.protocol)) abortar("DATABASE_URL_REMOTA debe empezar por postgres:// o postgresql://.");
 
 const host = url.hostname.replace(/^\[|\]$/g, "");
+// Un ejemplo pegado tal cual (`...copiada...`, `host-externo`) pasa por URL
+// válida y terminaba en un «Can't reach database server» que no explica nada.
+const hostValido = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(host) || host.includes(":");
+if (!hostValido || /copiada|host-externo|uri-p[uú]blica|usuario:clave/i.test(decodeURIComponent(remota))) {
+  abortar(
+    `DATABASE_URL_REMOTA es el texto de ejemplo, no la URI de tu base (servidor: «${host}»).\n` +
+      "  Cópiala completa de Seenode: Databases → tu base → Connection → formato URI → host público → show password."
+  );
+}
 if (/^(localhost|127\.|0\.0\.0\.0$|::1$|host\.docker\.internal$)/i.test(host)) {
   abortar(`DATABASE_URL_REMOTA apunta a este equipo (${host}). Este script es sólo para la base de Seenode.`);
 }
