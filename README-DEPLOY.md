@@ -251,7 +251,7 @@ repositorio privado → `nominahn`.
 | Root directory | vacío |
 | Build command | `node -v` (ya viene compilado; no instales nada) |
 | Start command | `node --max-old-space-size=320 scripts/iniciar-produccion.mjs` |
-| Port | **80** (igual que la variable `PORT`) |
+| Port | **3000** (igual que la variable `PORT`; no uses 80: sin privilegios de root la app no puede abrir puertos menores que 1024) |
 | Instance | **Basic** |
 
 Carga las variables (sección 8) **antes** de **Create instance**; si el
@@ -294,7 +294,7 @@ node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"      # 
 | Variable | Valor | Secreta |
 |---|---|---|
 | `TZ` | `America/Tegucigalpa` (literal) | no |
-| `PORT` | `80` (el número del campo *Port*) | no |
+| `PORT` | `3000` (el número del campo *Port*) | no |
 | `DATABASE_URL` | URI de la base terminada en `?sslmode=require&uselibpqcompat=true` (host privado si el panel lo muestra; si no, el público) | **sí** |
 | `AUTH_URL` | `https://<servicio>.seenode.app` | no |
 | `NEXTAUTH_URL` | igual que `AUTH_URL` | no |

@@ -10,6 +10,7 @@ export {};
 try {
   await import("@/lib/env");
 } catch (e) {
-  console.error(`[arranque] ${e instanceof Error ? e.message : String(e)}`);
+  // console.log y no console.error: el panel de Runtime de Seenode no mostraba stderr.
+  console.log(`[arranque] ${e instanceof Error ? e.message : String(e)}`);
   process.exit(1);
 }
