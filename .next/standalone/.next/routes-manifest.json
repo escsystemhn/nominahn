@@ -144,6 +144,22 @@
       "namedRegex": "^/api/centros\\-costo/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/configuracion/departamentos/[id]",
+      "regex": "^/api/configuracion/departamentos/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/departamentos/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/divisiones/[id]",
+      "regex": "^/api/configuracion/divisiones/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/divisiones/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/parametros/conceptos/[codigo]",
       "regex": "^/api/configuracion/parametros/conceptos/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -598,6 +614,24 @@
       "namedRegex": "^/api/configuracion/departamentos(?:/)?$"
     },
     {
+      "page": "/api/configuracion/divisiones",
+      "regex": "^/api/configuracion/divisiones(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/divisiones(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/empresa",
+      "regex": "^/api/configuracion/empresa(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/empresa(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/estructura",
+      "regex": "^/api/configuracion/estructura(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/estructura(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/parametros",
       "regex": "^/api/configuracion/parametros(?:/)?$",
       "routeKeys": {},
@@ -608,6 +642,18 @@
       "regex": "^/api/configuracion/parametros/isr(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/configuracion/parametros/isr(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/parametros/isr-acumulados",
+      "regex": "^/api/configuracion/parametros/isr\\-acumulados(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/parametros/isr\\-acumulados(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/parametros/isr-metodo",
+      "regex": "^/api/configuracion/parametros/isr\\-metodo(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/parametros/isr\\-metodo(?:/)?$"
     },
     {
       "page": "/api/configuracion/parametros/vecinal",

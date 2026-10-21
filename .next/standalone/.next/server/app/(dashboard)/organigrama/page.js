@@ -11,7 +11,7 @@ R.c("server/chunks/ssr/node_modules_next_dist_client_components_builtin_unauthor
 R.c("server/chunks/ssr/node_modules_next_dist_client_components_builtin_global-error_0q-w892.js")
 R.c("server/chunks/ssr/src_lib_licencia_06cvi56._.js")
 R.c("server/chunks/ssr/node_modules_next_0vd9udm._.js")
-R.c("server/chunks/ssr/[root-of-the-server]__2094iw8._.js")
+R.c("server/chunks/ssr/[root-of-the-server]__07-uzsf._.js")
 R.c("server/chunks/ssr/_1iz6rva._.js")
 R.c("server/chunks/ssr/_081v4yg._.js")
 R.c("server/chunks/ssr/node_modules_next_dist_18_d8l1._.js")

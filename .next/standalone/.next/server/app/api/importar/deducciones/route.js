@@ -1,10 +1,10 @@
 var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/importar/deducciones/route.js")
 R.c("server/chunks/src_lib_0vojdwy._.js")
-R.c("server/chunks/[root-of-the-server]__0_vyw_o._.js")
+R.c("server/chunks/[root-of-the-server]__1vg195q._.js")
 R.c("server/chunks/_0jrp44g._.js")
-R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
-R.c("server/chunks/_10x7qq8._.js")
 R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
 R.c("server/chunks/_next-internal_server_app_api_importar_deducciones_route_actions_0fe-syc.js")
 R.m(68509)
 module.exports=R.m(68509).exports

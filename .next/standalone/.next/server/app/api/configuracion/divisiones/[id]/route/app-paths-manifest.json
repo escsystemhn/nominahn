@@ -1,0 +1,3 @@
+{
+  "/api/configuracion/divisiones/[id]/route": "app/api/configuracion/divisiones/[id]/route.js"
+}
