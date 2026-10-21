@@ -185,7 +185,7 @@ La URL va en `DATABASE_URL_REMOTA`, **no** en `.env.local` (que apunta a tu
 base real de desarrollo); el script se niega a trabajar contra `localhost`.
 
 ```powershell
-$env:DATABASE_URL_REMOTA = "<URI PÚBLICA de la pestaña Connection>"
+$env:DATABASE_URL_REMOTA = '<URI PÚBLICA de la pestaña Connection>'
 
 npm run db:remota -- revisar      # sólo lee: muestra el SQL pendiente (69 tablas la 1.ª vez)
 npm run db:remota -- aplicar      # db push SIN aceptar pérdida de datos + índices y triggers
@@ -196,12 +196,12 @@ git commit -m "Esquema aplicado en Seenode"
 git push
 
 # Demo: cuentas por rol con una clave propia (nunca Admin1234! en internet)
-$env:SEED_DEMO_PASSWORD = "<10+ caracteres con letra, número y símbolo>"
+$env:SEED_DEMO_PASSWORD = '<10+ caracteres con letra, número y símbolo>'
 npm run db:remota -- sembrar demo-con-datos      # o: sembrar demo
 
 # …o instalación limpia: una sola cuenta de administrador
-# $env:SEED_ADMIN_EMAIL = "admin@suempresa.hn"; $env:SEED_ADMIN_PASSWORD = "<clave fuerte>"
-# $env:SEED_EMPRESA_NOMBRE = "Nombre de la empresa"
+# $env:SEED_ADMIN_EMAIL = 'admin@suempresa.hn'; $env:SEED_ADMIN_PASSWORD = '<clave fuerte>'
+# $env:SEED_EMPRESA_NOMBRE = 'Nombre de la empresa'
 # npm run db:remota -- sembrar instalacion
 
 Remove-Item Env:DATABASE_URL_REMOTA, Env:SEED_DEMO_PASSWORD, Env:SEED_ADMIN_PASSWORD -ErrorAction SilentlyContinue

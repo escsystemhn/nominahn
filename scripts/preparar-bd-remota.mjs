@@ -38,7 +38,8 @@ const remota = process.env.DATABASE_URL_REMOTA?.trim();
 if (!remota) {
   abortar(
     "Falta DATABASE_URL_REMOTA. En PowerShell:\n" +
-      '    $env:DATABASE_URL_REMOTA = "postgres://usuario:clave@host-externo:puerto/base"\n' +
+      // Comillas simples: en PowerShell las dobles expanden cualquier `$` de la clave.
+      "    $env:DATABASE_URL_REMOTA = 'postgres://usuario:clave@host-externo:puerto/base'\n" +
       "  Cópiela de la pestaña Connection de la base en Seenode (formato URI)."
   );
 }

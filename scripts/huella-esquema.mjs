@@ -99,7 +99,8 @@ if (esPrincipal && process.argv[2] === "verificar") {
     const pasos =
       "En tu equipo, dentro de nominahn/:\n\n" +
       "```powershell\n" +
-      '$env:DATABASE_URL_REMOTA = "<URI pública de la base>"\n' +
+      // Comillas simples: en PowerShell las dobles expanden cualquier `$` de la clave.
+      "$env:DATABASE_URL_REMOTA = '<URI pública de la base>'\n" +
       "npm run db:remota -- revisar\n" +
       "npm run db:remota -- aplicar\n" +
       `git add ${ARCHIVO_HUELLA}\n` +
