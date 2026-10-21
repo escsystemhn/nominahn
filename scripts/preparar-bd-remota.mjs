@@ -82,7 +82,32 @@ function ejecutar(rutaCli, args, envExtra = {}) {
   if (r.status !== 0) abortar(`Falló: ${rutaCli} ${args.join(" ")}`);
 }
 
-const prisma = (...args) => ejecutar("node_modules/prisma/build/index.js", args);
+/**
+ * Prisma CLI, con dos cuidados que `ejecutar` no tiene:
+ *
+ *   · stdin cerrado: en una terminal interactiva `db push` PREGUNTA si se
+ *     aceptan los cambios que borran datos, y un «y» por inercia los aplicaría.
+ *     Sin teclado, Prisma se detiene en vez de preguntar.
+ *   · reintento si se corta la conexión (P1001/P1017): la base de Seenode está
+ *     en Frankfurt y un corte momentáneo tumbaba `aplicar` justo después de que
+ *     `revisar` hubiera conectado bien con los mismos datos.
+ */
+function prisma(...args) {
+  for (let intento = 1; ; intento++) {
+    const r = spawnSync(process.execPath, [join(raiz, "node_modules/prisma/build/index.js"), ...args], {
+      cwd: raiz,
+      stdio: ["ignore", "inherit", "pipe"],
+      env: entorno,
+      encoding: "utf8",
+    });
+    process.stderr.write(r.stderr ?? "");
+    if (r.status === 0) return;
+    const corte = /P1001|P1017|Can't reach database server|Server has closed the connection/.test(r.stderr ?? "");
+    if (!corte || intento === 3) abortar(`Falló: prisma ${args.join(" ")}`);
+    console.log(`\n  La conexión con la base se cortó; reintento ${intento + 1} de 3 en 5 s…\n`);
+    spawnSync(process.execPath, ["-e", "setTimeout(() => {}, 5000)"]);
+  }
+}
 const tsx = (archivo, envExtra) => ejecutar("node_modules/tsx/dist/cli.mjs", [archivo], envExtra);
 
 async function confirmar(queHara) {
