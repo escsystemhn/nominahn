@@ -2,10 +2,10 @@ var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/biome
 R.c("server/chunks/src_lib_asistencia_0_nrh1b._.js")
 R.c("server/chunks/src_lib_payroll_calculos-hn_ts_0z3ahsf._.js")
 R.c("server/chunks/_17o6oyg._.js")
-R.c("server/chunks/_1s7bnwl._.js")
-R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
 R.c("server/chunks/_10x7qq8._.js")
-R.c("server/chunks/[root-of-the-server]__1zmbos1._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
+R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/[root-of-the-server]__1lgcs7n._.js")
 R.c("server/chunks/_next-internal_server_app_api_biometrico_pines_route_actions_0kotj_b.js")
 R.m(91749)
 module.exports=R.m(91749).exports

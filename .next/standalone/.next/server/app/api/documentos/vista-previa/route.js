@@ -1,10 +1,10 @@
 var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/documentos/vista-previa/route.js")
 R.c("server/chunks/src_lib_payroll_calculos-hn_ts_0z3ahsf._.js")
-R.c("server/chunks/[root-of-the-server]__11y9yzt._.js")
+R.c("server/chunks/[root-of-the-server]__0o0kz12._.js")
 R.c("server/chunks/[root-of-the-server]__191pcve._.js")
-R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
-R.c("server/chunks/_10x7qq8._.js")
 R.c("server/chunks/_1s7bnwl._.js")
+R.c("server/chunks/_10x7qq8._.js")
+R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
 R.c("server/chunks/_next-internal_server_app_api_documentos_vista-previa_route_actions_0y5ur63.js")
 R.m(17986)
 module.exports=R.m(17986).exports

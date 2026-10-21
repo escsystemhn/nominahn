@@ -256,6 +256,30 @@
       "namedRegex": "^/api/formatos\\-banco/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/horarios/planes/[id]",
+      "regex": "^/api/horarios/planes/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/horarios/planes/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/planes/[id]/estado",
+      "regex": "^/api/horarios/planes/([^/]+?)/estado(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/horarios/planes/(?<nxtPid>[^/]+?)/estado(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/planes/[id]/exportar",
+      "regex": "^/api/horarios/planes/([^/]+?)/exportar(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/horarios/planes/(?<nxtPid>[^/]+?)/exportar(?:/)?$"
+    },
+    {
       "page": "/api/incapacidades/[id]",
       "regex": "^/api/incapacidades/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -470,6 +494,14 @@
         "nxtPtoken": "nxtPtoken"
       },
       "namedRegex": "^/evaluar/(?<nxtPtoken>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/horarios/[id]",
+      "regex": "^/horarios/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/horarios/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
       "page": "/planillas/[id]",
@@ -750,6 +782,30 @@
       "regex": "^/api/formatos\\-banco/vista\\-previa(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/formatos\\-banco/vista\\-previa(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/cobertura",
+      "regex": "^/api/horarios/cobertura(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/horarios/cobertura(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/planes",
+      "regex": "^/api/horarios/planes(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/horarios/planes(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/preferencias",
+      "regex": "^/api/horarios/preferencias(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/horarios/preferencias(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/reglas",
+      "regex": "^/api/horarios/reglas(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/horarios/reglas(?:/)?$"
     },
     {
       "page": "/api/importar/deducciones",
@@ -1062,6 +1118,12 @@
       "regex": "^/favicon\\.ico(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/horarios",
+      "regex": "^/horarios(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/horarios(?:/)?$"
     },
     {
       "page": "/incapacidades",
