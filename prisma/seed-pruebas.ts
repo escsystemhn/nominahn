@@ -883,7 +883,9 @@ async function main() {
 
         if (DRY) throw new EnsayoRevertido();
       },
-      { timeout: 600_000, maxWait: 20_000 }
+      // Una hora: contra la base de Seenode (Frankfurt, ~0,4 s por consulta)
+      // los miles de consultas no caben en diez minutos y se revertía todo.
+      { timeout: 3_600_000, maxWait: 20_000 }
     );
   } catch (e) {
     if (!(e instanceof EnsayoRevertido)) throw e;

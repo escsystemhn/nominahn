@@ -27,7 +27,11 @@ import { join } from "node:path";
 import { ARCHIVO_HUELLA, huellaEsquema, huellaRegistrada, registrarHuella } from "./huella-esquema.mjs";
 
 const raiz = process.cwd();
-const [accion, modoSiembra] = process.argv.slice(2);
+const [accion, modoSiembra] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+// `--confirmar=<nombre de la base>` sustituye a la pregunta cuando no hay terminal
+// interactiva (un asistente o una sesión automatizada). Exige el mismo nombre
+// exacto que la pregunta: no es un «sí a todo».
+const confirmacionArg = process.argv.find((a) => a.startsWith("--confirmar="))?.slice("--confirmar=".length);
 
 function abortar(mensaje) {
   console.error(`\n✗ ${mensaje}\n`);
@@ -113,7 +117,12 @@ const tsx = (archivo, envExtra) => ejecutar("node_modules/tsx/dist/cli.mjs", [ar
 async function confirmar(queHara) {
   console.log(`\n  Base de destino: ${visible}`);
   console.log(`  Se va a: ${queHara}\n`);
-  if (!process.stdin.isTTY) abortar("Hace falta una terminal interactiva para confirmar.");
+  if (confirmacionArg !== undefined) {
+    if (confirmacionArg !== base) abortar(`--confirmar=${confirmacionArg} no coincide con la base (${base}). No se hizo nada.`);
+    console.log(`  Confirmado con --confirmar=${base}.`);
+    return;
+  }
+  if (!process.stdin.isTTY) abortar(`Hace falta una terminal interactiva para confirmar (o --confirmar=${base}).`);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const respuesta = (await rl.question(`  Escriba el nombre de la base (${base}) para continuar: `)).trim();
   rl.close();

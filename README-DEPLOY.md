@@ -172,12 +172,20 @@ write permissions**: el flujo necesita escribir esa rama.
 
 ### 6.1 Crearla
 
-1. **Databases → Create database → PostgreSQL 18.4**, instancia **Basic**.
-   (La prueba de 7 días empieza al crear la primera base o app: crea las dos el
-   mismo día.)
-2. Pestaña **Connection**, formato **URI**. Copia dos cosas:
-   - la del **host privado** → `DATABASE_URL` del servicio web;
-   - la del **host público** → sólo para preparar la base desde tu equipo.
+1. **Databases → Create database → PostgreSQL 18** (el panel ofreció 18.6),
+   instancia **Basic**. (La prueba de 7 días empieza al crear la primera base o
+   app: crea las dos el mismo día.)
+2. Pestaña **Connection** → **show password**. Muestra host, port, database,
+   username y password (y, según el formato elegido, la URI). En la base
+   probada sólo aparecía un host, el público
+   (`up-de-fra1-postgresql-4.db.run-on-seenode.com`, puerto 11550), y sirve
+   tanto para tu equipo como para el servicio web.
+
+**La base sólo acepta conexiones cifradas** («no pg_hba.conf entry … no
+encryption») y firma con una CA propia. Toda URI hacia ella termina en
+`?sslmode=require&uselibpqcompat=true`: sin `uselibpqcompat`, la librería `pg`
+(la de la app, las semillas y los triggers) trata `require` como verificación
+completa del certificado y falla. El asistente lo añade solo.
 
 ### 6.2 Esquema y datos iniciales (desde tu equipo)
 
@@ -224,8 +232,10 @@ demás cuentas (`rrhh@`, `contador@`, `gerente@`, `supervisor@`, `auditor@`,
 `empleado@nominahn.hn` y, con datos, `empleado.sps@` y `supervisor.sps@`) usan
 `SEED_DEMO_PASSWORD`.
 
-> Si la conexión falla por SSL o `pg_hba.conf`, añade `?sslmode=require` al
-> final de la URI.
+> Si la conexión falla por SSL o `pg_hba.conf`, falta
+> `?sslmode=require&uselibpqcompat=true` al final de la URI. Si sale «Can't
+> reach database server» (P1001) después de que `revisar` funcionó, fue un
+> corte de red: el script reintenta solo hasta 3 veces.
 
 ---
 
@@ -285,7 +295,7 @@ node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"      # 
 |---|---|---|
 | `TZ` | `America/Tegucigalpa` (literal) | no |
 | `PORT` | `80` (el número del campo *Port*) | no |
-| `DATABASE_URL` | URI con el **host privado** | **sí** |
+| `DATABASE_URL` | URI de la base terminada en `?sslmode=require&uselibpqcompat=true` (host privado si el panel lo muestra; si no, el público) | **sí** |
 | `AUTH_URL` | `https://<servicio>.seenode.app` | no |
 | `NEXTAUTH_URL` | igual que `AUTH_URL` | no |
 | `NEXTAUTH_SECRET` | 32 bytes base64 | **sí** |
@@ -423,6 +433,8 @@ comprobando si puede usar `eval`; lo bloquea la CSP y sigue sin él. Es esperado
 | R15 | Baja | `/api/biometrico/dispositivos` sólo exige sesión: cualquier rol ve las IP de los relojes | Pendiente previo |
 | R16 | Baja | Un administrador puede apuntar SAP, SMTP o un reloj a cualquier host (SSRF por diseño, incluida la red privada de Seenode) | Aceptado: sólo administradores |
 | R17 | Informativa | El límite de intentos vive en memoria: se reinicia con cada despliegue | Aceptado para una instancia |
+| R18 | Baja | La conexión a la base va cifrada, pero sin verificar el certificado del servidor (CA propia de Seenode, cuyo nombre no coincide con el host): un intermediario en la red podría suplantarlo | Aceptado para la prueba; para producción, pedir a Seenode su CA y usar `sslmode=verify-ca` con `sslrootcert` |
+| R19 | Media | La contraseña de la base se compartió en una conversación de chat al desplegar | **Pendiente**: cambiarla con **Change password** y actualizar `DATABASE_URL` en Envs |
 
 Revisado sin hallazgos: inyección SQL (sólo Prisma, sin `$queryRawUnsafe`),
 comandos (un único `execFile` con argumentos fijos, sólo en la edición

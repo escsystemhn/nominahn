@@ -48,20 +48,20 @@ try {
     $clave = $null
   }
   if ($uri -notmatch '^postgres(ql)?://') { throw 'Eso no parece una URI de Seenode: debe empezar con postgres://' }
+  # La base de Seenode rechaza conexiones sin cifrar («no pg_hba.conf entry … no
+  # encryption») y firma con una CA propia. `uselibpqcompat=true` hace que la
+  # librería pg (triggers y semillas) entienda `require` como libpq: cifrar sin
+  # exigir la CA, igual que Prisma. Con `require` a secas, pg lo trata como
+  # verify-full y falla por el certificado.
+  if ($uri -notmatch 'sslmode=') {
+    $separador = if ($uri.Contains('?')) { '&' } else { '?' }
+    $uri = "$uri${separador}sslmode=require&uselibpqcompat=true"
+  }
   $env:DATABASE_URL_REMOTA = $uri
   $uri = $null
 
   Paso '1. Revisar (solo lee la base)'
   node scripts/preparar-bd-remota.mjs revisar
-  if ($LASTEXITCODE -ne 0 -and $env:DATABASE_URL_REMOTA -notmatch 'sslmode=') {
-    # Muchos PostgreSQL gestionados sólo aceptan conexiones cifradas desde fuera.
-    if (Confirmar "`nNo se pudo conectar. Probar de nuevo exigiendo SSL (sslmode=require)?") {
-      $separador = if ($env:DATABASE_URL_REMOTA.Contains('?')) { '&' } else { '?' }
-      $env:DATABASE_URL_REMOTA = "$($env:DATABASE_URL_REMOTA)${separador}sslmode=require"
-      Paso '1. Revisar de nuevo, con SSL'
-      node scripts/preparar-bd-remota.mjs revisar
-    }
-  }
   if ($LASTEXITCODE -ne 0) { throw 'No se pudo leer la base. Revisa el mensaje de arriba.' }
 
   if (Confirmar "`nCrear las tablas ahora?") {
