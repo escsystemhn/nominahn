@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
     where,
     include: {
       sucursal: { select: { codigo: true, nombre: true } },
-      departamento: { select: { nombre: true } },
+      departamento: { select: { nombre: true, division: { select: { nombre: true } } } },
       puesto: { select: { nombre: true } },
       supervisor: { select: { codigo: true } },
       centroCosto: { select: { codigo: true } },
@@ -136,6 +136,7 @@ export async function GET(req: NextRequest) {
     banco: (e) => e.banco ?? "",
     cuenta_bancaria: (e) => e.cuentaBancaria ?? "",
     sucursal: (e) => e.sucursal.codigo,
+    division: (e) => e.departamento.division?.nombre ?? "",
     departamento: (e) => e.departamento.nombre,
     puesto: (e) => e.puesto?.nombre ?? "",
     supervisor_codigo: (e) => e.supervisor?.codigo ?? "",

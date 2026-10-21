@@ -41,7 +41,9 @@ type FormData = z.infer<typeof schema>;
 
 interface Props {
   sucursales: Array<{ id: string; nombre: string }>;
-  departamentos: Array<{ id: string; nombre: string; sucursalId: string }>;
+  /** Vacío si el administrador no habilitó el nivel División. */
+  divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
+  departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   puestos: Array<{ id: string; nombre: string; departamentoId: string }>;
 }
 
@@ -68,15 +70,19 @@ function Field({
   );
 }
 
-export default function NuevoEmpleadoForm({ sucursales, departamentos, puestos }: Props) {
+export default function NuevoEmpleadoForm({ sucursales, divisiones, departamentos, puestos }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"personal" | "laboral">("personal");
+  // La división no se guarda en el empleado (sale de su departamento): sólo
+  // acota la lista de departamentos.
+  const [divisionId, setDivisionId] = useState("");
 
   const {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
@@ -84,7 +90,13 @@ export default function NuevoEmpleadoForm({ sucursales, departamentos, puestos }
   // Compiler no puede memoizar, y por eso descartaba la optimización de todo el
   // componente. `useWatch` es la variante suscrita a un campo concreto.
   const sucursalId = useWatch({ control, name: "sucursalId" });
-  const deptsFiltrados = departamentos.filter((d) => !sucursalId || d.sucursalId === sucursalId);
+  const departamentoId = useWatch({ control, name: "departamentoId" });
+  const divisionesSucursal = divisiones.filter((v) => v.sucursalId === sucursalId);
+  const deptsFiltrados = departamentos.filter((d) =>
+    (!sucursalId || d.sucursalId === sucursalId) && (!divisionId || d.divisionId === divisionId)
+  );
+  const nombreDivision = (id: string | null) => divisiones.find((v) => v.id === id)?.nombre;
+  const puestosFiltrados = puestos.filter((p) => p.departamentoId === departamentoId);
 
   async function onSubmit(data: FormData) {
     setLoading(true);
@@ -241,25 +253,44 @@ export default function NuevoEmpleadoForm({ sucursales, departamentos, puestos }
               </select>
             </Field>
             <Field label="Sucursal *" error={errors.sucursalId?.message}>
-              <select {...register("sucursalId")} className={fieldClass}>
+              {/* Cambiar de sucursal deja sin sentido la división, el departamento y el puesto elegidos. */}
+              <select
+                {...register("sucursalId", { onChange: () => { setDivisionId(""); setValue("departamentoId", ""); setValue("puestoId", ""); } })}
+                className={fieldClass}
+              >
                 <option value="">Seleccione...</option>
                 {sucursales.map((s) => (
                   <option key={s.id} value={s.id}>{s.nombre}</option>
                 ))}
               </select>
             </Field>
+            {divisiones.length > 0 && (
+              <Field label="División">
+                <select
+                  value={divisionId}
+                  disabled={!sucursalId || divisionesSucursal.length === 0}
+                  onChange={(e) => { setDivisionId(e.target.value); setValue("departamentoId", ""); setValue("puestoId", ""); }}
+                  className={fieldClass}
+                >
+                  <option value="">{sucursalId && divisionesSucursal.length === 0 ? "La sucursal no tiene divisiones" : "Todas"}</option>
+                  {divisionesSucursal.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+                </select>
+              </Field>
+            )}
             <Field label="Departamento *" error={errors.departamentoId?.message}>
-              <select {...register("departamentoId")} className={fieldClass}>
+              <select {...register("departamentoId", { onChange: () => setValue("puestoId", "") })} className={fieldClass}>
                 <option value="">Seleccione...</option>
                 {deptsFiltrados.map((d) => (
-                  <option key={d.id} value={d.id}>{d.nombre}</option>
+                  <option key={d.id} value={d.id}>
+                    {!divisionId && nombreDivision(d.divisionId) ? `${d.nombre} (${nombreDivision(d.divisionId)})` : d.nombre}
+                  </option>
                 ))}
               </select>
             </Field>
             <Field label="Puesto" error={errors.puestoId?.message}>
-              <select {...register("puestoId")} className={fieldClass}>
+              <select {...register("puestoId")} className={fieldClass} disabled={!departamentoId}>
                 <option value="">Sin puesto</option>
-                {puestos.map((p) => (
+                {puestosFiltrados.map((p) => (
                   <option key={p.id} value={p.id}>{p.nombre}</option>
                 ))}
               </select>

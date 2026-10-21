@@ -74,6 +74,14 @@ export interface CatalogosEmpleados {
   sucursales: Map<string, string>;
   /** clave: `${sucursalId}|${nombre normalizado}` → id de departamento */
   departamentos: Map<string, string>;
+  /**
+   * clave: `${sucursalId}|${división normalizada}|${nombre normalizado}` → id.
+   * Con divisiones, una sucursal puede tener dos «Administración» (una por
+   * división); la división de la fila decide cuál.
+   */
+  departamentosPorDivision?: Map<string, string>;
+  /** Claves `${sucursalId}|${nombre}` repetidas en varias divisiones: sin división, la fila es ambigua. */
+  departamentosAmbiguos?: Set<string>;
   /** clave: `${departamentoId}|${nombre normalizado}` → id de puesto */
   puestos: Map<string, string>;
   /** código → empleado existente */
@@ -174,7 +182,7 @@ const norm = (s: string) =>
 export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmpleados> {
   const [sucursales, departamentos, puestos, empleados, centros, salarioMinimo] = await Promise.all([
     db.sucursal.findMany({ select: { id: true, codigo: true, nombre: true } }),
-    db.departamento.findMany({ select: { id: true, nombre: true, sucursalId: true } }),
+    db.departamento.findMany({ select: { id: true, nombre: true, sucursalId: true, division: { select: { nombre: true } } } }),
     db.puesto.findMany({ select: { id: true, nombre: true, departamentoId: true } }),
     // Se traen los campos completos: es lo que permite comparar y mostrar sólo
     // los cambios reales en la vista previa.
@@ -206,7 +214,14 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmplea
   }
 
   const mapaDepartamentos = new Map<string, string>();
-  for (const d of departamentos) mapaDepartamentos.set(`${d.sucursalId}|${norm(d.nombre)}`, d.id);
+  const departamentosPorDivision = new Map<string, string>();
+  const departamentosAmbiguos = new Set<string>();
+  for (const d of departamentos) {
+    const clave = `${d.sucursalId}|${norm(d.nombre)}`;
+    if (mapaDepartamentos.has(clave)) departamentosAmbiguos.add(clave);
+    mapaDepartamentos.set(clave, d.id);
+    if (d.division) departamentosPorDivision.set(`${d.sucursalId}|${norm(d.division.nombre)}|${norm(d.nombre)}`, d.id);
+  }
 
   const mapaPuestos = new Map<string, string>();
   for (const p of puestos) mapaPuestos.set(`${p.departamentoId}|${norm(p.nombre)}`, p.id);
@@ -234,6 +249,8 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmplea
   return {
     sucursales: mapaSucursales,
     departamentos: mapaDepartamentos,
+    departamentosPorDivision,
+    departamentosAmbiguos,
     puestos: mapaPuestos,
     porCodigo,
     porIdentidad,
@@ -560,9 +577,25 @@ export function validar(
         // anotado y repetirlo aquí sólo ensucia el informe.
         departamentoId = undefined;
       } else {
-        const encontrado = catalogos.departamentos.get(`${sucursalId}|${norm(deptoBruto!)}`);
+        // Con divisiones, el nombre solo puede repetirse dentro de la sucursal
+        // (una «Administración» por división): la columna División desempata.
+        const divisionBruta = celda(celdas, "division");
+        const conDivision = tiene("division") && !v.vacia(divisionBruta);
+        const claveSimple = `${sucursalId}|${norm(deptoBruto!)}`;
+        const encontrado = conDivision
+          ? catalogos.departamentosPorDivision?.get(`${sucursalId}|${norm(divisionBruta!)}|${norm(deptoBruto!)}`)
+          : catalogos.departamentosAmbiguos?.has(claveSimple)
+            ? undefined
+            : catalogos.departamentos.get(claveSimple);
         if (!encontrado) {
-          anota("Departamento", `La sucursal indicada no tiene un departamento llamado "${deptoBruto}".`);
+          anota(
+            "Departamento",
+            conDivision
+              ? `La división "${divisionBruta}" de esa sucursal no tiene un departamento llamado "${deptoBruto}".`
+              : catalogos.departamentosAmbiguos?.has(claveSimple)
+                ? `La sucursal tiene varios departamentos llamados "${deptoBruto}", uno por división: indique la columna División.`
+                : `La sucursal indicada no tiene un departamento llamado "${deptoBruto}".`
+          );
           departamentoId = undefined;
         } else {
           if (encontrado !== existente?.departamentoId) {

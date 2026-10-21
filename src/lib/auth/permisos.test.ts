@@ -163,6 +163,13 @@ describe("PERMISOS_POR_ROL — compatibilidad con el reparto anterior", () => {
     expect(tienePermiso(PERMISOS_POR_ROL.CONTADOR, "planillas.pagar")).toBe(true);
   });
 
+  it("modificar los datos de la empresa queda reservado al super administrador", () => {
+    expect(tienePermiso(PERMISOS_POR_ROL.SUPER_ADMIN, "configuracion.empresa")).toBe(true);
+    for (const rol of ["ADMIN_RRHH", "CONTADOR", "GERENTE", "SUPERVISOR", "AUDITOR", "EMPLEADO"] as const) {
+      expect(tienePermiso(PERMISOS_POR_ROL[rol], "configuracion.empresa"), rol).toBe(false);
+    }
+  });
+
   it("anular una planilla ya PAGADA queda reservado al super administrador", () => {
     expect(tienePermiso(PERMISOS_POR_ROL.SUPER_ADMIN, "planillas.anular_pagada")).toBe(true);
     for (const rol of ["ADMIN_RRHH", "CONTADOR", "GERENTE", "SUPERVISOR", "AUDITOR", "EMPLEADO"] as const) {
@@ -215,7 +222,7 @@ describe("PERMISOS_POR_ROL — compatibilidad con el reparto anterior", () => {
       "talento.capacitaciones_gestionar", "talento.reclutamiento_gestionar",
       "talento.dotaciones_gestionar",
       "prestaciones.generar", "prestaciones.salarios",
-      "configuracion.editar",
+      "configuracion.editar", "configuracion.empresa",
       "seguridad.usuarios_gestionar", "seguridad.perfiles",
     ];
     for (const permiso of escrituras) {

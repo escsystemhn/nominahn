@@ -7,11 +7,13 @@ import CorreoSalienteConfig from "./CorreoSalienteConfig";
 import SapConexionConfig from "./SapConexionConfig";
 import ParametrosLeyConfig from "./ParametrosLeyConfig";
 import FormatosBancoConfig from "./FormatosBancoConfig";
+import EstructuraOrganizacional, { type DepartamentoEstructura, type DivisionEstructura } from "./EstructuraOrganizacional";
+import EmpresaConfig from "./EmpresaConfig";
 
 // Formas mínimas que este componente realmente consume. Se declaran a mano en
 // vez de reusar los modelos de Prisma porque al cruzar la frontera cliente/
 // servidor los Decimal ya vienen serializados a number.
-interface EmpresaConfig {
+interface DatosEmpresa {
   id: string;
   nombre: string;
   rtn: string;
@@ -28,13 +30,6 @@ interface SucursalConfig {
   activa: boolean;
 }
 
-interface DepartamentoConfig {
-  id: string;
-  nombre: string;
-  activo: boolean;
-  sucursal: { nombre: string } | null;
-}
-
 interface SalarioMinimoConfig {
   monto: number;
   anio: number;
@@ -42,13 +37,20 @@ interface SalarioMinimoConfig {
 }
 
 interface Props {
-  empresa: EmpresaConfig | null;
+  empresa: DatosEmpresa | null;
   sucursales: SucursalConfig[];
-  departamentos: DepartamentoConfig[];
+  divisiones: DivisionEstructura[];
+  departamentos: DepartamentoEstructura[];
+  /** Opción del administrador: usar el nivel División (Sucursal → División → Departamento). */
+  divisionesHabilitadas: boolean;
   salarioMinimo: SalarioMinimoConfig | null;
   configs: Array<{ clave: string; valor: string; descripcion: string | null }>;
   /** Ve y edita la empresa, sucursales y parámetros (`configuracion.ver`/`.editar`). */
   puedeVer: boolean;
+  /** Crea y edita sucursales, divisiones y departamentos, y enciende las divisiones (`configuracion.editar`). */
+  puedeEditar: boolean;
+  /** Modifica nombre, RTN y contacto de la empresa (`configuracion.empresa`, por omisión sólo SUPER_ADMIN). */
+  puedeEditarEmpresa: boolean;
   /** Configura el correo saliente (`configuracion.correo`, por omisión sólo SUPER_ADMIN). */
   puedeCorreo: boolean;
   /** Edita IHSS, IVM, RAP, INFOP y las tablas ISR/vecinal (`configuracion.parametros`, por omisión sólo SUPER_ADMIN). */
@@ -60,7 +62,8 @@ interface Props {
 }
 
 export default function ConfiguracionClient({
-  empresa, sucursales, departamentos, salarioMinimo, configs, puedeVer, puedeCorreo, puedeParametros, puedeSap, puedeBanco,
+  empresa, sucursales, divisiones, departamentos, divisionesHabilitadas, salarioMinimo, configs,
+  puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco,
 }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<"empresa" | "sucursales" | "salarios" | "sistema" | "parametros" | "correo" | "sap" | "banco">(
@@ -68,8 +71,6 @@ export default function ConfiguracionClient({
   );
   const [loading, setLoading] = useState(false);
   const [modalAumentoColectivo, setModalAumentoColectivo] = useState(false);
-  const [modalSucursal, setModalSucursal] = useState(false);
-  const [modalDept, setModalDept] = useState(false);
 
   const [formAumento, setFormAumento] = useState({
     tipo: "PORCENTAJE",
@@ -78,9 +79,6 @@ export default function ConfiguracionClient({
     sucursalId: "",
     motivo: "Aumento de Salario Mínimo",
   });
-
-  const [formSucursal, setFormSucursal] = useState({ nombre: "", codigo: "", direccion: "", telefono: "" });
-  const [formDept, setFormDept] = useState({ nombre: "", codigo: "", sucursalId: sucursales[0]?.id ?? "" });
 
   async function aplicarAumentoColectivo() {
     const valor = formAumento.tipo === "PORCENTAJE" ? formAumento.porcentaje : formAumento.montoFijo;
@@ -107,47 +105,11 @@ export default function ConfiguracionClient({
     }
   }
 
-  async function crearSucursal() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/configuracion/sucursales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formSucursal, empresaId: empresa?.id }),
-      });
-      if (!res.ok) throw new Error();
-      setModalSucursal(false);
-      router.refresh();
-    } catch {
-      alert("No se pudo crear la sucursal. Intente nuevamente.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function crearDept() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/configuracion/departamentos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formDept),
-      });
-      if (!res.ok) throw new Error();
-      setModalDept(false);
-      router.refresh();
-    } catch {
-      alert("No se pudo crear el departamento. Intente nuevamente.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const tabs = [
     ...(puedeVer
       ? ([
           { key: "empresa", label: "Empresa" },
-          { key: "sucursales", label: "Sucursales y departamentos" },
+          { key: "sucursales", label: "Estructura organizacional" },
           { key: "salarios", label: "Salarios" },
           { key: "sistema", label: "Configuración general" },
         ] as const)
@@ -188,77 +150,19 @@ export default function ConfiguracionClient({
       {tab === "sap" && puedeSap && <SapConexionConfig />}
       {tab === "banco" && puedeBanco && <FormatosBancoConfig />}
 
-      {/* Empresa */}
-      {tab === "empresa" && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
-          <h2 className="font-semibold text-gray-800">Datos de la empresa</h2>
-          {empresa ? (
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-              {[
-                ["Nombre", empresa.nombre],
-                ["RTN", empresa.rtn],
-                ["Dirección", empresa.direccion],
-                ["Teléfono", empresa.telefono],
-                ["Email", empresa.email],
-              ].map(([k, v]) => (
-                <div key={k as string}>
-                  <span className="text-gray-500">{k}:</span>
-                  <span className="ml-2 font-medium">{(v as string) ?? "—"}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-400 text-sm">No hay empresa configurada</p>
-          )}
-        </div>
-      )}
+      {/* Empresa: la ve quien consulta la configuración; la edita sólo el administrador */}
+      {tab === "empresa" && <EmpresaConfig empresa={empresa} puedeEditar={puedeEditarEmpresa} />}
 
-      {/* Sucursales */}
+      {/* Estructura organizacional: sucursales, divisiones (opcionales) y departamentos */}
       {tab === "sucursales" && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="font-semibold text-gray-800">Sucursales ({sucursales.length})</h2>
-            <button onClick={() => setModalSucursal(true)} className="px-3 py-1.5 bg-blue-700 text-white text-xs font-medium rounded-lg hover:bg-blue-800">
-              Nueva sucursal
-            </button>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-gray-50 border-b"><th className="text-left px-4 py-3 font-medium text-gray-600">Nombre</th><th className="text-left px-4 py-3 font-medium text-gray-600">Código</th><th className="text-left px-4 py-3 font-medium text-gray-600">Dirección</th><th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th></tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {sucursales.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{s.nombre}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{s.codigo}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.direccion ?? "—"}</td>
-                    <td className="px-4 py-3"><span className={`px-1.5 py-0.5 rounded text-xs ${s.activa ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{s.activa ? "Activa" : "Inactiva"}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex justify-between items-center mt-4">
-            <h2 className="font-semibold text-gray-800">Departamentos ({departamentos.length})</h2>
-            <button onClick={() => setModalDept(true)} className="px-3 py-1.5 bg-blue-700 text-white text-xs font-medium rounded-lg hover:bg-blue-800">
-              Nuevo departamento
-            </button>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-gray-50 border-b"><th className="text-left px-4 py-3 font-medium text-gray-600">Nombre</th><th className="text-left px-4 py-3 font-medium text-gray-600">Sucursal</th><th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th></tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {departamentos.map((d) => (
-                  <tr key={d.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{d.nombre}</td>
-                    <td className="px-4 py-3 text-gray-600">{d.sucursal?.nombre}</td>
-                    <td className="px-4 py-3"><span className={`px-1.5 py-0.5 rounded text-xs ${d.activo ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{d.activo ? "Activo" : "Inactivo"}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <EstructuraOrganizacional
+          empresaId={empresa?.id ?? null}
+          sucursales={sucursales}
+          divisiones={divisiones}
+          departamentos={departamentos}
+          divisionesHabilitadas={divisionesHabilitadas}
+          puedeEditar={puedeEditar}
+        />
       )}
 
       {/* Salarios */}
@@ -357,61 +261,6 @@ export default function ConfiguracionClient({
         </div>
       )}
 
-      {/* Modal sucursal */}
-      {modalSucursal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-3">
-            <h3 className="font-semibold text-gray-900">Nueva sucursal</h3>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Nombre</label>
-              <input value={formSucursal.nombre} onChange={(e) => setFormSucursal((f) => ({ ...f, nombre: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Código</label>
-              <input value={formSucursal.codigo} onChange={(e) => setFormSucursal((f) => ({ ...f, codigo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: SPS-002" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Dirección</label>
-              <input value={formSucursal.direccion} onChange={(e) => setFormSucursal((f) => ({ ...f, direccion: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setModalSucursal(false)} className="flex-1 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button onClick={crearSucursal} disabled={loading || !formSucursal.nombre} className="flex-1 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
-                {loading ? "Guardando..." : "Crear"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal departamento */}
-      {modalDept && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-3">
-            <h3 className="font-semibold text-gray-900">Nuevo departamento</h3>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Nombre</label>
-              <input value={formDept.nombre} onChange={(e) => setFormDept((f) => ({ ...f, nombre: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Código</label>
-              <input value={formDept.codigo} onChange={(e) => setFormDept((f) => ({ ...f, codigo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Sucursal</label>
-              <select value={formDept.sucursalId} onChange={(e) => setFormDept((f) => ({ ...f, sucursalId: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setModalDept(false)} className="flex-1 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button onClick={crearDept} disabled={loading || !formDept.nombre} className="flex-1 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
-                {loading ? "Guardando..." : "Crear"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

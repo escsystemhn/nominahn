@@ -363,13 +363,21 @@ export function calcularISRMensual(
   p: ParametrosLegales = PARAMETROS_DEFAULT
 ): Money {
   const gravableAnual = maximo(money(salarioMensualGravable).times(12).minus(p.deduccionMedicaAnual), 0);
+  return redondear(isrAnualSegunTabla(gravableAnual, p.tablaISRAnual).div(12));
+}
 
-  if (p.tablaISRAnual.length === 0) return CERO;
+/**
+ * ISR ANUAL de una renta neta gravable anual según la tabla progresiva, sin
+ * redondear. Lo comparten el método estándar y el cálculo personalizado.
+ */
+export function isrAnualSegunTabla(rentaNetaAnual: MoneyInput, tabla: TramoISR[]): Money {
+  const gravableAnual = maximo(money(rentaNetaAnual), 0);
+  if (tabla.length === 0) return CERO;
 
   // Selección por cota inferior: se toma el tramo de mayor `desde` que no supere
   // la base gravable. Evita que un valor caído entre el `hasta` de un tramo y el
   // `desde` del siguiente (p.ej. 228,324.325) no matchee ningún tramo y tribute 0.
-  const tramos = [...p.tablaISRAnual].sort((a, b) => a.desde - b.desde);
+  const tramos = [...tabla].sort((a, b) => a.desde - b.desde);
   let tramo = tramos[0];
   for (const t of tramos) {
     if (gravableAnual.greaterThanOrEqualTo(t.desde)) tramo = t;
@@ -377,8 +385,7 @@ export function calcularISRMensual(
   }
 
   const excedente = maximo(gravableAnual.minus(tramo.excedenteDesde), 0);
-  const isrAnual = excedente.times(tramo.porcentaje).plus(tramo.cuotaFija);
-  return redondear(isrAnual.div(12));
+  return excedente.times(tramo.porcentaje).plus(tramo.cuotaFija);
 }
 
 // ─── CÁLCULO IMPUESTO VECINAL ─────────────────────────────────────────────────
@@ -769,6 +776,12 @@ export interface EntradaCalculoPlanilla {
    * por porcentaje. Es MENSUAL: se prorratea al período igual que el calculado.
    */
   ihssMontoFijoMensual?: MoneyInput | null;
+  /**
+   * ISR del PERÍODO ya calculado por otro método (el cálculo personalizado,
+   * `isr-personalizado.ts`). Si viene, reemplaza al del método estándar y los
+   * totales se arman con él. Por omisión, método estándar.
+   */
+  isrDelPeriodo?: MoneyInput | null;
 }
 
 /**
@@ -882,7 +895,9 @@ export function calcularPlanilla(
   const rapEmp = redondear(rap.empleado.times(factorPlanilla));
   // La AFP NO se prorratea: ya viene como importe del período.
   const afpEmp = afpPeriodo;
-  const isrProp = redondear(isrMensual.times(factorPlanilla));
+  const isrProp = entrada.isrDelPeriodo !== undefined && entrada.isrDelPeriodo !== null
+    ? redondear(entrada.isrDelPeriodo)
+    : redondear(isrMensual.times(factorPlanilla));
   const impVecProp = redondear(impVecinal.times(factorPlanilla));
   const ausencias = calcularDescuentoAusencia(salarioMensual, diasAusentes, parametros.factorDescuentoAusencia);
   const incapacidad = redondear(entrada.incapacidad ?? 0);

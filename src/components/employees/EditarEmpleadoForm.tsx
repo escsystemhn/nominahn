@@ -61,7 +61,9 @@ export interface EmpleadoEditable extends FormData {
 interface Props {
   empleado: EmpleadoEditable;
   sucursales: Array<{ id: string; nombre: string }>;
-  departamentos: Array<{ id: string; nombre: string; sucursalId: string }>;
+  /** Vacío si el administrador no habilitó el nivel División. */
+  divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
+  departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   puestos: Array<{ id: string; nombre: string; departamentoId: string }>;
   supervisores: Array<{ id: string; nombre: string }>;
   centrosCosto: Array<{ id: string; codigo: string; nombre: string }>;
@@ -119,6 +121,7 @@ function mensajeDeError(body: unknown, status: number): string {
 export default function EditarEmpleadoForm({
   empleado,
   sucursales,
+  divisiones,
   departamentos,
   puestos,
   supervisores,
@@ -130,11 +133,17 @@ export default function EditarEmpleadoForm({
   const [tab, setTab] = useState<"personal" | "laboral">("personal");
 
   const { id, ...valoresIniciales } = empleado;
+  // La división no se guarda en el empleado (sale de su departamento): sólo
+  // acota la lista de departamentos. Arranca en la de su departamento actual.
+  const [divisionId, setDivisionId] = useState(
+    () => departamentos.find((d) => d.id === valoresIniciales.departamentoId)?.divisionId ?? ""
+  );
 
   const {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors, dirtyFields },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -144,8 +153,20 @@ export default function EditarEmpleadoForm({
   // `useWatch` en vez de `watch()` por la misma razón que en el alta: `watch`
   // devuelve una función que el React Compiler no puede memoizar.
   const sucursalId = useWatch({ control, name: "sucursalId" });
+  const departamentoId = useWatch({ control, name: "departamentoId" });
   const salarioBase = useWatch({ control, name: "salarioBase" });
-  const deptsFiltrados = departamentos.filter((d) => !sucursalId || d.sucursalId === sucursalId);
+  const divisionesSucursal = divisiones.filter((v) => v.sucursalId === sucursalId);
+  const deptsFiltrados = departamentos.filter((d) =>
+    (!sucursalId || d.sucursalId === sucursalId) && (!divisionId || d.divisionId === divisionId)
+  );
+  const nombreDivision = (did: string | null) => divisiones.find((v) => v.id === did)?.nombre;
+  const puestosFiltrados = puestos.filter((p) => p.departamentoId === departamentoId);
+  // Al cambiar un nivel, los de abajo dejan de valer. `shouldDirty` hace que el
+  // puesto vacío viaje como `null` en vez de conservar uno de otro departamento.
+  const limpiarDesdeDepartamento = () => {
+    setValue("departamentoId", "", { shouldDirty: true });
+    setValue("puestoId", "", { shouldDirty: true });
+  };
   const salarioCambio = Number(salarioBase) !== Number(valoresIniciales.salarioBase);
 
   async function onSubmit(data: FormData) {
@@ -361,25 +382,43 @@ export default function EditarEmpleadoForm({
               </select>
             </Field>
             <Field label="Sucursal *" error={errors.sucursalId?.message}>
-              <select {...register("sucursalId")} className={fieldClass}>
+              <select
+                {...register("sucursalId", { onChange: () => { setDivisionId(""); limpiarDesdeDepartamento(); } })}
+                className={fieldClass}
+              >
                 <option value="">Seleccione...</option>
                 {sucursales.map((s) => (
                   <option key={s.id} value={s.id}>{s.nombre}</option>
                 ))}
               </select>
             </Field>
+            {divisiones.length > 0 && (
+              <Field label="División">
+                <select
+                  value={divisionId}
+                  disabled={!sucursalId || divisionesSucursal.length === 0}
+                  onChange={(e) => { setDivisionId(e.target.value); limpiarDesdeDepartamento(); }}
+                  className={fieldClass}
+                >
+                  <option value="">{sucursalId && divisionesSucursal.length === 0 ? "La sucursal no tiene divisiones" : "Todas"}</option>
+                  {divisionesSucursal.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+                </select>
+              </Field>
+            )}
             <Field label="Departamento *" error={errors.departamentoId?.message}>
-              <select {...register("departamentoId")} className={fieldClass}>
+              <select {...register("departamentoId", { onChange: () => setValue("puestoId", "", { shouldDirty: true }) })} className={fieldClass}>
                 <option value="">Seleccione...</option>
                 {deptsFiltrados.map((d) => (
-                  <option key={d.id} value={d.id}>{d.nombre}</option>
+                  <option key={d.id} value={d.id}>
+                    {!divisionId && nombreDivision(d.divisionId) ? `${d.nombre} (${nombreDivision(d.divisionId)})` : d.nombre}
+                  </option>
                 ))}
               </select>
             </Field>
             <Field label="Puesto" error={errors.puestoId?.message}>
-              <select {...register("puestoId")} className={fieldClass}>
+              <select {...register("puestoId")} className={fieldClass} disabled={!departamentoId}>
                 <option value="">Sin puesto</option>
-                {puestos.map((p) => (
+                {puestosFiltrados.map((p) => (
                   <option key={p.id} value={p.id}>{p.nombre}</option>
                 ))}
               </select>

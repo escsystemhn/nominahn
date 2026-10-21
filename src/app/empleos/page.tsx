@@ -4,9 +4,10 @@ import { connection } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDateLong } from "@/lib/utils";
 import { FILTRO_VACANTE_PUBLICA, SELECT_VACANTE_PUBLICA, TIPO_CONTRATO_PUBLICO, textoSalario } from "@/lib/talento/empleos";
+import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const empresa = await prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true } });
+  const empresa = await prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true }, orderBy: ORDEN_EMPRESA_PRINCIPAL });
   return {
     title: { absolute: empresa ? `Empleos en ${empresa.nombre}` : "Empleos" },
     description: empresa ? `Vacantes abiertas en ${empresa.nombre}.` : "Vacantes abiertas.",

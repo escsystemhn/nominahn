@@ -144,6 +144,38 @@ describe("altas", () => {
     expect(errores(r).some((e) => e.columna === "Departamento")).toBe(true);
   });
 
+  describe("con divisiones: dos «Administración» en la misma sucursal", () => {
+    const conDivisiones = (): CatalogosEmpleados => {
+      const c = catalogos();
+      c.departamentos.set("suc-tgu|administracion", "dep-adm-tgu");
+      c.departamentosAmbiguos = new Set(["suc-tgu|administracion"]);
+      c.departamentosPorDivision = new Map([
+        ["suc-tgu|pagsa mayoreo|administracion", "dep-adm-may"],
+        ["suc-tgu|pagsa tegucigalpa|administracion", "dep-adm-tgu"],
+      ]);
+      return c;
+    };
+    const fila = (division: string) =>
+      `${CABECERA_ALTA},Division\n,Marta,Zelaya,15/03/1990,F,01/02/2024,INDEFINIDO,MENSUAL,18000,TGU,Administracion,${division}`;
+
+    it("sin la división, rechaza la fila en vez de elegir una al azar", () => {
+      const r = validar(fila(""), conDivisiones(), "CREAR_O_ACTUALIZAR", alcanceTotal());
+      const e = errores(r).find((x) => x.columna === "Departamento");
+      expect(e?.mensaje).toContain("indique la columna División");
+    });
+
+    it("con la división, resuelve el departamento correcto", () => {
+      const r = validar(fila("PAGSA Mayoreo"), conDivisiones(), "CREAR_O_ACTUALIZAR", alcanceTotal());
+      expect(errores(r)).toEqual([]);
+      expect(r.filas[0].datos.departamento).toBe("dep-adm-may");
+    });
+
+    it("una división sin ese departamento da un error que la nombra", () => {
+      const r = validar(fila("PAGSA Norte"), conDivisiones(), "CREAR_O_ACTUALIZAR", alcanceTotal());
+      expect(errores(r).find((x) => x.columna === "Departamento")?.mensaje).toContain("PAGSA Norte");
+    });
+  });
+
   it("no repite el error de departamento cuando la sucursal ya falló", () => {
     const r = correr(
       `${CABECERA_ALTA}\n,Marta,Zelaya,15/03/1990,F,01/02/2024,INDEFINIDO,MENSUAL,18000,INEXISTENTE,Contabilidad`

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { valorCelda, esFilaTotal, columnasNumericas, nombreHoja, aXlsx, aPdf } from "./salida";
+import ExcelJS from "exceljs";
+import { valorCelda, esFilaTotal, columnasNumericas, nombreHoja, aXlsx, aPdf, metaFila, contarDetalles, type MetaFila } from "./salida";
 
 describe("valorCelda", () => {
   it("lee lempiras con separador de miles y signo", () => {
@@ -80,6 +81,63 @@ describe("aPdf", () => {
 
   it("un reporte vacío también genera documento", async () => {
     const buf = await aPdf({ ...REPORTE, datos: [] });
+    expect(buf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  });
+});
+
+// ─── Reportes agrupados (Sucursal → División → Departamento) ─────────────────
+
+const AGRUPADO = {
+  titulo: "Planilla Detallada por Sucursal, División y Departamento",
+  cabeceras: ["Empleado", "Período", "Neto"],
+  datos: [
+    ["NOMINA CONFIDENCIAL", "", ""],
+    ["PAGSA MAYOREO", "", ""],
+    ["Administracion", "", ""],
+    ["JUAN PEREZ", "01/10/2026-31/10/2026", "L 20,000.00"],
+    ["Subtotal Administracion", "1 empleado(s)", "L 20,000.00"],
+    ["Subtotal PAGSA MAYOREO", "1 empleado(s)", "L 20,000.00"],
+    ["Subtotal NOMINA CONFIDENCIAL", "1 empleado(s)", "L 20,000.00"],
+    ["TOTAL GENERAL", "1 empleado(s)", "L 20,000.00"],
+  ],
+  filas: [
+    { tipo: "grupo", nivel: 0 }, { tipo: "grupo", nivel: 1 }, { tipo: "grupo", nivel: 2 },
+    { tipo: "detalle", nivel: 3 },
+    { tipo: "subtotal", nivel: 2 }, { tipo: "subtotal", nivel: 1 }, { tipo: "subtotal", nivel: 0 },
+    { tipo: "total", nivel: 0 },
+  ] as MetaFila[],
+  generado: new Date("2026-10-31T15:00:00Z"),
+  filtros: [],
+};
+
+describe("filas de un reporte agrupado", () => {
+  it("sin metadatos, una fila que empieza por TOTAL es total y el resto detalle", () => {
+    expect(metaFila(["TOTAL", "L 1.00"])).toEqual({ tipo: "total", nivel: 0 });
+    expect(metaFila(["Ana", "L 1.00"])).toEqual({ tipo: "detalle", nivel: 0 });
+  });
+
+  it("cuenta como registros sólo los detalles", () => {
+    expect(contarDetalles(AGRUPADO.datos, AGRUPADO.filas)).toBe(1);
+    expect(contarDetalles(REPORTE.datos)).toBe(2);
+  });
+
+  it("el Excel lleva sangría, niveles plegables, montos numéricos y sin autofiltro", async () => {
+    const libro = new ExcelJS.Workbook();
+    // exceljs declara el Buffer de una versión anterior de @types/node.
+    await libro.xlsx.load((await aXlsx(AGRUPADO)) as unknown as Parameters<typeof libro.xlsx.load>[0]);
+    const hoja = libro.worksheets[0];
+    const fila = (texto: string) => hoja.getRows(5, AGRUPADO.datos.length)!.find((r) => r.getCell(1).value === texto)!;
+    expect(fila("JUAN PEREZ").getCell(1).alignment?.indent).toBe(6);
+    expect(fila("JUAN PEREZ").outlineLevel).toBe(3);
+    expect(fila("PAGSA MAYOREO").font?.bold).toBe(true);
+    expect(fila("NOMINA CONFIDENCIAL").outlineLevel ?? 0).toBe(0);
+    expect(fila("Subtotal Administracion").getCell(3).value).toBe(20000);
+    expect(hoja.autoFilter).toBeFalsy();
+    expect(String(hoja.getCell("A2").value)).toContain("1 registros");
+  });
+
+  it("el PDF agrupado se genera", async () => {
+    const buf = await aPdf(AGRUPADO);
     expect(buf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 });

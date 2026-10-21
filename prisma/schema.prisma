@@ -166,13 +166,43 @@ model Sucursal {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  empresaId     String
-  empresa       Empresa        @relation(fields: [empresaId], references: [id])
-  departamentos Departamento[]
-  empleados     Empleado[]
-  planillas     Planilla[]
+  empresaId        String
+  empresa          Empresa             @relation(fields: [empresaId], references: [id])
+  divisiones       Division[]
+  departamentos    Departamento[]
+  empleados        Empleado[]
+  planillas        Planilla[]
   coberturas       CoberturaSucursal[]
   horariosAtencion HorarioAtencion[]
+  detallesPlanilla PlanillaDetalle[]
+}
+
+/**
+ * División: nivel intermedio entre la sucursal y el departamento
+ * (Sucursal → División → Departamento → Empleado). Sirve para clientes que
+ * agrupan varias empresas o unidades de negocio bajo una misma nómina, p. ej.
+ * «NOMINA CONFIDENCIAL» → «PAGSA MAYOREO» → «Administración».
+ * Es OPCIONAL: una sucursal sin divisiones funciona como antes y sus
+ * departamentos cuelgan directo de ella. Cuando una sucursal tiene divisiones
+ * activas, la API exige que cada departamento nuevo o editado elija una
+ * (ver `src/lib/organizacion/estructura.ts`).
+ */
+model Division {
+  id          String   @id @default(cuid())
+  nombre      String
+  codigo      String?
+  descripcion String?
+  activa      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sucursalId       String
+  sucursal         Sucursal          @relation(fields: [sucursalId], references: [id])
+  departamentos    Departamento[]
+  planillas        Planilla[]
+  detallesPlanilla PlanillaDetalle[]
+
+  @@unique([sucursalId, nombre])
 }
 
 model Departamento {
@@ -184,20 +214,30 @@ model Departamento {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  sucursalId    String
-  sucursal      Sucursal     @relation(fields: [sucursalId], references: [id])
+  sucursalId       String
+  sucursal         Sucursal          @relation(fields: [sucursalId], references: [id])
+  /**
+   * División a la que pertenece. Opcional en la base para no romper los
+   * departamentos que ya existían (ver `Division`). Debe ser de la MISMA
+   * sucursal que el departamento; la API lo valida.
+   */
+  divisionId       String?
+  division         Division?         @relation(fields: [divisionId], references: [id], onDelete: Restrict)
   /**
    * Centro de costo POR OMISIÓN de quien trabaja aquí. Es la asignación normal:
    * casi todo el mundo imputa a su departamento. La excepción se resuelve en el
    * propio empleado (ver `Empleado.centroCostoId`).
    */
-  centroCostoId String?
-  centroCosto   CentroCosto? @relation(fields: [centroCostoId], references: [id])
-  empleados     Empleado[]
-  puestos       Puesto[]
-  vacantes      Vacante[]
+  centroCostoId    String?
+  centroCosto      CentroCosto?      @relation(fields: [centroCostoId], references: [id])
+  empleados        Empleado[]
+  puestos          Puesto[]
+  vacantes         Vacante[]
+  planillas        Planilla[]
+  detallesPlanilla PlanillaDetalle[]
 
   @@index([centroCostoId])
+  @@index([divisionId])
 }
 
 /**
@@ -593,6 +633,7 @@ model Empleado {
   asignacionesTurno    AsignacionTurno[]
   preferenciaHorario   PreferenciaHorario?
   horarioDias          HorarioDia[]
+  acumuladosIsr        AcumuladoIsr[]
   fichaMedica          FichaMedica?
   familiares           FamiliarEmpleado[]
   beneficiarios        BeneficiarioEmpleado[]
@@ -921,6 +962,13 @@ model Planilla {
   // una planilla, ni conciliar por sucursal, ni impedir duplicados por sucursal.
   sucursalId       String?
   sucursal         Sucursal?      @relation(fields: [sucursalId], references: [id])
+  // Alcance más fino dentro de la sucursal: sólo una división, o sólo un
+  // departamento. `null` = toda la sucursal (o toda la división). La cadena
+  // empresa → sucursal → división → departamento se valida al crearla.
+  divisionId       String?
+  division         Division?      @relation(fields: [divisionId], references: [id], onDelete: Restrict)
+  departamentoId   String?
+  departamento     Departamento?  @relation(fields: [departamentoId], references: [id], onDelete: Restrict)
   tipo             TipoPlanilla
   estado           EstadoPlanilla @default(BORRADOR)
   fechaInicio      DateTime       @db.Date
@@ -951,72 +999,117 @@ model Planilla {
   @@index([estado])
   // La UNICIDAD del período NO se declara aquí: requiere ser un índice PARCIAL
   // (excluye ANULADA, para poder reemitir un período corregido) y tratar
-  // `sucursalId` NULL como un valor comparable — dos cosas que Prisma no puede
-  // expresar. Vive en `prisma/sql/01-planilla-periodo-unico.sql` y se aplica con
-  // `npm run db:constraints` DESPUÉS de cada `db push`.
+  // `sucursalId`, `divisionId` y `departamentoId` NULL como valores comparables —
+  // dos cosas que Prisma no puede expresar. Vive en
+  // `prisma/sql/01-planilla-periodo-unico.sql` y se aplica con
+  // `npm run db:constraints` DESPUÉS de cada `db push`. Que dos alcances
+  // DISTINTOS no paguen dos veces a la misma persona lo impide la API al crear.
   @@index([empresaId, sucursalId, tipo, fechaInicio, fechaFin])
 }
 
 model PlanillaDetalle {
-  id                  String    @id @default(cuid())
+  id                  String        @id @default(cuid())
   planillaId          String
-  planilla            Planilla  @relation(fields: [planillaId], references: [id])
+  planilla            Planilla      @relation(fields: [planillaId], references: [id])
   empleadoId          String
-  empleado            Empleado  @relation(fields: [empleadoId], references: [id])
+  empleado            Empleado      @relation(fields: [empleadoId], references: [id])
+  /**
+   * Dónde estaba la persona CUANDO se le pagó. Los reportes agrupan por aquí y
+   * no por su ubicación actual, para que un período cerrado no se reacomode si
+   * después cambia de área. Las líneas anteriores a estas columnas quedan en
+   * null y se agrupan por la ubicación actual del empleado.
+   */
+  sucursalId          String?
+  sucursal            Sucursal?     @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  divisionId          String?
+  division            Division?     @relation(fields: [divisionId], references: [id], onDelete: Restrict)
+  departamentoId      String?
+  departamento        Departamento? @relation(fields: [departamentoId], references: [id], onDelete: Restrict)
   // Ingresos
-  salarioBase         Decimal   @db.Decimal(12, 2)
-  diasTrabajados      Decimal   @default(0) @db.Decimal(5, 2)
-  horasExtra          Decimal   @default(0) @db.Decimal(5, 2)
-  montoHorasExtra     Decimal   @default(0) @db.Decimal(12, 2)
-  bonificaciones      Decimal   @default(0) @db.Decimal(12, 2)
-  otrosIngresos       Decimal   @default(0) @db.Decimal(12, 2)
-  totalBruto          Decimal   @default(0) @db.Decimal(12, 2)
+  salarioBase         Decimal       @db.Decimal(12, 2)
+  diasTrabajados      Decimal       @default(0) @db.Decimal(5, 2)
+  horasExtra          Decimal       @default(0) @db.Decimal(5, 2)
+  montoHorasExtra     Decimal       @default(0) @db.Decimal(12, 2)
+  bonificaciones      Decimal       @default(0) @db.Decimal(12, 2)
+  otrosIngresos       Decimal       @default(0) @db.Decimal(12, 2)
+  totalBruto          Decimal       @default(0) @db.Decimal(12, 2)
   // Deducciones empleado
-  ihssEmpleado        Decimal   @default(0) @db.Decimal(12, 2) // TOTAL empleado EM+IVM
-  rapEmpleado         Decimal   @default(0) @db.Decimal(12, 2)
-  afpEmpleado         Decimal   @default(0) @db.Decimal(12, 2)
-  isr                 Decimal   @default(0) @db.Decimal(12, 2)
-  impuestoVecinal     Decimal   @default(0) @db.Decimal(12, 2)
-  cooperativa         Decimal   @default(0) @db.Decimal(12, 2)
-  prestamos           Decimal   @default(0) @db.Decimal(12, 2)
-  adelantos           Decimal   @default(0) @db.Decimal(12, 2)
-  ausencias           Decimal   @default(0) @db.Decimal(12, 2)
+  ihssEmpleado        Decimal       @default(0) @db.Decimal(12, 2) // TOTAL empleado EM+IVM
+  rapEmpleado         Decimal       @default(0) @db.Decimal(12, 2)
+  afpEmpleado         Decimal       @default(0) @db.Decimal(12, 2)
+  isr                 Decimal       @default(0) @db.Decimal(12, 2)
+  /// Cómo se llegó al ISR de esta línea cuando se usó el CÁLCULO PERSONALIZADO
+  /// (ingreso anual proyectado, deducciones, ISR anual, lo ya retenido y los
+  /// períodos restantes). Null = método estándar. Lo lee el reporte DMR y queda
+  /// como rastro aunque después cambie la configuración.
+  isrDetalle          Json?
+  impuestoVecinal     Decimal       @default(0) @db.Decimal(12, 2)
+  cooperativa         Decimal       @default(0) @db.Decimal(12, 2)
+  prestamos           Decimal       @default(0) @db.Decimal(12, 2)
+  adelantos           Decimal       @default(0) @db.Decimal(12, 2)
+  ausencias           Decimal       @default(0) @db.Decimal(12, 2)
   /// Días de incapacidad a cargo del IHSS en el período (del 4.º en adelante).
-  diasIncapacidadIhss Int       @default(0)
+  diasIncapacidadIhss Int           @default(0)
   /// Salario que el patrono deja de pagar por esos días; el IHSS paga el subsidio al trabajador.
-  incapacidad         Decimal   @default(0) @db.Decimal(12, 2)
-  otrosDeducciones    Decimal   @default(0) @db.Decimal(12, 2)
-  totalDeducciones    Decimal   @default(0) @db.Decimal(12, 2)
+  incapacidad         Decimal       @default(0) @db.Decimal(12, 2)
+  otrosDeducciones    Decimal       @default(0) @db.Decimal(12, 2)
+  totalDeducciones    Decimal       @default(0) @db.Decimal(12, 2)
   // Aportaciones empleador
-  ihssEmpleador       Decimal   @default(0) @db.Decimal(12, 2) // TOTAL patronal EM+IVM
-  rapEmpleador        Decimal   @default(0) @db.Decimal(12, 2)
-  infop               Decimal   @default(0) @db.Decimal(12, 2)
+  ihssEmpleador       Decimal       @default(0) @db.Decimal(12, 2) // TOTAL patronal EM+IVM
+  rapEmpleador        Decimal       @default(0) @db.Decimal(12, 2)
+  infop               Decimal       @default(0) @db.Decimal(12, 2)
   /// Aporte patronal al Fondo de Reserva Laboral del RAP (Decreto 47-2024).
-  reservaLaboral      Decimal   @default(0) @db.Decimal(12, 2)
+  reservaLaboral      Decimal       @default(0) @db.Decimal(12, 2)
   // Desglose IHSS régimen IVM (Invalidez, Vejez y Muerte)
-  ivmEmpleado         Decimal   @default(0) @db.Decimal(12, 2)
-  ivmEmpleador        Decimal   @default(0) @db.Decimal(12, 2)
-  ivmEstado           Decimal   @default(0) @db.Decimal(12, 2)
+  ivmEmpleado         Decimal       @default(0) @db.Decimal(12, 2)
+  ivmEmpleador        Decimal       @default(0) @db.Decimal(12, 2)
+  ivmEstado           Decimal       @default(0) @db.Decimal(12, 2)
   /// El IHSS del empleado salió de su monto fijo, no del porcentaje. Se guarda
   /// en la planilla —no se consulta en la ficha— porque la boleta de un período
   /// cerrado debe seguir diciendo lo que se aplicó aunque después se cambie.
-  ihssFijo            Boolean   @default(false)
+  ihssFijo            Boolean       @default(false)
   // Resultado
-  salarioNeto         Decimal   @default(0) @db.Decimal(12, 2)
+  salarioNeto         Decimal       @default(0) @db.Decimal(12, 2)
   // Provisiones
-  provision13vo       Decimal   @default(0) @db.Decimal(12, 2)
-  provision14vo       Decimal   @default(0) @db.Decimal(12, 2)
-  provisionVacaciones Decimal   @default(0) @db.Decimal(12, 2)
+  provision13vo       Decimal       @default(0) @db.Decimal(12, 2)
+  provision14vo       Decimal       @default(0) @db.Decimal(12, 2)
+  provisionVacaciones Decimal       @default(0) @db.Decimal(12, 2)
   // Control
-  emailEnviado        Boolean   @default(false)
+  emailEnviado        Boolean       @default(false)
   emailEnviadoAt      DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   @@unique([planillaId, empleadoId])
   // El @@unique de arriba sólo sirve para buscar por planilla (es su primera
   // columna). `/api/mis-boletas` filtra por empleado y hacía escaneo completo.
   @@index([empleadoId])
+}
+
+/// Ingresos e ISR de un mes pagado FUERA de NominaHN (típicamente, los meses del
+/// año anteriores a empezar a usarlo), importados de la hoja «Retención en la
+/// fuente». Los usa el CÁLCULO PERSONALIZADO del ISR, que proyecta el año con lo
+/// realmente pagado y descuenta lo ya retenido. Si un mes está aquí, las líneas
+/// de planilla de ese mes no se cuentan, para no sumarlo dos veces.
+model AcumuladoIsr {
+  id          String   @id @default(cuid())
+  empleadoId  String
+  empleado    Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  anio        Int
+  /// 1 = enero … 12 = diciembre.
+  mes         Int
+  /// Salario ordinario efectivamente pagado en el mes.
+  sueldo      Decimal  @db.Decimal(12, 2)
+  /// Comisiones, horas extra, bonificaciones y otros ingresos del mes.
+  variables   Decimal  @default(0) @db.Decimal(12, 2)
+  isrRetenido Decimal  @default(0) @db.Decimal(12, 2)
+  /// IMPORTACION (desde la hoja) o MANUAL.
+  origen      String   @default("IMPORTACION")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([empleadoId, anio, mes])
+  @@index([anio])
 }
 
 /// Registro de lo que CADA planilla amortizó de CADA deducción a plazo.

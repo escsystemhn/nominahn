@@ -6,10 +6,11 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 
 export default async function EmpleosLayout({ children }: { children: React.ReactNode }) {
   await connection();
-  const empresa = await prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true } });
+  const empresa = await prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true }, orderBy: ORDEN_EMPRESA_PRINCIPAL });
   const nombre = empresa?.nombre ?? "Empleos";
 
   return (

@@ -50,6 +50,17 @@ export async function parsearBody<T>(req: Request, schema: ZodType<T>): Promise<
 export const zId = z.string().trim().min(1, "requerido");
 
 /**
+ * Identificador OPCIONAL que llega de un `<select>` con una opción «Todas»: «»,
+ * `null` y no mandarlo valen lo mismo. Sale siempre como `string | null`.
+ * Existe porque `zId.optional().nullable()` rechazaba el «» de esos selects con
+ * un 400 (así fallaba «Nueva planilla» con «Todas las sucursales»).
+ */
+export const zIdOpcional = z.preprocess(
+  (v) => (v === undefined || v === null || (typeof v === "string" && v.trim() === "") ? null : v),
+  z.string().trim().min(1).nullable()
+);
+
+/**
  * Convierte a número para validar. CLAVE: vacío/null/undefined → `NaN`, no `0`.
  * `z.coerce.number("")` daría 0 y colaría un campo faltante como cero; aquí un
  * campo faltante falla la validación en vez de convertirse en dinero silencioso.

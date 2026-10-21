@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 import { derivarCuotasISR, validarTramosISR, validarTramosVecinal } from "@/lib/payroll/tramos";
+import MetodoIsrConfig from "./MetodoIsrConfig";
 
 type Modo = "PORCENTAJE" | "MONTO_FIJO";
 
@@ -127,6 +128,7 @@ export default function ParametrosLeyConfig() {
       </section>
 
       <TablaISR inicial={datos.isr} onGuardado={recargar} />
+      <MetodoIsrConfig />
       <TablaVecinal inicial={datos.vecinal} onGuardado={recargar} />
     </div>
   );

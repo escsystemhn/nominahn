@@ -2,10 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   calcularPlanilla,
+  calcularRAP,
   diasConDerechoASalario,
   totalHorasExtra,
+  type EntradaCalculoPlanilla,
   type HorasExtraPorJornada,
 } from "@/lib/payroll/calculos-hn";
+import {
+  calcularIsrPersonalizado,
+  indicePeriodoDelAnio,
+  type DetalleIsrPersonalizado,
+  type PeriodoPagadoIsr,
+} from "@/lib/payroll/isr-personalizado";
+import { cargarHistorialIsr, leerConfigIsr } from "@/lib/payroll/isr-personalizado-bd";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { descuentoIncapacidades, fechasCubiertas, type IncapacidadParaPlanilla } from "@/lib/asistencia/incapacidades";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -21,11 +30,13 @@ import {
   type EstadoPlanilla,
 } from "@/lib/payroll/estado-planilla";
 import { Prisma, TipoPlanilla } from "@prisma/client";
-import { calcularAniosTrabajados } from "@/lib/utils";
+import { calcularAniosTrabajados, nombreCompleto, formatDate } from "@/lib/utils";
 import { calcularBonosPorLote } from "@/lib/evaluaciones/bonus-engine";
 import { z } from "zod";
-import { parsearBody, zId, zFecha } from "@/lib/http/validar";
+import { parsearBody, zId, zIdOpcional, zFecha } from "@/lib/http/validar";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
+import { filtroEmpleadosOrg } from "@/lib/organizacion/estructura";
+import { divisionesHabilitadas, validarAlcanceOrg } from "@/lib/organizacion/estructura-bd";
 
 const schemaCrear = z
   .object({
@@ -33,7 +44,10 @@ const schemaCrear = z
     fechaInicio: zFecha,
     fechaFin: zFecha,
     empresaId: zId,
-    sucursalId: zId.optional().nullable(),
+    // Alcance: vacío = todo el nivel de arriba. «» llega de los selects «Todas».
+    sucursalId: zIdOpcional,
+    divisionId: zIdOpcional,
+    departamentoId: zIdOpcional,
   })
   .refine((d) => d.fechaFin > d.fechaInicio, {
     error: "La fecha fin debe ser posterior a la fecha inicio",
@@ -61,13 +75,22 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parsearBody(req, schemaCrear);
   if (!parsed.ok) return parsed.response;
-  const { tipo, fechaInicio: desde, fechaFin: hasta, empresaId, sucursalId } = parsed.data;
+  const { tipo, fechaInicio: desde, fechaFin: hasta, empresaId } = parsed.data;
 
   const diasMes = tipo === "MENSUAL" ? 30 : tipo === "QUINCENAL" ? 15 : 7;
 
-  // `null` = planilla de toda la empresa. El formulario manda "" cuando no se
-  // elige sucursal; normalizarlo aquí evita guardar una cadena vacía como FK.
-  const sucursal: string | null = sucursalId || null;
+  // Alcance organizacional: toda la empresa, una sucursal, una división o un
+  // departamento. Se valida la cadena contra la empresa y se completa hacia
+  // arriba (un departamento implica su división y su sucursal), para que el
+  // índice de período único compare planillas del mismo nivel.
+  const verificado = await validarAlcanceOrg(
+    prisma,
+    { sucursalId: parsed.data.sucursalId, divisionId: parsed.data.divisionId, departamentoId: parsed.data.departamentoId },
+    { empresaId, divisiones: await divisionesHabilitadas(prisma) }
+  );
+  if (!verificado.ok) return NextResponse.json({ error: verificado.error }, { status: 400 });
+  const alcance = verificado.alcance;
+  const sucursal = alcance.sucursalId;
 
   // La planilla nace en BORRADOR y pasa a CALCULADA por la máquina de estados,
   // no por asignación directa. Se valida ANTES de calcular para no gastar el
@@ -85,6 +108,8 @@ export async function POST(req: NextRequest) {
     where: {
       empresaId,
       sucursalId: sucursal,
+      divisionId: alcance.divisionId,
+      departamentoId: alcance.departamentoId,
       tipo,
       fechaInicio: desde,
       fechaFin: hasta,
@@ -95,7 +120,7 @@ export async function POST(req: NextRequest) {
   if (yaExiste) {
     return NextResponse.json(
       {
-        error: `Ya existe una planilla ${yaExiste.estado} para este período y sucursal. ` +
+        error: `Ya existe una planilla ${yaExiste.estado} para este período y alcance. ` +
           `Anúlala antes de volver a calcularla.`,
         planillaId: yaExiste.id,
       },
@@ -109,17 +134,26 @@ export async function POST(req: NextRequest) {
   // último tramo de la relación laboral.
   const empleados = await prisma.empleado.findMany({
     where: {
-      tipoPlanilla: tipo,
-      ...(sucursal ? { sucursalId: sucursal } : {}),
-      // Debe haber ingresado a más tardar al cierre del período.
-      fechaIngreso: { lte: hasta },
-      OR: [
-        { estado: "ACTIVO" },
-        // Baja ocurrida dentro del período: cobra sus días.
-        { fechaSalida: { gte: desde, lte: hasta } },
+      AND: [
+        {
+          tipoPlanilla: tipo,
+          // Sólo personal de ESTA empresa: sin este filtro, una planilla de toda
+          // la empresa tomaba también a los empleados de las demás.
+          sucursal: { empresaId },
+          // Debe haber ingresado a más tardar al cierre del período.
+          fechaIngreso: { lte: hasta },
+          OR: [
+            { estado: "ACTIVO" },
+            // Baja ocurrida dentro del período: cobra sus días.
+            { fechaSalida: { gte: desde, lte: hasta } },
+          ],
+        },
+        filtroEmpleadosOrg(alcance),
       ],
     },
     include: {
+      // Para guardar en la línea dónde estaba la persona al pagarse.
+      departamento: { select: { divisionId: true } },
       deducciones: {
         // Sólo las deducciones VIGENTES en el período: una que aún no arranca o
         // que ya venció no puede descontarse del salario (Art. 371 C.T.).
@@ -137,6 +171,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No hay empleados activos para esta planilla" }, { status: 400 });
   }
 
+  // ─── Nadie cobra dos veces el mismo día ─────────────────────────────────────
+  // La unicidad de arriba sólo compara planillas del MISMO alcance. Una de toda
+  // la sucursal y otra de una de sus divisiones, o dos de tipos distintos tras
+  // un cambio de tipo de planilla, tienen claves distintas y pagarían dos veces
+  // a las mismas personas. Por eso se mira a la persona, no a la planilla.
+  const yaPagados = await prisma.planillaDetalle.findMany({
+    where: {
+      empleadoId: { in: empleados.map((e) => e.id) },
+      planilla: {
+        empresaId,
+        estado: { in: [...ESTADOS_OCUPAN_PERIODO] as EstadoPlanilla[] },
+        fechaInicio: { lte: hasta },
+        fechaFin: { gte: desde },
+      },
+    },
+    select: {
+      empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true } },
+      planilla: { select: { id: true, estado: true, fechaInicio: true, fechaFin: true } },
+    },
+    take: 200,
+  });
+  if (yaPagados.length > 0) {
+    const planillas = [...new Map(yaPagados.map((p) => [p.planilla.id, p.planilla])).values()];
+    const nombres = yaPagados.slice(0, 5).map((p) => nombreCompleto(p.empleado));
+    const resto = yaPagados.length > 5 ? ` y ${yaPagados.length - 5} más` : "";
+    const otra = planillas[0];
+    return NextResponse.json(
+      {
+        error: `${yaPagados.length} persona(s) de este alcance ya están en otra planilla vigente que cubre parte de estas fechas ` +
+          `(${formatDate(otra.fechaInicio)} a ${formatDate(otra.fechaFin)}, ${otra.estado.toLowerCase()}): ${nombres.join(", ")}${resto}. ` +
+          "Elija un alcance que no las incluya o anule esa planilla antes de volver a calcular.",
+        planillaId: otra.id,
+        planillasEnConflicto: planillas.map((p) => p.id),
+      },
+      { status: 409 }
+    );
+  }
+
   // La AFP ya NO se resuelve aquí: es voluntaria e individual y viaja como
   // `DeduccionEmpleado` de tipo AFP, igual que la cooperativa. La búsqueda
   // global por `codigo: "AFP"` nunca encontraba nada —la fila configurada es
@@ -150,6 +222,16 @@ export async function POST(req: NextRequest) {
 
   // ─── FASE 1: lecturas y cálculo en memoria (sin N+1) ────────────────────────
   const empleadoIds = empleados.map((e) => e.id);
+
+  // Método del ISR. El CÁLCULO PERSONALIZADO (Parámetros de ley) proyecta el año
+  // con lo pagado y lo retenido antes de este período, como la hoja de retención
+  // del cliente; necesita ese historial, que se lee una sola vez para todos.
+  const configIsr = await leerConfigIsr(prisma);
+  const isrPersonalizado = configIsr.metodo === "PERSONALIZADO";
+  const periodoIsr = indicePeriodoDelAnio(tipo as "SEMANAL" | "QUINCENAL" | "MENSUAL", hasta);
+  const historialIsr = isrPersonalizado
+    ? await cargarHistorialIsr(prisma, empleadoIds, hasta.getUTCFullYear(), desde)
+    : new Map<string, PeriodoPagadoIsr[]>();
 
   // Pre-cargar TODOS los marcajes del período en una sola consulta, ya con el
   // desglose por jornada: cada tramo lleva su propio recargo (Art. 330) y sin
@@ -285,7 +367,7 @@ export async function POST(req: NextRequest) {
     // complemento de maternidad); el IHSS paga el subsidio al trabajador.
     const inc = descuentoIncapacidades(Number(salario), incapacidadesPorEmp.get(emp.id) ?? [], desde, hasta);
 
-    const result = calcularPlanilla({
+    const entradaCalculo: EntradaCalculoPlanilla = {
       salarioMensual: salario,
       tipoPlanilla: tipo as "SEMANAL" | "QUINCENAL" | "MENSUAL",
       // Días con derecho a salario. NO restar ausencias: el motor las descuenta
@@ -303,10 +385,45 @@ export async function POST(req: NextRequest) {
       aniosTrabajados: anios,
       // IHSS mensual pactado en la ficha; null = por porcentaje.
       ihssMontoFijoMensual: emp.ihssMontoFijo,
-    }, parametros);
+    };
+    let result = calcularPlanilla(entradaCalculo, parametros);
+
+    // Cálculo personalizado: el ISR sale de la proyección anual y la línea se
+    // rehace con él, para que deducciones y neto cuadren.
+    let isrDetalle: DetalleIsrPersonalizado | null = null;
+    if (isrPersonalizado) {
+      const p = calcularIsrPersonalizado({
+        periodosAnio: periodoIsr.periodosAnio,
+        indicePeriodo: periodoIsr.indice,
+        historial: historialIsr.get(emp.id) ?? [],
+        actual: {
+          // Lo efectivamente pagado: las ausencias y la incapacidad no se pagan.
+          sueldo: result.salarioBase.minus(result.ausencias).minus(result.incapacidad),
+          variables: result.montoHorasExtra.plus(bonificaciones),
+          rap: result.rapEmpleado,
+          afp: result.afpEmpleado,
+        },
+        salarioMensual: salario,
+        // Quien deja la empresa en este período no tiene más meses que proyectar.
+        proyectar: !(emp.fechaSalida && emp.fechaSalida <= hasta),
+        // Como la hoja: año de la planilla menos año de nacimiento.
+        edad: hasta.getUTCFullYear() - emp.fechaNacimiento.getUTCFullYear(),
+        ivmTope: parametros.ivmTope,
+        ivmEmpleado: parametros.ivmEmpleado,
+        rapMensual: calcularRAP(salario, parametros).empleado,
+        tabla: parametros.tablaISRAnual,
+        config: configIsr.personalizado,
+      });
+      result = calcularPlanilla({ ...entradaCalculo, isrDelPeriodo: p.retencion }, parametros);
+      isrDetalle = p.detalle;
+    }
 
     detallesData.push({
       empleadoId: emp.id,
+      // Ubicación al pagarse: los reportes agrupan por aquí, no por la actual.
+      sucursalId: emp.sucursalId,
+      divisionId: emp.departamento.divisionId,
+      departamentoId: emp.departamentoId,
       salarioBase: result.salarioBase,
       // Informativo para la boleta: días efectivamente laborados. El descuento
       // por ausencia NO se deriva de este campo, viaja en `ausencias`.
@@ -320,6 +437,7 @@ export async function POST(req: NextRequest) {
       // Viene de la deducción individual, no de un porcentaje de planilla.
       afpEmpleado: result.afpEmpleado,
       isr: result.isr,
+      ...(isrDetalle ? { isrDetalle: { ...isrDetalle } } : {}),
       impuestoVecinal: result.impuestoVecinal,
       cooperativa: ded.cooperativa,
       prestamos: ded.prestamos,
@@ -358,7 +476,8 @@ export async function POST(req: NextRequest) {
       // Nace en BORRADOR: mientras se insertan los detalles la planilla aún no
       // está calculada, y los triggers de inmutabilidad admiten la escritura.
       const planilla = await tx.planilla.create({
-        data: { empresaId, sucursalId: sucursal, tipo, estado: "BORRADOR",
+        data: { empresaId, sucursalId: sucursal, divisionId: alcance.divisionId, departamentoId: alcance.departamentoId,
+          tipo, estado: "BORRADOR",
           fechaInicio: desde, fechaFin: hasta,
           totalBruto, totalDeducciones, totalNeto, totalEmpleador },
       });
@@ -424,7 +543,7 @@ export async function POST(req: NextRequest) {
     // rechazó el duplicado que la verificación previa no llegó a ver.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return NextResponse.json(
-        { error: "Otra planilla para este período y sucursal acaba de crearse. Recarga la lista." },
+        { error: "Otra planilla para este período y alcance acaba de crearse. Recarga la lista." },
         { status: 409 }
       );
     }
@@ -439,8 +558,8 @@ export async function POST(req: NextRequest) {
     usuarioId: g.usuario.id,
     usuarioEmail: g.usuario.email ?? undefined,
     valorNuevo: {
-      tipo, empresaId, sucursalId: sucursal,
-      fechaInicio: desde, fechaFin: hasta,
+      tipo, empresaId, sucursalId: sucursal, divisionId: alcance.divisionId, departamentoId: alcance.departamentoId,
+      fechaInicio: desde, fechaFin: hasta, metodoIsr: configIsr.metodo,
       empleados: detallesData.length,
       totalBruto, totalDeducciones, totalNeto, totalEmpleador,
     },

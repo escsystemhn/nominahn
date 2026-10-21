@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { creariaCiclo } from "@/lib/organizacion/jerarquia";
+import { validarUbicacionEmpleado } from "@/lib/organizacion/estructura-bd";
 import { requerirPermiso, requerirSesion, puede } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { hoyHN } from "@/lib/utils";
@@ -114,7 +115,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const empleadoActual = await prisma.empleado.findUnique({
     where: { id },
-    select: { salarioBase: true, estado: true, sucursalId: true, departamentoId: true, ihssMontoFijo: true },
+    select: { salarioBase: true, estado: true, sucursalId: true, departamentoId: true, puestoId: true, ihssMontoFijo: true },
   });
   if (!empleadoActual) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
@@ -122,6 +123,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!parsed.ok) return parsed.response;
   // `motivo` no es columna; el resto (`data`) ya está acotado por el allowlist.
   const { salarioBase, motivo, ...data } = parsed.data;
+
+  // Sucursal, departamento y puesto deben encajar. Sólo se comprueba si alguno
+  // CAMBIA: el formulario reenvía los tres en cada guardado, y un registro
+  // antiguo que no encaje no debe impedir corregirle, por ejemplo, el teléfono.
+  const ubicacion = {
+    sucursalId: data.sucursalId ?? empleadoActual.sucursalId,
+    departamentoId: data.departamentoId ?? empleadoActual.departamentoId,
+    puestoId: data.puestoId !== undefined ? data.puestoId : empleadoActual.puestoId,
+  };
+  if (
+    ubicacion.sucursalId !== empleadoActual.sucursalId ||
+    ubicacion.departamentoId !== empleadoActual.departamentoId ||
+    ubicacion.puestoId !== empleadoActual.puestoId
+  ) {
+    const error = await validarUbicacionEmpleado(prisma, ubicacion);
+    if (error) return NextResponse.json({ error }, { status: 400 });
+  }
 
   /**
    * Ciclos en la línea de reporte.

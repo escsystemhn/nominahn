@@ -289,7 +289,11 @@ export const CATALOGO = [
     descripcion: "Empresa, sucursales, departamentos y parámetros del sistema",
     permisos: [
       { codigo: "configuracion.ver", etiqueta: "Consultar", descripcion: "Ver la configuración de la empresa y sus parámetros." },
-      { codigo: "configuracion.editar", etiqueta: "Editar", descripcion: "Modificar empresa, sucursales, departamentos, ISR y salario mínimo.", sensible: true },
+      { codigo: "configuracion.editar", etiqueta: "Editar", descripcion: "Modificar sucursales, departamentos, divisiones y salario mínimo.", sensible: true },
+      // Nombre y RTN de la empresa salen en boletas, constancias, contratos y el
+      // archivo del banco: un cambio equivocado se imprime en todo. Por omisión
+      // sólo SUPER_ADMIN (comodín); a nadie más salvo que un perfil lo conceda.
+      { codigo: "configuracion.empresa", etiqueta: "Datos de la empresa", descripcion: "Modificar el nombre, el RTN, la dirección, el teléfono y el correo de la empresa.", sensible: true },
       // Aparte de `configuracion.editar` a propósito: quien controla el servidor
       // de correo puede enviar mensajes a nombre de la empresa. Por omisión sólo
       // lo tiene SUPER_ADMIN (comodín); a nadie más salvo que un perfil lo conceda.

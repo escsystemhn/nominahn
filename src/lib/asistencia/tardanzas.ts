@@ -3,6 +3,7 @@
  * turno de cada día. INFORMATIVO: no descuenta salario ni crea ausencias.
  */
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { nombreCompleto } from "@/lib/utils";
 import { turnoDesdeFila, TURNO_DIURNO, type Turno } from "./turnos";
@@ -40,13 +41,11 @@ export async function resolutorTurnos(empleadoIds: string[], desde: Date, hasta:
   };
 }
 
-export async function reportePuntualidad(desde: Date, hasta: Date, filtro: { sucursalId?: string; departamentoId?: string }): Promise<FilaPuntualidad[]> {
+/** `filtro` acota a quiénes (estructura y alcance del usuario); se combina con AND. */
+export async function reportePuntualidad(desde: Date, hasta: Date, filtro: Prisma.EmpleadoWhereInput = {}): Promise<FilaPuntualidad[]> {
   const empleados = await prisma.empleado.findMany({
     where: {
-      estado: { not: "INACTIVO" },
-      fechaIngreso: { lte: hasta },
-      ...(filtro.sucursalId ? { sucursalId: filtro.sucursalId } : {}),
-      ...(filtro.departamentoId ? { departamentoId: filtro.departamentoId } : {}),
+      AND: [{ estado: { not: "INACTIVO" }, fechaIngreso: { lte: hasta } }, filtro],
     },
     select: {
       id: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,

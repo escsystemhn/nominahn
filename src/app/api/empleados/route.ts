@@ -6,6 +6,7 @@ import { redondear } from "@/lib/payroll/money";
 import { audit, getClientInfo } from "@/lib/audit";
 import { z } from "zod";
 import { zCorreoOpcional, zMontoAnulable } from "@/lib/http/validar";
+import { validarUbicacionEmpleado } from "@/lib/organizacion/estructura-bd";
 
 const createSchema = z.object({
   primerNombre: z.string().min(1),
@@ -154,6 +155,11 @@ export async function POST(req: NextRequest) {
 
   const data = parsed.data;
 
+  const ubicacion = await validarUbicacionEmpleado(prisma, {
+    sucursalId: data.sucursalId, departamentoId: data.departamentoId, puestoId: data.puestoId || null,
+  });
+  if (ubicacion) return NextResponse.json({ error: ubicacion }, { status: 400 });
+
   // Generar código único
   const count = await prisma.empleado.count();
   const codigo = `EMP-${String(count + 1).padStart(4, "0")}`;
@@ -192,7 +198,7 @@ export async function POST(req: NextRequest) {
       banco: data.banco,
       sucursalId: data.sucursalId,
       departamentoId: data.departamentoId,
-      puestoId: data.puestoId,
+      puestoId: data.puestoId || null,
       emailPersonal: data.emailPersonal ?? null,
       emailCorporativo: data.emailCorporativo ?? null,
       ihssMontoFijo: data.ihssMontoFijo ?? null,

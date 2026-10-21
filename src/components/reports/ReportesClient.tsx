@@ -9,26 +9,33 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
-import { columnasNumericas, esFilaTotal } from "@/lib/reportes/salida-celdas";
+import { columnasNumericas, metaFila, type MetaFila } from "@/lib/reportes/salida-celdas";
 
 interface Props {
+  /** El administrador habilitó el nivel División (Configuración → Estructura organizacional). */
+  conDivisiones: boolean;
   sucursales: Array<{ id: string; nombre: string }>;
-  departamentos: Array<{ id: string; nombre: string }>;
+  /** Vacío si el administrador no habilitó el nivel División. */
+  divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
+  departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   empresas: Array<{ id: string; nombre: string }>;
-  /** Planillas dispersables (APROBADA o PAGADA), para el archivo del banco. */
-  planillas: Array<{ id: string; etiqueta: string }>;
+  /** Planillas vigentes; sólo las aprobadas o pagadas sirven para el archivo del banco. */
+  planillas: Array<{ id: string; etiqueta: string; dispersable: boolean }>;
 }
 
 /** Reportes que operan sobre UNA planilla concreta, no sobre un rango de fechas. */
 const REQUIEREN_PLANILLA = new Set(["nomina-banco"]);
+/** Reportes que pueden acotarse a una planilla; sin elegirla, usan las fechas. */
+const ACEPTAN_PLANILLA = new Set(["planilla-detallada", "resumen-planilla"]);
 
 const reportes = [
-  { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Detalle completo de planilla con todas las deducciones por empleado", categoria: "Planillas" },
-  { id: "resumen-planilla", nombre: "Resumen de planilla", descripcion: "Totales por departamento y sucursal", categoria: "Planillas" },
+  { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Deducciones por empleado, agrupadas por sucursal, división y departamento con subtotales", categoria: "Planillas" },
+  { id: "resumen-planilla", nombre: "Resumen de planilla", descripcion: "Totales por sucursal, división y departamento, en árbol", categoria: "Planillas" },
   { id: "nomina-banco", nombre: "Nómina para banco", descripcion: "Archivo con transferencias bancarias para pago de nómina", categoria: "Planillas" },
   { id: "ihss-planilla", nombre: "Planilla IHSS (proyectada)", descripcion: "Aportes IHSS EM/IVM estimados sobre el salario actual de los empleados activos", categoria: "Legal" },
   { id: "ihss-historico", nombre: "Planilla IHSS (histórica)", descripcion: "Aportes IHSS EM/IVM realmente registrados en las planillas del período (usa fechas)", categoria: "Legal" },
   { id: "rap-planilla", nombre: "Planilla RAP", descripcion: "Reporte de aportes al RAP", categoria: "Legal" },
+  { id: "isr-dmr", nombre: "Retenciones de ISR del mes (DMR)", descripcion: "RTN, ingreso anual proyectado, deducción y base mensual y retención de quien tuvo ISR en el mes (usa fechas)", categoria: "Legal" },
   { id: "isr-anual", nombre: "Constancia anual de ISR", descripcion: "Constancia de retención de ISR por empleado para declaración anual", categoria: "Legal" },
   { id: "13vo-proyeccion", nombre: "Proyección del decimotercer mes", descripcion: "Acumulado de provisión de décimo tercer mes", categoria: "Provisiones" },
   { id: "14vo-proyeccion", nombre: "Proyección del decimocuarto mes", descripcion: "Acumulado de provisión de décimo cuarto mes", categoria: "Provisiones" },
@@ -53,6 +60,8 @@ interface Visor {
   generado: string;
   filtros: string[];
   total: number;
+  /** Sólo en reportes agrupados por estructura: tipo y nivel de cada fila. */
+  filas?: MetaFila[];
 }
 
 /**
@@ -70,7 +79,7 @@ function nombreDescarga(res: Response, reporteId: string): string {
   return `${reporteId}_${new Date().toISOString().split("T")[0]}.${ext}`;
 }
 
-export default function ReportesClient({ sucursales, departamentos, empresas, planillas }: Props) {
+export default function ReportesClient({ conDivisiones, sucursales, divisiones, departamentos, empresas, planillas }: Props) {
   const [categoria, setCategoria] = useState("Todos");
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,9 +88,10 @@ export default function ReportesClient({ sucursales, departamentos, empresas, pl
     fechaDesde: "",
     fechaHasta: "",
     sucursalId: "",
+    divisionId: "",
     departamentoId: "",
     empresaId: empresas[0]?.id ?? "",
-    planillaId: planillas[0]?.id ?? "",
+    planillaId: "",
   });
 
   const filtrados = categoria === "Todos" ? reportes : reportes.filter((r) => r.categoria === categoria);
@@ -92,16 +102,32 @@ export default function ReportesClient({ sucursales, departamentos, empresas, pl
       setFiltros((f) => ({ ...f, [k]: e.target.value })),
   });
 
+  // Selectores en cascada: Sucursal → División → Departamento. Al cambiar un
+  // nivel se limpian los de abajo, que podrían ya no pertenecerle.
+  const divisionesVisibles = divisiones.filter((v) => !filtros.sucursalId || v.sucursalId === filtros.sucursalId);
+  const departamentosVisibles = departamentos.filter((d) =>
+    (!filtros.sucursalId || d.sucursalId === filtros.sucursalId) && (!filtros.divisionId || d.divisionId === filtros.divisionId)
+  );
+  const nombreSucursal = (id: string) => sucursales.find((s) => s.id === id)?.nombre ?? "";
+  const cambiarSucursal = (sucursalId: string) => setFiltros((f) => ({ ...f, sucursalId, divisionId: "", departamentoId: "" }));
+  const cambiarDivision = (divisionId: string) => setFiltros((f) => ({ ...f, divisionId, departamentoId: "" }));
+
   function validar(reporteId: string): boolean {
-    if (REQUIEREN_PLANILLA.has(reporteId) && !filtros.planillaId) {
-      setError("Seleccione la planilla a dispersar. Sólo aparecen las aprobadas o pagadas.");
-      return false;
+    if (REQUIEREN_PLANILLA.has(reporteId)) {
+      const pl = planillas.find((p) => p.id === filtros.planillaId);
+      if (!pl || !pl.dispersable) {
+        setError("Seleccione en «Planilla» la planilla a dispersar: debe estar aprobada o pagada.");
+        return false;
+      }
     }
     return true;
   }
 
   function url(reporteId: string, formato: Formato | "JSON"): string {
-    const params = new URLSearchParams({ reporteId, ...filtros, formato });
+    // La planilla sólo viaja a los reportes que la usan: los demás trabajan por fechas.
+    const { planillaId, ...resto } = filtros;
+    const usaPlanilla = REQUIEREN_PLANILLA.has(reporteId) || (ACEPTAN_PLANILLA.has(reporteId) && planillaId);
+    const params = new URLSearchParams({ reporteId, ...resto, ...(usaPlanilla ? { planillaId } : {}), formato });
     return `/api/reportes?${params.toString()}`;
   }
 
@@ -171,28 +197,38 @@ export default function ReportesClient({ sucursales, departamentos, empresas, pl
           </div>
           <div>
             <label htmlFor="rep-sucursal" className="mb-1 block text-xs font-medium text-gray-700">Sucursal</label>
-            <select id="rep-sucursal" {...campo("sucursalId")} className="input">
+            <select id="rep-sucursal" value={filtros.sucursalId} onChange={(e) => cambiarSucursal(e.target.value)} className="input">
               <option value="">Todas</option>
               {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
             </select>
           </div>
+          {conDivisiones && (
+            <div>
+              <label htmlFor="rep-division" className="mb-1 block text-xs font-medium text-gray-700">División</label>
+              <select id="rep-division" value={filtros.divisionId} onChange={(e) => cambiarDivision(e.target.value)} className="input">
+                <option value="">Todas</option>
+                {divisionesVisibles.map((v) => (
+                  <option key={v.id} value={v.id}>{filtros.sucursalId ? v.nombre : `${v.nombre} (${nombreSucursal(v.sucursalId)})`}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label htmlFor="rep-depto" className="mb-1 block text-xs font-medium text-gray-700">Departamento</label>
             <select id="rep-depto" {...campo("departamentoId")} className="input">
               <option value="">Todos</option>
-              {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+              {departamentosVisibles.map((d) => (
+                <option key={d.id} value={d.id}>{filtros.sucursalId ? d.nombre : `${d.nombre} (${nombreSucursal(d.sucursalId)})`}</option>
+              ))}
             </select>
           </div>
           <div className="col-span-2 md:col-span-1">
             <label htmlFor="rep-planilla" className="mb-1 block text-xs font-medium text-gray-700">
-              Planilla a dispersar <span className="font-normal text-gray-400">(archivo del banco)</span>
+              Planilla <span className="font-normal text-gray-400">(reportes de planilla y archivo del banco)</span>
             </label>
             <select id="rep-planilla" {...campo("planillaId")} className="input">
-              {planillas.length === 0 ? (
-                <option value="">No hay planillas aprobadas</option>
-              ) : (
-                planillas.map((p) => <option key={p.id} value={p.id}>{p.etiqueta}</option>)
-              )}
+              <option value="">{planillas.length ? "Todas, según las fechas" : "No hay planillas vigentes"}</option>
+              {planillas.map((p) => <option key={p.id} value={p.id}>{p.etiqueta}</option>)}
             </select>
           </div>
         </div>
@@ -230,7 +266,7 @@ export default function ReportesClient({ sucursales, departamentos, empresas, pl
                 <h3 className="text-sm font-medium text-gray-900">{r.nombre}</h3>
                 {categoria === "Todos" && <span className="text-xs text-gray-400">{r.categoria}</span>}
               </div>
-              <p className="mt-0.5 text-xs text-gray-500">{r.descripcion}</p>
+              <p className="mt-0.5 text-xs text-gray-500">{conDivisiones ? r.descripcion : r.descripcion.replace("sucursal, división y departamento", "sucursal y departamento")}</p>
             </div>
             <div className="flex items-center gap-1.5">
               <button type="button" onClick={() => ver(r.id)} disabled={ocupado !== null} className="btn btn-primary btn-sm">
@@ -319,11 +355,26 @@ function VisorReporte({
               </thead>
               <tbody>
                 {visor.datos.map((fila, f) => {
-                  const total = esFilaTotal(fila);
+                  const m = metaFila(fila, visor.filas?.[f]);
+                  // Sangría por nivel en los reportes agrupados (Sucursal → División → Departamento).
+                  const sangria = visor.filas ? { paddingLeft: `${0.75 + m.nivel * 1.25}rem` } : undefined;
+                  if (m.tipo === "grupo") {
+                    return (
+                      <tr key={f}>
+                        <td colSpan={visor.cabeceras.length} style={sangria}
+                          className={cn("px-3 py-2 font-semibold text-gray-900", m.nivel === 0 ? "bg-blue-50" : m.nivel === 1 ? "bg-gray-100" : "bg-gray-50")}>
+                          {fila[0]}
+                        </td>
+                      </tr>
+                    );
+                  }
                   return (
-                    <tr key={f} className={cn(total && "bg-gray-50 font-semibold text-gray-900")}>
+                    <tr key={f} className={cn(
+                      m.tipo === "total" && "bg-gray-50 font-semibold text-gray-900",
+                      m.tipo === "subtotal" && "font-semibold text-gray-900 [&>td]:border-t [&>td]:border-gray-300",
+                    )}>
                       {visor.cabeceras.map((_, i) => (
-                        <td key={i} className={cn("whitespace-nowrap px-3 py-2", numericas[i] && "text-right")}>{fila[i] ?? ""}</td>
+                        <td key={i} style={i === 0 ? sangria : undefined} className={cn("whitespace-nowrap px-3 py-2", numericas[i] && "text-right")}>{fila[i] ?? ""}</td>
                       ))}
                     </tr>
                   );

@@ -7,6 +7,7 @@ import { formatCurrency, formatDateLong } from "@/lib/utils";
 import { maxBytes } from "@/lib/uploads";
 import { FILTRO_VACANTE_PUBLICA, SELECT_VACANTE_PUBLICA, TIPO_CONTRATO_PUBLICO, textoSalario } from "@/lib/talento/empleos";
 import FormularioPostulacion from "@/components/empleos/FormularioPostulacion";
+import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id } = await params;
   const [v, empresa] = await Promise.all([
     vacantePublica(id),
-    prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true } }),
+    prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true }, orderBy: ORDEN_EMPRESA_PRINCIPAL }),
   ]);
   if (!v) return { title: { absolute: "Vacante no disponible" } };
   return { title: { absolute: empresa ? `${v.titulo} en ${empresa.nombre}` : v.titulo } };
@@ -29,7 +30,7 @@ export default async function VacantePublicaPage({ params }: Params) {
   const { id } = await params;
   const [v, empresa] = await Promise.all([
     vacantePublica(id),
-    prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true } }),
+    prisma.empresa.findFirst({ where: { activa: true }, select: { nombre: true }, orderBy: ORDEN_EMPRESA_PRINCIPAL }),
   ]);
   if (!v) notFound();
 

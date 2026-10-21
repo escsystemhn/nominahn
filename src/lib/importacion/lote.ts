@@ -129,7 +129,9 @@ export async function marcarAplicado(
  */
 export async function leerArchivo(
   form: FormData,
-  campo = "archivo"
+  campo = "archivo",
+  /** Extensiones aceptadas; por omisión, CSV. */
+  acepta: { patron: RegExp; descripcion: string } = { patron: /\.(csv|txt)$/i, descripcion: "archivos .csv" }
 ): Promise<{ ok: true; nombre: string; bytes: Uint8Array } | { ok: false; error: string }> {
   const entrada = form.get(campo);
   if (!(entrada instanceof File)) {
@@ -145,8 +147,8 @@ export async function leerArchivo(
     };
   }
   const nombre = entrada.name || "importacion.csv";
-  if (!/\.(csv|txt)$/i.test(nombre)) {
-    return { ok: false, error: "Sólo se aceptan archivos .csv" };
+  if (!acepta.patron.test(nombre)) {
+    return { ok: false, error: `Sólo se aceptan ${acepta.descripcion}` };
   }
 
   return { ok: true, nombre, bytes: new Uint8Array(await entrada.arrayBuffer()) };

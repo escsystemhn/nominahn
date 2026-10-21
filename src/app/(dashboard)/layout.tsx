@@ -5,6 +5,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
 import AvisoEvaluacion from "@/components/licencia/AvisoEvaluacion";
 import { estadoLicencia } from "@/lib/licencia/estado";
+import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 
 export default async function DashboardLayout({
   children,
@@ -24,7 +25,7 @@ export default async function DashboardLayout({
   const bloqueado = session.user?.debeCambiarPassword === true;
 
   // La barra superior nombra a la empresa cuyos libros se están viendo.
-  const empresa = await prisma.empresa.findFirst({ select: { nombre: true } });
+  const empresa = await prisma.empresa.findFirst({ select: { nombre: true }, orderBy: ORDEN_EMPRESA_PRINCIPAL });
 
   // Edición instalable: del día 25 al 30 de la evaluación se avisa en cada pantalla.
   const licencia = await estadoLicencia();

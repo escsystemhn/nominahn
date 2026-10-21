@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import CentrosCostoClient from "@/components/organizacion/CentrosCostoClient";
+import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 
 export default async function CentrosCostoPage() {
   const usuario = await requerirPermisoPagina(["organizacion.centros_costo", "planillas.contabilidad"]);
+  const conDivisiones = await divisionesHabilitadas(prisma);
 
   const [centros, departamentos, empleadosSinCentro] = await Promise.all([
     prisma.centroCosto.findMany({
@@ -12,7 +14,7 @@ export default async function CentrosCostoPage() {
     }),
     prisma.departamento.findMany({
       where: { activo: true },
-      select: { id: true, nombre: true, centroCostoId: true, sucursal: { select: { nombre: true } } },
+      select: { id: true, nombre: true, centroCostoId: true, sucursal: { select: { nombre: true } }, division: { select: { nombre: true } } },
       orderBy: [{ sucursal: { nombre: "asc" } }, { nombre: "asc" }],
     }),
     /**
@@ -44,7 +46,8 @@ export default async function CentrosCostoPage() {
       departamentos={departamentos.map((d) => ({
         id: d.id,
         nombre: d.nombre,
-        sucursal: d.sucursal.nombre,
+        // Con divisiones, «División, Sucursal»: distingue departamentos homónimos.
+        sucursal: conDivisiones && d.division ? `${d.division.nombre}, ${d.sucursal.nombre}` : d.sucursal.nombre,
         centroCostoId: d.centroCostoId,
       }))}
       empleadosSinCentro={empleadosSinCentro}

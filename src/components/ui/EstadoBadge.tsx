@@ -17,6 +17,9 @@ const ESTADOS: Record<string, { label: string; tono: Tono }> = {
   SUSPENDIDO: { label: "Suspendido", tono: "error" },
   VACACIONES: { label: "De vacaciones", tono: "marca" },
   PERMISO: { label: "Con permiso", tono: "aviso" },
+  // Sucursal / división
+  ACTIVA: { label: "Activa", tono: "ok" },
+  INACTIVA: { label: "Inactiva", tono: "neutro" },
   // Planilla
   BORRADOR: { label: "Borrador", tono: "neutro" },
   CALCULADA: { label: "Calculada", tono: "marca" },

@@ -14,6 +14,12 @@
 import ExcelJS from "exceljs";
 import * as pdfmakeModulo from "pdfmake";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
+// La lectura de celdas y filas tiene una sola definición, compartida con el
+// visor del navegador (que no puede importar este archivo por exceljs y pdfmake).
+import { valorCelda, columnasNumericas, metaFila, contarDetalles, type TipoCelda, type MetaFila } from "./salida-celdas";
+
+export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles } from "./salida-celdas";
+export type { TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
 
 /**
  * pdfmake 0.3 exporta UNA instancia (module.exports = new pdfmake()). Según cómo
@@ -32,48 +38,15 @@ export interface ReporteTabla {
   generado: Date;
   /** Filtros aplicados, ya en palabras («Desde 01/09/2026», «Sucursal: Norte»). */
   filtros: string[];
+  /**
+   * Sólo en reportes agrupados: qué es cada fila de `datos` (encabezado de
+   * grupo, detalle, subtotal o total) y su nivel de sangría. Sin esto, la tabla
+   * es plana y una fila que empieza por «TOTAL» se trata como total.
+   */
+  filas?: MetaFila[];
 }
 
 // ─── Celdas ───────────────────────────────────────────────────────────────────
-
-export type TipoCelda = "moneda" | "numero" | "porcentaje" | "texto";
-
-const RE_MONEDA = /^-?L\s?-?[\d,]+\.\d{2}$/;
-const RE_NUMERO = /^-?\d+(\.\d+)?$/;
-const RE_PORCENTAJE = /^-?\d+(\.\d+)?%$/;
-
-/** Interpreta el texto de una celda: moneda en lempiras, número, porcentaje o texto. */
-export function valorCelda(texto: string): { tipo: TipoCelda; valor: number | string } {
-  const s = String(texto ?? "").trim();
-  if (RE_MONEDA.test(s)) {
-    const negativo = s.startsWith("-") || /L\s?-/.test(s);
-    const n = parseFloat(s.replace(/[^\d.]/g, ""));
-    return { tipo: "moneda", valor: negativo ? -n : n };
-  }
-  if (RE_NUMERO.test(s)) return { tipo: "numero", valor: parseFloat(s) };
-  if (RE_PORCENTAJE.test(s)) return { tipo: "porcentaje", valor: parseFloat(s) / 100 };
-  return { tipo: "texto", valor: s };
-}
-
-/** Una fila de totales empieza por «TOTAL» en su primera celda con contenido. */
-export function esFilaTotal(fila: string[]): boolean {
-  const primera = fila.find((c) => String(c ?? "").trim() !== "") ?? "";
-  return /^TOTAL/i.test(primera.trim());
-}
-
-/** Columnas en las que todas las celdas con contenido son numéricas. */
-export function columnasNumericas(cabeceras: string[], datos: string[][]): boolean[] {
-  return cabeceras.map((_, i) => {
-    let conContenido = 0;
-    for (const fila of datos) {
-      const s = String(fila[i] ?? "").trim();
-      if (s === "") continue;
-      conContenido++;
-      if (valorCelda(s).tipo === "texto") return false;
-    }
-    return conContenido > 0;
-  });
-}
 
 /** Nombre de hoja válido para Excel: sin `[]:*?/\` y hasta 31 caracteres. */
 export function nombreHoja(titulo: string): string {
@@ -86,6 +59,9 @@ const FORMATO_EXCEL: Record<Exclude<TipoCelda, "texto">, string> = {
   numero: "#,##0.##",
   porcentaje: "0.00%",
 };
+
+/** Fondo del encabezado de grupo por nivel: sucursal, división, departamento. */
+const FONDO_GRUPO_EXCEL = ["FFDCE6EA", "FFE9EFF2", "FFF3F6F8"];
 
 // ─── Excel ────────────────────────────────────────────────────────────────────
 
@@ -102,7 +78,7 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   ws.getCell("A1").font = { bold: true, size: 14, color: { argb: "FF0D2B38" } };
 
   ws.mergeCells(`A2:${ultima}2`);
-  ws.getCell("A2").value = [`Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`, `${r.datos.length} registros`, ...r.filtros].join(" · ");
+  ws.getCell("A2").value = [`Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`, `${contarDetalles(r.datos, r.filas)} registros`, ...r.filtros].join(" · ");
   ws.getCell("A2").font = { size: 9, color: { argb: "FF637580" } };
 
   const cabecera = ws.getRow(4);
@@ -117,8 +93,8 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   const numericas = columnasNumericas(r.cabeceras, r.datos);
   const anchos = r.cabeceras.map((h) => h.length);
 
-  for (const fila of r.datos) {
-    const total = esFilaTotal(fila);
+  r.datos.forEach((fila, f) => {
+    const meta = metaFila(fila, r.filas?.[f]);
     const row = ws.addRow(
       fila.map((texto, i) => {
         const v = valorCelda(texto);
@@ -131,16 +107,30 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
       const v = valorCelda(texto);
       if (numericas[i] && v.tipo !== "texto") row.getCell(i + 1).numFmt = FORMATO_EXCEL[v.tipo];
     });
-    if (total) {
+    if (r.filas) {
+      // Sangría de la primera celda y agrupación plegable: al cerrar una
+      // sucursal quedan a la vista su encabezado y su subtotal.
+      row.getCell(1).alignment = { indent: meta.nivel * 2 };
+      anchos[0] = Math.max(anchos[0] ?? 0, String(fila[0] ?? "").length + meta.nivel * 2);
+      if (meta.tipo !== "total" && meta.nivel > 0) row.outlineLevel = Math.min(7, meta.nivel);
+    }
+    if (meta.tipo === "grupo") {
+      row.font = { bold: true, color: { argb: "FF0D2B38" } };
+      const fondo = FONDO_GRUPO_EXCEL[Math.min(meta.nivel, FONDO_GRUPO_EXCEL.length - 1)];
+      for (let c = 1; c <= columnas; c++) row.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: fondo } };
+    }
+    if (meta.tipo === "subtotal" || meta.tipo === "total") {
       row.font = { bold: true };
       for (let c = 1; c <= columnas; c++) row.getCell(c).border = { top: { style: "thin", color: { argb: "FFC3CED4" } } };
     }
-  }
+  });
 
   ws.columns.forEach((col, i) => {
     col.width = Math.min(50, Math.max(10, (anchos[i] ?? 10) + 2));
   });
-  ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + r.datos.length, column: columnas } };
+  // El autofiltro de una tabla agrupada separaría encabezados y subtotales de
+  // sus filas: sólo en las tablas planas.
+  if (!r.filas) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + r.datos.length, column: columnas } };
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
@@ -179,6 +169,8 @@ const TINTA = "#0D2B38";
 const LINEA = "#DCE3E7";
 const PAPEL = "#F5F8F9";
 const TENUE = "#637580";
+/** Fondo del encabezado de grupo por nivel: sucursal, división, departamento. */
+const FONDO_GRUPO_PDF = ["#DCE6EA", "#E9EFF2", "#F3F6F8"];
 
 export async function aPdf(r: ReporteTabla): Promise<Buffer> {
   prepararFuentes();
@@ -197,20 +189,32 @@ export async function aPdf(r: ReporteTabla): Promise<Buffer> {
   }));
 
   const cuerpo: TableCell[][] = r.datos.map((fila, f) => {
-    const total = esFilaTotal(fila);
+    const m = metaFila(fila, r.filas?.[f]);
+    const sangria = r.filas ? m.nivel * 10 : 0;
+    if (m.tipo === "grupo") {
+      // El encabezado de un grupo ocupa la fila entera: un nombre largo no
+      // queda apretado en la primera columna.
+      const fondo = FONDO_GRUPO_PDF[Math.min(m.nivel, FONDO_GRUPO_PDF.length - 1)];
+      return [
+        { text: String(fila[0] ?? ""), colSpan: r.cabeceras.length, bold: true, color: TINTA, fontSize: tamano, fillColor: fondo, margin: [4 + sangria, 3, 4, 3] },
+        ...r.cabeceras.slice(1).map(() => ({})),
+      ];
+    }
+    const resaltada = m.tipo === "subtotal" || m.tipo === "total";
     return r.cabeceras.map((_, i) => ({
       text: String(fila[i] ?? ""),
       fontSize: tamano,
-      bold: total,
+      bold: resaltada,
       alignment: numericas[i] ? "right" : "left",
-      fillColor: total ? "#EBF0F2" : f % 2 === 1 ? PAPEL : undefined,
-      margin: [4, 3, 4, 3],
+      // En una tabla agrupada las bandas alternas competirían con los grupos.
+      fillColor: m.tipo === "total" ? "#EBF0F2" : m.tipo === "subtotal" ? "#F1F5F7" : !r.filas && f % 2 === 1 ? PAPEL : undefined,
+      margin: [4 + (i === 0 ? sangria : 0), 3, 4, 3],
     }));
   });
 
   const meta = [
     `Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`,
-    `${r.datos.length} registros`,
+    `${contarDetalles(r.datos, r.filas)} registros`,
     ...r.filtros,
   ].join("  ·  ");
 

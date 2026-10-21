@@ -9,6 +9,10 @@ import {
   BOM_UTF8,
 } from "@/lib/reportes/formato";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroEmpleados, filtroPorEmpleado } from "@/lib/auth/alcance";
+import { filtroDetallesOrg, filtroEmpleadosOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
+import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "@/lib/reportes/planilla-estructura";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
 import { nombreCompleto, formatCurrency, formatDate, calcularAniosTrabajados } from "@/lib/utils";
 import {
@@ -19,8 +23,9 @@ import {
 } from "@/lib/payroll/calculos-hn";
 import { calcularDecimo, ventanaDevengo, type TipoDecimo } from "@/lib/payroll/decimos";
 import { aNumero, minimo, sumar, sumarPor, money, redondear, CERO, type Money } from "@/lib/payroll/money";
-import { aXlsx, aPdf, type ReporteTabla } from "@/lib/reportes/salida";
+import { aXlsx, aPdf, contarDetalles, metaFila, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
 import { reportePuntualidad, MAX_DIAS_REPORTE } from "@/lib/asistencia/tardanzas";
+import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
 
 export async function GET(req: NextRequest) {
   const g = await requerirPermiso("reportes.ver");
@@ -30,19 +35,37 @@ export async function GET(req: NextRequest) {
   const reporteId = searchParams.get("reporteId") ?? "";
   const desde = searchParams.get("fechaDesde");
   const hasta = searchParams.get("fechaHasta");
-  const sucursalId = searchParams.get("sucursalId") || undefined;
-  const departamentoId = searchParams.get("departamentoId") || undefined;
   const formato = normalizarFormato(searchParams.get("formato"));
+  // Obligatoria en «nomina-banco»; en los reportes de planilla, acota a una sola.
+  const planillaId = searchParams.get("planillaId") || undefined;
+
+  // Alcance organizacional pedido (Sucursal → División → Departamento). La
+  // división sólo cuenta si el administrador habilitó ese nivel.
+  const conDivisiones = await divisionesHabilitadas(prisma);
+  const alcance = normalizarAlcance({
+    sucursalId: searchParams.get("sucursalId"),
+    divisionId: conDivisiones ? searchParams.get("divisionId") : null,
+    departamentoId: searchParams.get("departamentoId"),
+  });
+  const { sucursalId, divisionId, departamentoId } = alcance;
 
   // Cada reporte se aplana a filas de celdas ya formateadas: es lo que consumen
-  // tanto la salida CSV como la HTML de más abajo.
+  // tanto la salida CSV como la HTML de más abajo. `filas` sólo existe en los
+  // reportes agrupados por estructura.
   let datos: string[][] = [];
+  let filas: MetaFila[] | undefined;
   let titulo = "Reporte NominaHN";
   let cabeceras: string[] = [];
 
-  const whereEmp: Prisma.EmpleadoWhereInput = { estado: "ACTIVO" };
-  if (sucursalId) whereEmp.sucursalId = sucursalId;
-  if (departamentoId) whereEmp.departamentoId = departamentoId;
+  // Un solo filtro de personas para todos los reportes: los tres niveles a la
+  // vez (antes, con sucursal y departamento elegidos sólo se aplicaba la
+  // sucursal) y el ALCANCE del usuario, que los reportes ignoraban: un
+  // supervisor de una sucursal veía la nómina de todas.
+  const filtroEmp: Prisma.EmpleadoWhereInput = { AND: [filtroEmpleadosOrg(alcance), filtroEmpleados(g.usuario)] };
+  const porEmpleado = { empleado: filtroEmp };
+  const whereEmp: Prisma.EmpleadoWhereInput = { AND: [{ estado: "ACTIVO" }, filtroEmp] };
+  // Las líneas de planilla se filtran por dónde estaba la persona al pagarse.
+  const filtroDet: Prisma.PlanillaDetalleWhereInput = { AND: [filtroDetallesOrg(alcance), filtroPorEmpleado(g.usuario)] };
 
   if (reporteId === "empleados-activos") {
     const empleados = await prisma.empleado.findMany({
@@ -64,92 +87,57 @@ export async function GET(req: NextRequest) {
       e.tipoPlanilla,
     ]);
   } else if (reporteId === "planilla-detallada" || reporteId === "resumen-planilla") {
-    const wherePl: Prisma.PlanillaWhereInput = {};
+    // Una planilla anulada no se pagó: antes se sumaba igual que las vigentes.
+    const wherePl: Prisma.PlanillaWhereInput = { estado: { not: "ANULADA" } };
+    if (planillaId) wherePl.id = planillaId;
     if (desde) wherePl.fechaInicio = { gte: new Date(desde) };
     if (hasta) wherePl.fechaFin = { lte: new Date(hasta) };
 
+    const unidad = { select: { id: true, nombre: true } } as const;
     const planillas = await prisma.planilla.findMany({
       where: wherePl,
       include: {
         detalles: {
-          include: { empleado: { include: { sucursal: true, departamento: true } } },
-          where: sucursalId ? { empleado: { sucursalId } } : departamentoId ? { empleado: { departamentoId } } : undefined,
+          where: filtroDet,
+          include: {
+            sucursal: unidad, division: unidad, departamento: unidad,
+            empleado: {
+              select: {
+                primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
+                sucursal: unidad, departamento: { select: { id: true, nombre: true, division: unidad } },
+              },
+            },
+          },
         },
       },
       orderBy: { fechaFin: "desc" },
     });
 
-    if (reporteId === "resumen-planilla") {
-      // Antes este reporte devolvía exactamente lo mismo que planilla-detallada:
-      // no agrupaba nada, pese a llamarse «resumen» y ofrecer «totales por
-      // departamento y sucursal».
-      titulo = "Resumen de Planilla por Sucursal y Departamento";
-      cabeceras = ["Sucursal", "Departamento", "Empleados", "Bruto", "Deducciones", "Neto", "Costo Patronal"];
+    const lineas: LineaPlanilla[] = planillas.flatMap((pl) =>
+      pl.detalles.map((d) => ({
+        empleadoId: d.empleadoId,
+        nombre: nombreCompleto(d.empleado),
+        periodo: `${formatDate(pl.fechaInicio)}-${formatDate(pl.fechaFin)}`,
+        ubicacion: ubicacionDeLinea(d, conDivisiones),
+        bruto: money(d.totalBruto),
+        ihss: money(d.ihssEmpleado),
+        rap: money(d.rapEmpleado),
+        afp: money(d.afpEmpleado),
+        isr: money(d.isr),
+        otras: sumar(d.cooperativa, d.prestamos, d.adelantos, d.otrosDeducciones),
+        ausencias: money(d.ausencias),
+        deducciones: money(d.totalDeducciones),
+        neto: money(d.salarioNeto),
+        patronal: sumar(d.ihssEmpleador, d.rapEmpleador, d.infop, d.reservaLaboral),
+      }))
+    );
 
-      const grupos = new Map<string, {
-        sucursal: string; departamento: string; empleados: Set<string>;
-        bruto: Money; deducciones: Money; neto: Money; patronal: Money;
-      }>();
-
-      for (const pl of planillas) {
-        for (const d of pl.detalles) {
-          const clave = `${d.empleado.sucursal.nombre}||${d.empleado.departamento.nombre}`;
-          const cur = grupos.get(clave) ?? {
-            sucursal: d.empleado.sucursal.nombre,
-            departamento: d.empleado.departamento.nombre,
-            empleados: new Set<string>(),
-            bruto: CERO, deducciones: CERO, neto: CERO, patronal: CERO,
-          };
-          cur.empleados.add(d.empleadoId);
-          cur.bruto = cur.bruto.plus(d.totalBruto);
-          cur.deducciones = cur.deducciones.plus(d.totalDeducciones);
-          cur.neto = cur.neto.plus(d.salarioNeto);
-          cur.patronal = cur.patronal.plus(sumar(d.ihssEmpleador, d.rapEmpleador, d.infop, d.reservaLaboral));
-          grupos.set(clave, cur);
-        }
-      }
-
-      const filas = [...grupos.values()].sort(
-        (a, b) => a.sucursal.localeCompare(b.sucursal) || a.departamento.localeCompare(b.departamento)
-      );
-
-      datos = filas.map((r) => [
-        r.sucursal, r.departamento, String(r.empleados.size),
-        formatCurrency(aNumero(r.bruto)),
-        formatCurrency(aNumero(r.deducciones)),
-        formatCurrency(aNumero(r.neto)),
-        formatCurrency(aNumero(r.patronal)),
-      ]);
-
-      if (filas.length > 0) {
-        datos.push([
-          "TOTAL GENERAL", "",
-          String(new Set(planillas.flatMap((p) => p.detalles.map((d) => d.empleadoId))).size),
-          formatCurrency(aNumero(sumarPor(filas, (r) => r.bruto))),
-          formatCurrency(aNumero(sumarPor(filas, (r) => r.deducciones))),
-          formatCurrency(aNumero(sumarPor(filas, (r) => r.neto))),
-          formatCurrency(aNumero(sumarPor(filas, (r) => r.patronal))),
-        ]);
-      }
-    } else {
-      titulo = "Planilla Detallada";
-      cabeceras = ["Período", "Empleado", "Sucursal", "Bruto", "IHSS", "RAP", "AFP", "ISR", "Otras Ded.", "Ausencias", "Neto"];
-      datos = planillas.flatMap((pl) =>
-        pl.detalles.map((d) => [
-          `${formatDate(pl.fechaInicio)}-${formatDate(pl.fechaFin)}`,
-          nombreCompleto(d.empleado),
-          d.empleado.sucursal.nombre,
-          formatCurrency(aNumero(d.totalBruto)),
-          formatCurrency(aNumero(d.ihssEmpleado)),
-          formatCurrency(aNumero(d.rapEmpleado)),
-          formatCurrency(aNumero(d.afpEmpleado)),
-          formatCurrency(aNumero(d.isr)),
-          formatCurrency(aNumero(sumar(d.cooperativa, d.prestamos, d.adelantos, d.otrosDeducciones))),
-          formatCurrency(aNumero(d.ausencias)),
-          formatCurrency(aNumero(d.salarioNeto)),
-        ])
-      );
-    }
+    // Agrupadas por Sucursal → División → Departamento, con subtotales. Sin
+    // divisiones habilitadas, el nivel no aparece.
+    const niveles = conDivisiones ? "Sucursal, División y Departamento" : "Sucursal y Departamento";
+    const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas) : tablaPlanillaDetallada(lineas);
+    titulo = reporteId === "resumen-planilla" ? `Resumen de Planilla por ${niveles}` : `Planilla Detallada por ${niveles}`;
+    ({ cabeceras, datos, filas } = tabla);
   } else if (reporteId === "ihss-planilla") {
     titulo = "Planilla IHSS (EM + IVM)";
     cabeceras = ["Empleado", "N° IHSS", "Salario", "Base Cotiz.", "EM Empl.", "IVM Empl.", "EM Patr.", "IVM Patr.", "Aporte Estado", "Total"];
@@ -199,7 +187,7 @@ export async function GET(req: NextRequest) {
     const detalles = await prisma.planillaDetalle.findMany({
       where: {
         planilla: wherePl,
-        ...(sucursalId ? { empleado: { sucursalId } } : departamentoId ? { empleado: { departamentoId } } : {}),
+        ...filtroDet,
       },
       include: { empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, ihssNro: true } } },
     });
@@ -246,8 +234,8 @@ export async function GET(req: NextRequest) {
     }
     titulo = "Puntualidad";
     cabeceras = ["Empleado", "Sucursal", "Turno", "Días con marca", "Llegadas tarde", "Minutos tarde", "Promedio por llegada tarde", "Días laborales sin marca"];
-    const filas = await reportePuntualidad(d0, d1, { sucursalId, departamentoId });
-    datos = filas.map((r) => [
+    const puntualidad = await reportePuntualidad(d0, d1, filtroEmp);
+    datos = puntualidad.map((r) => [
       r.empleado,
       r.sucursal,
       r.turno,
@@ -265,7 +253,7 @@ export async function GET(req: NextRequest) {
         ...(hasta ? { lte: new Date(hasta) } : {}),
       };
     }
-    if (sucursalId) whereMar.empleado = { sucursalId };
+    whereMar.empleado = filtroEmp;
 
     titulo = "Reporte de Asistencia";
     // Antes este reporte emitía el `empleadoId` crudo como nombre, la sucursal
@@ -342,7 +330,6 @@ export async function GET(req: NextRequest) {
     // ─── Dispersión bancaria ──────────────────────────────────────────────────
     // Una línea por empleado con cuenta. Sólo planillas APROBADAS o PAGADAS: no
     // se dispersa un borrador.
-    const planillaId = searchParams.get("planillaId");
     if (!planillaId) {
       return NextResponse.json(
         { error: "Seleccione la planilla a dispersar antes de generar el archivo" },
@@ -355,11 +342,7 @@ export async function GET(req: NextRequest) {
       include: {
         empresa: { select: { nombre: true, rtn: true } },
         detalles: {
-          where: sucursalId
-            ? { empleado: { sucursalId } }
-            : departamentoId
-              ? { empleado: { departamentoId } }
-              : undefined,
+          where: filtroDet,
           include: {
             empleado: {
               select: {
@@ -458,9 +441,10 @@ export async function GET(req: NextRequest) {
             lte: new Date(Date.UTC(anio, 11, 31)),
           },
         },
-        ...(sucursalId ? { empleado: { sucursalId } } : departamentoId ? { empleado: { departamentoId } } : {}),
+        ...filtroDet,
       },
       include: {
+        planilla: { select: { fechaFin: true } },
         empleado: {
           select: {
             primerNombre: true, segundoNombre: true, primerApellido: true,
@@ -477,13 +461,28 @@ export async function GET(req: NextRequest) {
       bruto: Money; ihss: Money; rap: Money; afp: Money; isr: Money;
     }>();
 
+    // Meses pagados FUERA de NominaHN e importados para el cálculo personalizado
+    // del ISR: también son sueldo devengado e ISR retenido del año. Si un mes
+    // está importado, sus planillas no se suman (es el mismo mes dos veces).
+    const importados = await prisma.acumuladoIsr.findMany({
+      where: { anio, empleado: filtroEmp },
+      include: { empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, identidad: true, rtn: true } } },
+    });
+    const mesImportado = new Set(importados.map((a) => `${a.empleadoId}|${a.mes}`));
+    const nuevo = (e: { identidad: string | null; rtn: string | null } & Parameters<typeof nombreCompleto>[0]) => ({
+      nombre: nombreCompleto(e), identidad: e.identidad ?? "", rtn: e.rtn ?? "",
+      bruto: CERO, ihss: CERO, rap: CERO, afp: CERO, isr: CERO,
+    });
+    for (const a of importados) {
+      const cur = acc.get(a.empleadoId) ?? nuevo(a.empleado);
+      cur.bruto = cur.bruto.plus(a.sueldo).plus(a.variables);
+      cur.isr = cur.isr.plus(a.isrRetenido);
+      acc.set(a.empleadoId, cur);
+    }
+
     for (const d of detalles) {
-      const cur = acc.get(d.empleadoId) ?? {
-        nombre: nombreCompleto(d.empleado),
-        identidad: d.empleado.identidad ?? "",
-        rtn: d.empleado.rtn ?? "",
-        bruto: CERO, ihss: CERO, rap: CERO, afp: CERO, isr: CERO,
-      };
+      if (mesImportado.has(`${d.empleadoId}|${d.planilla.fechaFin.getUTCMonth() + 1}`)) continue;
+      const cur = acc.get(d.empleadoId) ?? nuevo(d.empleado);
       cur.bruto = cur.bruto.plus(d.totalBruto);
       cur.ihss = cur.ihss.plus(d.ihssEmpleado);
       cur.rap = cur.rap.plus(d.rapEmpleado);
@@ -502,6 +501,59 @@ export async function GET(req: NextRequest) {
         formatCurrency(aNumero(r.afp)),
         formatCurrency(aNumero(r.isr)),
       ]);
+  } else if (reporteId === "isr-dmr") {
+    // ─── Retenciones del mes para la DMR ──────────────────────────────────────
+    // Las mismas columnas que la hoja DMR de la retención en la fuente. Con el
+    // cálculo personalizado, la proyección sale de lo que se guardó al calcular
+    // cada línea; con el estándar, sólo el RTN y lo retenido.
+    if (!desde || !hasta) {
+      return NextResponse.json({ error: "Indique el mes con las fechas Desde y Hasta" }, { status: 400 });
+    }
+    titulo = "Retenciones de ISR del mes (DMR)";
+    cabeceras = ["Empleado", "RTN", "Ingreso Anual Proyectado", "Deducción Mensual", "Base Mensual", "Retención ISR Mes"];
+    const lineas = await prisma.planillaDetalle.findMany({
+      where: {
+        planilla: { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] }, fechaFin: { gte: new Date(desde), lte: new Date(hasta) } },
+        ...filtroDet,
+      },
+      select: {
+        empleadoId: true, isr: true, isrDetalle: true,
+        planilla: { select: { fechaFin: true } },
+        empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, rtn: true, identidad: true } },
+      },
+      orderBy: { planilla: { fechaFin: "asc" } },
+    });
+    const porEmpleado = new Map<string, { nombre: string; rtn: string; isr: Money; detalle: DetalleIsrPersonalizado | null }>();
+    for (const l of lineas) {
+      const cur = porEmpleado.get(l.empleadoId) ?? {
+        nombre: nombreCompleto(l.empleado), rtn: l.empleado.rtn ?? l.empleado.identidad ?? "", isr: CERO, detalle: null,
+      };
+      cur.isr = cur.isr.plus(l.isr);
+      // La proyección más reciente del mes (la última quincena, si es quincenal).
+      const d = l.isrDetalle as unknown as DetalleIsrPersonalizado | null;
+      if (d && d.metodo === "PERSONALIZADO") cur.detalle = d;
+      porEmpleado.set(l.empleadoId, cur);
+    }
+    // Como la hoja: sólo quien tuvo retención («Aplica»).
+    const conRetencion = [...porEmpleado.values()].filter((r) => r.isr.greaterThan(0)).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    const L = (n: number | Money) => formatCurrency(aNumero(n));
+    datos = conRetencion.map((r) => [
+      r.nombre, r.rtn,
+      r.detalle ? L(r.detalle.ingresoAnual) : "",
+      r.detalle ? L(money(r.detalle.deducciones).div(12)) : "",
+      r.detalle ? L(money(r.detalle.ingresoAnual).div(12)) : "",
+      L(r.isr),
+    ]);
+    if (conRetencion.length) {
+      const con = conRetencion.filter((r) => r.detalle);
+      datos.push([
+        "TOTAL GENERAL", "",
+        con.length ? L(sumarPor(con, (r) => r.detalle!.ingresoAnual)) : "",
+        con.length ? L(sumarPor(con, (r) => money(r.detalle!.deducciones).div(12))) : "",
+        con.length ? L(sumarPor(con, (r) => money(r.detalle!.ingresoAnual).div(12))) : "",
+        L(sumarPor(conRetencion, (r) => r.isr)),
+      ]);
+    }
   } else if (reporteId === "13vo-proyeccion" || reporteId === "14vo-proyeccion") {
     // ─── Acumulado de décimo tercer / décimo cuarto mes ───────────────────────
     const esDecimoTercero = reporteId === "13vo-proyeccion";
@@ -610,7 +662,7 @@ export async function GET(req: NextRequest) {
         ...(desde || hasta
           ? { createdAt: { ...(desde ? { gte: new Date(desde) } : {}), ...(hasta ? { lte: new Date(hasta) } : {}) } }
           : {}),
-        ...(sucursalId ? { empleado: { sucursalId } } : departamentoId ? { empleado: { departamentoId } } : {}),
+        ...porEmpleado,
       },
       include: {
         empleado: {
@@ -655,15 +707,23 @@ export async function GET(req: NextRequest) {
     const suc = await prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { nombre: true } });
     if (suc) filtros.push(`Sucursal: ${suc.nombre}`);
   }
+  if (divisionId) {
+    const div = await prisma.division.findUnique({ where: { id: divisionId }, select: { nombre: true } });
+    if (div) filtros.push(`División: ${div.nombre}`);
+  }
   if (departamentoId) {
     const dep = await prisma.departamento.findUnique({ where: { id: departamentoId }, select: { nombre: true } });
     if (dep) filtros.push(`Departamento: ${dep.nombre}`);
   }
-  const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros };
+  if (planillaId && reporteId !== "nomina-banco") {
+    const pl = await prisma.planilla.findUnique({ where: { id: planillaId }, select: { fechaInicio: true, fechaFin: true } });
+    if (pl) filtros.push(`Planilla del ${formatDate(pl.fechaInicio)} al ${formatDate(pl.fechaFin)}`);
+  }
+  const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros, ...(filas ? { filas } : {}) };
 
   // La tabla tal cual, para verla dentro de la aplicación antes de exportar.
   if (formato === "JSON") {
-    return NextResponse.json({ reporteId, ...reporte, total: datos.length });
+    return NextResponse.json({ reporteId, ...reporte, total: contarDetalles(datos, filas) });
   }
 
   if (formato === "XLSX") {
@@ -687,7 +747,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (formato === "CSV") {
-    const csvRows = [cabeceras, ...datos].map((row: string[]) => row.map(celdaCsv).join(","));
+    // En un reporte agrupado, la jerarquía se conserva con sangría en la primera columna.
+    const sangrar = (row: string[], i: number) =>
+      filas?.[i] ? [" ".repeat(filas[i].nivel * 2) + (row[0] ?? ""), ...row.slice(1)] : row;
+    const csvRows = [cabeceras, ...datos.map(sangrar)].map((row: string[]) => row.map(celdaCsv).join(","));
     const csv = BOM_UTF8 + csvRows.join("\r\n");
     return new NextResponse(csv, {
       headers: {
@@ -710,16 +773,22 @@ export async function GET(req: NextRequest) {
   th { background: #1e40af; color: white; padding: 6px 8px; text-align: left; font-size: 10px; }
   td { padding: 5px 8px; border-bottom: 1px solid #eee; font-size: 10px; }
   tr:nth-child(even) { background: #f8f9fa; }
+  tr.grupo td { background: #e9eff2; font-weight: bold; }
+  tr.subtotal td, tr.total td { font-weight: bold; border-top: 1px solid #c3ced4; }
   .footer { margin-top: 20px; color: #666; font-size: 9px; }
 </style>
 </head>
 <body>
 <h1>NominaHN — ${escaparHtml(titulo)}</h1>
-<p>Generado: ${escaparHtml(new Date().toLocaleString("es-HN"))} | Total registros: ${datos.length}</p>
+<p>Generado: ${escaparHtml(new Date().toLocaleString("es-HN"))} | Total registros: ${contarDetalles(datos, filas)}</p>
 <table>
 <thead><tr>${cabeceras.map((h) => `<th>${escaparHtml(h)}</th>`).join("")}</tr></thead>
 <tbody>
-${datos.map((row: string[]) => `<tr>${row.map((c: string) => `<td>${escaparHtml(c)}</td>`).join("")}</tr>`).join("\n")}
+${datos.map((row: string[], i: number) => {
+    const m = metaFila(row, filas?.[i]);
+    const sangria = filas ? ` style="padding-left:${8 + m.nivel * 14}px"` : "";
+    return `<tr class="${m.tipo}">${row.map((c: string, j: number) => `<td${j === 0 ? sangria : ""}>${escaparHtml(c)}</td>`).join("")}</tr>`;
+  }).join("\n")}
 </tbody>
 </table>
 <div class="footer">NominaHN · Sistema Integral de RRHH · Honduras</div>

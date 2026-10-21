@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   parsearBody,
   zId,
+  zIdOpcional,
   zMonto,
   zMontoPositivo,
   zPorcentaje,
@@ -148,5 +149,20 @@ describe("zCorreoOpcional — correo del empleado", () => {
   it("rechaza lo que no es un correo: el comprobante simplemente no llegaría", () => {
     expect(parse("ana@").success).toBe(false);
     expect(parse("ana gmail.com").success).toBe(false);
+  });
+});
+
+describe("zIdOpcional", () => {
+  // Los <select> con opción «Todas» mandan «»: antes eso era un 400 (Nueva planilla con «Todas las sucursales»).
+  const s = z.object({ sucursalId: zIdOpcional });
+  it("«», null y ausente valen lo mismo: null", () => {
+    expect(s.parse({})).toEqual({ sucursalId: null });
+    expect(s.parse({ sucursalId: "" })).toEqual({ sucursalId: null });
+    expect(s.parse({ sucursalId: "   " })).toEqual({ sucursalId: null });
+    expect(s.parse({ sucursalId: null })).toEqual({ sucursalId: null });
+  });
+  it("un id se recorta y se conserva; un número no es un id", () => {
+    expect(s.parse({ sucursalId: " suc-1 " })).toEqual({ sucursalId: "suc-1" });
+    expect(s.safeParse({ sucursalId: 5 }).success).toBe(false);
   });
 });

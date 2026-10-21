@@ -42,3 +42,29 @@ export function columnasNumericas(cabeceras: string[], datos: string[][]): boole
     return conContenido > 0;
   });
 }
+
+// ─── Filas de un reporte jerárquico ───────────────────────────────────────────
+
+/**
+ * Qué es cada fila en un reporte agrupado (Sucursal → División → Departamento):
+ * el encabezado de un grupo, una línea de detalle, el subtotal de un grupo o el
+ * total general. `nivel` es la profundidad y da la sangría de la primera celda.
+ */
+export type TipoFila = "grupo" | "detalle" | "subtotal" | "total";
+export interface MetaFila {
+  tipo: TipoFila;
+  nivel: number;
+}
+
+/**
+ * Tipo y nivel de una fila: los que declara el reporte, o —en los reportes
+ * planos, que no declaran nada— «total» si empieza por TOTAL y si no «detalle».
+ */
+export function metaFila(fila: string[], meta?: MetaFila): MetaFila {
+  return meta ?? { tipo: esFilaTotal(fila) ? "total" : "detalle", nivel: 0 };
+}
+
+/** Cuántas filas son registros de verdad (no encabezados, subtotales ni totales). */
+export function contarDetalles(datos: string[][], filas?: MetaFila[]): number {
+  return datos.filter((f, i) => metaFila(f, filas?.[i]).tipo === "detalle").length;
+}

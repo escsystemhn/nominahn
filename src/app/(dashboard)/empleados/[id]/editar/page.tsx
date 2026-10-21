@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import EditarEmpleadoForm, { type EmpleadoEditable } from "@/components/employees/EditarEmpleadoForm";
@@ -27,12 +28,16 @@ export default async function EditarEmpleadoPage({
 
   const { id } = await params;
 
-  const [emp, sucursales, departamentos, puestos, centrosCosto] = await Promise.all([
+  const conDivisiones = await divisionesHabilitadas(prisma);
+  const [emp, sucursales, divisiones, departamentos, puestos, centrosCosto] = await Promise.all([
     prisma.empleado.findUnique({ where: { id } }),
     prisma.sucursal.findMany({ where: { activa: true }, orderBy: { nombre: "asc" } }),
+    conDivisiones
+      ? prisma.division.findMany({ where: { activa: true }, select: { id: true, nombre: true, sucursalId: true }, orderBy: { nombre: "asc" } })
+      : Promise.resolve([]),
     prisma.departamento.findMany({
       where: { activo: true },
-      select: { id: true, nombre: true, sucursalId: true },
+      select: { id: true, nombre: true, sucursalId: true, divisionId: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.puesto.findMany({
@@ -113,7 +118,8 @@ export default async function EditarEmpleadoPage({
       <EditarEmpleadoForm
         empleado={empleado}
         sucursales={sucursales}
-        departamentos={departamentos}
+        divisiones={divisiones}
+        departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
         puestos={puestos}
         supervisores={supervisores}
         centrosCosto={centrosCosto}
