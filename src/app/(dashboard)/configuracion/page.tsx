@@ -16,8 +16,8 @@ export default async function ConfiguracionPage() {
 
   // Quien entra sólo por el correo saliente o los parámetros de ley no recibe los datos de la empresa:
   // se consultan únicamente si los puede ver.
-  const [empresa, sucursales, divisiones, departamentos, divisionesActivas, salarioMinimo, configs] = !puedeVer
-    ? [null, [], [], [], false, null, []] as const
+  const [empresa, sucursales, divisiones, departamentos, puestos, divisionesActivas, salarioMinimo, configs] = !puedeVer
+    ? [null, [], [], [], [], false, null, []] as const
     : await Promise.all([
     prisma.empresa.findFirst({ orderBy: ORDEN_EMPRESA_PRINCIPAL }),
     prisma.sucursal.findMany({ orderBy: { nombre: "asc" } }),
@@ -27,6 +27,13 @@ export default async function ConfiguracionPage() {
     }),
     prisma.departamento.findMany({
       select: { id: true, nombre: true, codigo: true, activo: true, sucursalId: true, divisionId: true, _count: { select: { empleados: true } } },
+      orderBy: { nombre: "asc" },
+    }),
+    prisma.puesto.findMany({
+      select: {
+        id: true, nombre: true, descripcion: true, salarioMinimo: true, salarioMaximo: true, activo: true, departamentoId: true,
+        _count: { select: { empleados: true, puestosCompetencia: true, coberturas: true } },
+      },
       orderBy: { nombre: "asc" },
     }),
     divisionesHabilitadas(prisma),
@@ -49,6 +56,14 @@ export default async function ConfiguracionPage() {
       sucursales={[...sucursales]}
       divisiones={divisiones.map(({ _count, ...v }) => ({ ...v, departamentos: _count.departamentos }))}
       departamentos={departamentos.map(({ _count, ...d }) => ({ ...d, empleados: _count.empleados }))}
+      puestos={puestos.map(({ _count, salarioMinimo: minimo, salarioMaximo: maximo, ...p }) => ({
+        ...p,
+        salarioMinimo: Number(minimo),
+        salarioMaximo: Number(maximo),
+        empleados: _count.empleados,
+        competencias: _count.puestosCompetencia,
+        coberturas: _count.coberturas,
+      }))}
       divisionesHabilitadas={divisionesActivas}
       salarioMinimo={salarioMinimoSerial}
       configs={[...configs]}

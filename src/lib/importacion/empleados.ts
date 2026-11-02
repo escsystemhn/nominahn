@@ -84,6 +84,8 @@ export interface CatalogosEmpleados {
   departamentosAmbiguos?: Set<string>;
   /** clave: `${departamentoId}|${nombre normalizado}` → id de puesto */
   puestos: Map<string, string>;
+  /** Ids de puestos inactivos: quien ya lo tiene lo conserva, pero no se asigna a nadie más. */
+  puestosInactivos?: Set<string>;
   /** código → empleado existente */
   porCodigo: Map<string, EmpleadoExistente>;
   /** identidad normalizada → código, para detectar duplicados */
@@ -183,7 +185,7 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmplea
   const [sucursales, departamentos, puestos, empleados, centros, salarioMinimo] = await Promise.all([
     db.sucursal.findMany({ select: { id: true, codigo: true, nombre: true } }),
     db.departamento.findMany({ select: { id: true, nombre: true, sucursalId: true, division: { select: { nombre: true } } } }),
-    db.puesto.findMany({ select: { id: true, nombre: true, departamentoId: true } }),
+    db.puesto.findMany({ select: { id: true, nombre: true, departamentoId: true, activo: true } }),
     // Se traen los campos completos: es lo que permite comparar y mostrar sólo
     // los cambios reales en la vista previa.
     db.empleado.findMany({
@@ -252,6 +254,7 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmplea
     departamentosPorDivision,
     departamentosAmbiguos,
     puestos: mapaPuestos,
+    puestosInactivos: new Set(puestos.filter((p) => !p.activo).map((p) => p.id)),
     porCodigo,
     porIdentidad,
     centrosCosto: mapaCentros,
@@ -615,6 +618,8 @@ export function validar(
         const encontrado = catalogos.puestos.get(`${departamentoId}|${norm(puestoBruto!)}`);
         if (!encontrado) {
           anota("Puesto", `El departamento indicado no tiene un puesto llamado "${puestoBruto}".`);
+        } else if (encontrado !== existente?.puestoId && catalogos.puestosInactivos?.has(encontrado)) {
+          anota("Puesto", `El puesto "${puestoBruto}" está inactivo.`);
         } else if (encontrado !== existente?.puestoId) {
           datos.puesto = encontrado;
           if (accion === "ACTUALIZAR") cambios.push("Puesto");

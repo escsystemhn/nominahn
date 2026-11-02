@@ -179,3 +179,9 @@ export function etiquetaDepartamento(d: { nombre: string; division?: { nombre: s
   const contexto = [d.division?.nombre, d.sucursal?.nombre].filter(Boolean);
   return contexto.length ? `${d.nombre} (${contexto.join(", ")})` : d.nombre;
 }
+
+/** «Vendedor (Ventas, San Pedro Sula)», para distinguir puestos homónimos en una lista. */
+export function etiquetaPuesto(p: { nombre: string; departamento: { nombre: string; sucursal?: { nombre: string } | null } }): string {
+  const contexto = [p.departamento.nombre, p.departamento.sucursal?.nombre].filter(Boolean);
+  return `${p.nombre} (${contexto.join(", ")})`;
+}

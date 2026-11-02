@@ -64,7 +64,7 @@ interface Props {
   /** Vacío si el administrador no habilitó el nivel División. */
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
-  puestos: Array<{ id: string; nombre: string; departamentoId: string }>;
+  puestos: Array<{ id: string; nombre: string; departamentoId: string; activo: boolean }>;
   supervisores: Array<{ id: string; nombre: string }>;
   centrosCosto: Array<{ id: string; codigo: string; nombre: string }>;
 }
@@ -220,7 +220,7 @@ export default function EditarEmpleadoForm({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
         {(["personal", "laboral"] as const).map((t) => (
@@ -419,7 +419,7 @@ export default function EditarEmpleadoForm({
               <select {...register("puestoId")} className={fieldClass} disabled={!departamentoId}>
                 <option value="">Sin puesto</option>
                 {puestosFiltrados.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                  <option key={p.id} value={p.id}>{p.nombre}{p.activo ? "" : " (inactivo)"}</option>
                 ))}
               </select>
             </Field>

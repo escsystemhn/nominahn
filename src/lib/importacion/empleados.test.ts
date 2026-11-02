@@ -201,6 +201,31 @@ describe("altas", () => {
   });
 });
 
+describe("puestos", () => {
+  const conPuesto = (puesto: string) => `${CABECERA_ALTA},Puesto\n${ALTA_OK},${puesto}`;
+  const inactivo = () => ({ ...catalogos(), puestosInactivos: new Set(["pue-analista"]) });
+
+  it("asigna un puesto activo del departamento", () => {
+    const r = correr(conPuesto("Analista Contable"));
+    expect(errores(r)).toHaveLength(0);
+    expect(r.filas[0].datos.puesto).toBe("pue-analista");
+  });
+
+  it("no asigna un puesto inactivo a nadie más", () => {
+    const r = validar(conPuesto("Analista Contable"), inactivo(), "CREAR_O_ACTUALIZAR", alcanceTotal());
+    expect(errores(r).map((e) => e.mensaje)).toContain('El puesto "Analista Contable" está inactivo.');
+  });
+
+  it("quien ya lo tiene lo conserva aunque esté inactivo", () => {
+    const base = inactivo();
+    const ana = base.porCodigo.get("emp-0001")!;
+    base.porCodigo.set("emp-0001", { ...ana, puestoId: "pue-analista" });
+    const csv = "Codigo,Departamento,Sucursal,Puesto\nEMP-0001,Contabilidad,TGU,Analista Contable";
+    const r = validar(csv, base, "CREAR_O_ACTUALIZAR", alcanceTotal());
+    expect(errores(r)).toHaveLength(0);
+  });
+});
+
 describe("actualizaciones", () => {
   /**
    * Lo que hace útil la vista previa: si el archivo repite lo que ya está

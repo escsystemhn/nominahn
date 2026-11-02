@@ -40,9 +40,11 @@ export default async function EditarEmpleadoPage({
       select: { id: true, nombre: true, sucursalId: true, divisionId: true },
       orderBy: { nombre: "asc" },
     }),
+    // También el que esta persona ya tiene, aunque esté inactivo: si no está entre
+    // las opciones, la lista no puede mostrarlo y la ficha parece no tener puesto.
     prisma.puesto.findMany({
-      where: { activo: true },
-      select: { id: true, nombre: true, departamentoId: true },
+      where: { OR: [{ activo: true }, { empleados: { some: { id } } }] },
+      select: { id: true, nombre: true, departamentoId: true, activo: true },
       orderBy: { nombre: "asc" },
     }),
     prisma.centroCosto.findMany({

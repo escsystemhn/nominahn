@@ -11,6 +11,7 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 import { leerReglas, guardarReglas } from "@/lib/horarios/bd";
+import { etiquetaPuesto } from "@/lib/organizacion/estructura";
 
 const schema = z.object({
   descansoEntreJornadasH: z.coerce.number().min(10, "El mínimo legal es de 10 horas (Art. 327)").max(24),
@@ -25,9 +26,9 @@ export async function GET() {
   if (!g.ok) return g.response;
   const [reglas, puestos] = await Promise.all([
     leerReglas(prisma),
-    prisma.puesto.findMany({ where: { activo: true }, select: { id: true, nombre: true, departamento: { select: { nombre: true } } }, orderBy: { nombre: "asc" } }),
+    prisma.puesto.findMany({ where: { activo: true }, select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } }, orderBy: { nombre: "asc" } }),
   ]);
-  return NextResponse.json({ reglas, puestos: puestos.map((p) => ({ id: p.id, nombre: `${p.nombre} (${p.departamento.nombre})` })) });
+  return NextResponse.json({ reglas, puestos: puestos.map((p) => ({ id: p.id, nombre: etiquetaPuesto(p) })) });
 }
 
 export async function PUT(req: NextRequest) {

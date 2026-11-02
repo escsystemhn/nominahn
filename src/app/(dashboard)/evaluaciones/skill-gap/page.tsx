@@ -1,5 +1,6 @@
 import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { prisma } from "@/lib/prisma";
+import { etiquetaPuesto } from "@/lib/organizacion/estructura";
 import SkillGapClient from "./SkillGapClient";
 
 export const metadata = { title: "Análisis de Brechas | NominaHN" };
@@ -15,7 +16,7 @@ export default async function SkillGapPage({
 
   const puestos = await prisma.puesto.findMany({
     where: { activo: true },
-    select: { id: true, nombre: true },
+    select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } },
     orderBy: { nombre: "asc" },
   });
 
@@ -89,7 +90,7 @@ export default async function SkillGapPage({
 
   return (
     <SkillGapClient
-      puestos={puestos}
+      puestos={puestos.map((p) => ({ id: p.id, nombre: etiquetaPuesto(p) }))}
       puestoIdActual={sp.puestoId ?? ""}
       datos={empleadosBrechas}
     />

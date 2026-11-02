@@ -9,6 +9,7 @@ import { validarPlan } from "./validar";
 import { normalizarReglas } from "./reglas";
 import { minutosDeHora, jornadaDeHoras } from "./ley";
 import { rango, sumarDias, edadEn } from "./fechas";
+import { unificarPuestosPorNombre } from "@/lib/organizacion/puestos";
 import {
   PREFERENCIAS_VACIAS,
   type Alerta,
@@ -153,11 +154,20 @@ export async function cargarContexto(
     db.incapacidad.findMany({ where: { anulada: false, fechaInicio: { lte: hasta }, fechaFin: { gte: desde }, empleado: { sucursalId: { in: o.sucursalesIds } } } }),
   ]);
 
+  // Lo que usan el generador y el validador es el puesto común a todos los de su
+  // nombre; los días guardados no llevan puesto, así que esto no deja rastro en un
+  // plan. Puestos exentos sigue mirando el puesto propio de la persona.
+  const unificados = unificarPuestosPorNombre([
+    ...filasEmp.map((e) => ({ id: e.puestoId!, nombre: e.puesto?.nombre ?? "" })),
+    ...coberturas.map((c) => ({ id: c.puestoId, nombre: c.puesto.nombre })),
+  ]);
+  const puestoComun = (id: string) => unificados.get(id) ?? id;
+
   const empleados = filasEmp.map((e) => ({
     id: e.id,
     codigo: e.codigo,
     nombre: [e.primerNombre, e.segundoNombre, e.primerApellido, e.segundoApellido].filter(Boolean).join(" "),
-    puestoId: e.puestoId!,
+    puestoId: puestoComun(e.puestoId!),
     puestoNombre: e.puesto?.nombre ?? "",
     sucursalId: e.sucursalId,
     edad: edadEn(ymd(e.fechaNacimiento), o.desde),
@@ -190,10 +200,10 @@ export async function cargarContexto(
   const requisitos: Requisito[] = [];
   for (const c of coberturas) {
     const j = jornadaDeHoras(c.desde, c.hasta, 0);
-    if (j) requisitos.push({ sucursalId: c.sucursalId, puestoId: c.puestoId, dias: dias(c.dias), desde: j.entrada, hasta: j.salida, minimo: c.minimo, etiqueta: c.etiqueta });
+    if (j) requisitos.push({ sucursalId: c.sucursalId, puestoId: puestoComun(c.puestoId), dias: dias(c.dias), desde: j.entrada, hasta: j.salida, minimo: c.minimo, etiqueta: c.etiqueta });
   }
   const nombresPuestos: Record<string, string> = {};
-  for (const e of empleados) nombresPuestos[e.puestoId] = e.puestoNombre;
+  for (const e of filasEmp) nombresPuestos[e.puestoId!] = e.puesto?.nombre ?? "";
   for (const c of coberturas) nombresPuestos[c.puestoId] = c.puesto.nombre;
 
   return {

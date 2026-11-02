@@ -10,7 +10,10 @@
  */
 
 import type { PrismaClient, Prisma } from "@prisma/client";
+import { z } from "zod";
+import { zId, zMonto } from "@/lib/http/validar";
 import type { AlcanceOrg } from "./estructura";
+import { nombreRepetido } from "./puestos";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -107,11 +110,29 @@ export async function validarUbicacionEmpleado(
   if (!d) return "El departamento no existe.";
   if (d.sucursalId !== u.sucursalId) return "El departamento elegido pertenece a otra sucursal.";
   if (u.puestoId) {
-    const p = await db.puesto.findUnique({ where: { id: u.puestoId }, select: { departamentoId: true } });
+    const p = await db.puesto.findUnique({ where: { id: u.puestoId }, select: { departamentoId: true, activo: true } });
     if (!p) return "El puesto no existe.";
     if (p.departamentoId !== u.departamentoId) return "El puesto elegido pertenece a otro departamento.";
+    // Quien ya lo tiene lo conserva: la API de empleados sólo llega aquí si algo
+    // de la ubicación cambió, y entonces el puesto es uno que se está asignando.
+    if (!p.activo) return "El puesto elegido está inactivo.";
   }
   return null;
+}
+
+/** Campos de un puesto en las rutas de Configuración → Estructura organizacional. */
+export const zDatosPuesto = z.object({
+  nombre: z.string().trim().min(1).max(150),
+  descripcion: z.string().trim().max(300).nullable().optional(),
+  departamentoId: zId,
+  salarioMinimo: zMonto.refine((n) => n <= 99_999_999, "demasiado alto").optional(),
+  salarioMaximo: zMonto.refine((n) => n <= 99_999_999, "demasiado alto").optional(),
+});
+
+/** ¿Hay ya en ese departamento otro puesto con ese nombre? */
+export async function puestoRepetidoEnDepartamento(db: Db, departamentoId: string, nombre: string, exceptoId?: string): Promise<boolean> {
+  const existentes = await db.puesto.findMany({ where: { departamentoId }, select: { id: true, nombre: true } });
+  return nombreRepetido(nombre, existentes, exceptoId);
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   aplanarEstructura,
   describirAlcance,
   etiquetaDepartamento,
+  etiquetaPuesto,
   filtroDetallesOrg,
   filtroEmpleadosOrg,
   normalizarAlcance,
@@ -114,5 +115,10 @@ describe("textos", () => {
   it("distingue departamentos homónimos", () => {
     expect(etiquetaDepartamento({ nombre: "Ventas", division: TGU, sucursal: CONF })).toBe("Ventas (PAGSA TEGUCIGALPA, NOMINA CONFIDENCIAL)");
     expect(etiquetaDepartamento({ nombre: "Ventas", division: null, sucursal: CONF })).toBe("Ventas (NOMINA CONFIDENCIAL)");
+  });
+
+  it("distingue puestos homónimos", () => {
+    expect(etiquetaPuesto({ nombre: "Vendedor", departamento: { nombre: "Ventas", sucursal: { nombre: "San Pedro Sula" } } })).toBe("Vendedor (Ventas, San Pedro Sula)");
+    expect(etiquetaPuesto({ nombre: "Vendedor", departamento: { nombre: "Ventas" } })).toBe("Vendedor (Ventas)");
   });
 });

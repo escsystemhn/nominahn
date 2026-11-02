@@ -7,7 +7,7 @@ import CorreoSalienteConfig from "./CorreoSalienteConfig";
 import SapConexionConfig from "./SapConexionConfig";
 import ParametrosLeyConfig from "./ParametrosLeyConfig";
 import FormatosBancoConfig from "./FormatosBancoConfig";
-import EstructuraOrganizacional, { type DepartamentoEstructura, type DivisionEstructura } from "./EstructuraOrganizacional";
+import EstructuraOrganizacional, { type DepartamentoEstructura, type DivisionEstructura, type PuestoEstructura } from "./EstructuraOrganizacional";
 import EmpresaConfig from "./EmpresaConfig";
 
 // Formas mínimas que este componente realmente consume. Se declaran a mano en
@@ -24,6 +24,7 @@ interface DatosEmpresa {
 
 interface SucursalConfig {
   id: string;
+  empresaId: string;
   nombre: string;
   codigo: string;
   direccion: string | null;
@@ -41,6 +42,7 @@ interface Props {
   sucursales: SucursalConfig[];
   divisiones: DivisionEstructura[];
   departamentos: DepartamentoEstructura[];
+  puestos: PuestoEstructura[];
   /** Opción del administrador: usar el nivel División (Sucursal → División → Departamento). */
   divisionesHabilitadas: boolean;
   salarioMinimo: SalarioMinimoConfig | null;
@@ -62,7 +64,7 @@ interface Props {
 }
 
 export default function ConfiguracionClient({
-  empresa, sucursales, divisiones, departamentos, divisionesHabilitadas, salarioMinimo, configs,
+  empresa, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, salarioMinimo, configs,
   puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco,
 }: Props) {
   const router = useRouter();
@@ -153,13 +155,14 @@ export default function ConfiguracionClient({
       {/* Empresa: la ve quien consulta la configuración; la edita sólo el administrador */}
       {tab === "empresa" && <EmpresaConfig empresa={empresa} puedeEditar={puedeEditarEmpresa} />}
 
-      {/* Estructura organizacional: sucursales, divisiones (opcionales) y departamentos */}
+      {/* Estructura organizacional: sucursales, divisiones (opcionales), departamentos y puestos */}
       {tab === "sucursales" && (
         <EstructuraOrganizacional
           empresaId={empresa?.id ?? null}
           sucursales={sucursales}
           divisiones={divisiones}
           departamentos={departamentos}
+          puestos={puestos}
           divisionesHabilitadas={divisionesHabilitadas}
           puedeEditar={puedeEditar}
         />

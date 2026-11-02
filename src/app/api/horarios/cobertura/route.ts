@@ -40,12 +40,12 @@ export async function GET(req: NextRequest) {
   const [franjas, horario, puestos] = await Promise.all([
     prisma.coberturaSucursal.findMany({ where: { sucursalId, activo: true }, orderBy: [{ puestoId: "asc" }, { desde: "asc" }] }),
     prisma.horarioAtencion.findMany({ where: { sucursalId }, orderBy: { dia: "asc" } }),
-    prisma.puesto.findMany({ where: { activo: true }, select: { id: true, nombre: true, departamento: { select: { nombre: true } } }, orderBy: { nombre: "asc" } }),
+    prisma.puesto.findMany({ where: { activo: true }, select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } }, orderBy: { nombre: "asc" } }),
   ]);
   return NextResponse.json({
     franjas: franjas.map((f) => ({ ...f, dias: f.dias.split(",").map(Number).filter(Boolean) })),
     horario,
-    puestos: puestos.map((p) => ({ id: p.id, nombre: p.nombre, departamento: p.departamento.nombre })),
+    puestos: puestos.map((p) => ({ id: p.id, nombre: p.nombre, departamento: `${p.departamento.nombre}, ${p.departamento.sucursal.nombre}` })),
   });
 }
 

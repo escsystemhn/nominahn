@@ -1,26 +1,33 @@
 "use client";
 
 /**
- * Configuración → Estructura organizacional: sucursales, divisiones y
- * departamentos, y la opción que habilita el nivel División
- * (Sucursal → División → Departamento). Con la opción apagada la pantalla se
- * ve como antes: sucursales y sus departamentos.
+ * Configuración → Estructura organizacional: sucursales, divisiones,
+ * departamentos y los puestos de cada departamento, y la opción que habilita el
+ * nivel División (Sucursal → División → Departamento). Con la opción apagada la
+ * pantalla no muestra divisiones: sucursales, departamentos y puestos.
  */
 
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import EstadoBadge from "@/components/ui/EstadoBadge";
-import { SIN_DIVISION } from "@/lib/organizacion/estructura";
+import { SIN_DIVISION, etiquetaDepartamento } from "@/lib/organizacion/estructura";
+import { rangoSalarialValido } from "@/lib/organizacion/puestos";
+import { formatCurrency } from "@/lib/utils";
 
-export interface SucursalEstructura { id: string; nombre: string; codigo: string; direccion: string | null; activa: boolean }
+export interface SucursalEstructura { id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; activa: boolean }
 export interface DivisionEstructura { id: string; nombre: string; codigo: string | null; activa: boolean; sucursalId: string; departamentos: number }
 export interface DepartamentoEstructura { id: string; nombre: string; codigo: string | null; activo: boolean; sucursalId: string; divisionId: string | null; empleados: number }
+export interface PuestoEstructura {
+  id: string; nombre: string; descripcion: string | null; salarioMinimo: number; salarioMaximo: number; activo: boolean;
+  departamentoId: string; empleados: number; competencias: number; coberturas: number;
+}
 
 interface Props {
   empresaId: string | null;
   sucursales: SucursalEstructura[];
   divisiones: DivisionEstructura[];
   departamentos: DepartamentoEstructura[];
+  puestos: PuestoEstructura[];
   divisionesHabilitadas: boolean;
   /** `configuracion.editar`: sin él, la pantalla es de sólo lectura. */
   puedeEditar: boolean;
@@ -29,7 +36,9 @@ interface Props {
 type Edicion =
   | { tipo: "sucursal" }
   | { tipo: "division"; division: DivisionEstructura | null }
-  | { tipo: "departamento"; departamento: DepartamentoEstructura | null };
+  | { tipo: "departamento"; departamento: DepartamentoEstructura | null }
+  | { tipo: "puesto"; puesto: PuestoEstructura | null; departamentoId: string }
+  | { tipo: "copiar"; departamento: DepartamentoEstructura };
 
 async function enviar(url: string, method: string, body?: unknown): Promise<string | null> {
   const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -38,16 +47,41 @@ async function enviar(url: string, method: string, body?: unknown): Promise<stri
   return d.error ?? "No se pudo guardar. Intente de nuevo.";
 }
 
-export default function EstructuraOrganizacional({ empresaId, sucursales, divisiones, departamentos, divisionesHabilitadas, puedeEditar }: Props) {
+/** El rango es opcional: cero significa «sin definir». */
+function textoRango(p: PuestoEstructura): string {
+  if (p.salarioMinimo > 0 && p.salarioMaximo > 0) return `${formatCurrency(p.salarioMinimo)} – ${formatCurrency(p.salarioMaximo)}`;
+  if (p.salarioMinimo > 0) return `Desde ${formatCurrency(p.salarioMinimo)}`;
+  if (p.salarioMaximo > 0) return `Hasta ${formatCurrency(p.salarioMaximo)}`;
+  return "—";
+}
+
+export default function EstructuraOrganizacional({ empresaId, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, puedeEditar }: Props) {
   const router = useRouter();
   const [edicion, setEdicion] = useState<Edicion | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [exito, setExito] = useState<string | null>(null);
   const [cambiandoOpcion, setCambiandoOpcion] = useState(false);
   // La casilla cambia al instante; si el servidor rechaza, vuelve atrás. Atada
   // sólo al valor del servidor, no se movía hasta recargar la página.
   const [opcion, setOpcion] = useState(divisionesHabilitadas);
+  const [filtroSucursal, setFiltroSucursal] = useState("");
+  const [abiertos, setAbiertos] = useState<ReadonlySet<string>>(new Set());
 
   const nombreSucursal = useMemo(() => new Map(sucursales.map((s) => [s.id, s.nombre])), [sucursales]);
+  const puestosPorDepartamento = useMemo(() => {
+    const mapa = new Map<string, PuestoEstructura[]>();
+    for (const p of puestos) mapa.set(p.departamentoId, [...(mapa.get(p.departamentoId) ?? []), p]);
+    return mapa;
+  }, [puestos]);
+
+  function alternarAbierto(id: string, abrir?: boolean) {
+    setAbiertos((actual) => {
+      const nuevo = new Set(actual);
+      if (abrir ?? !nuevo.has(id)) nuevo.add(id);
+      else nuevo.delete(id);
+      return nuevo;
+    });
+  }
 
   async function cambiarOpcion(habilitar: boolean) {
     if (!habilitar && divisiones.length > 0 &&
@@ -74,6 +108,20 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
     if (!error) router.refresh();
   }
 
+  async function alternarPuesto(p: PuestoEstructura) {
+    if (p.activo && !confirm(`«${p.nombre}» dejará de ofrecerse al asignar puestos. Quienes ya lo tienen lo conservan. ¿Desactivar?`)) return;
+    const error = await enviar(`/api/configuracion/puestos/${p.id}`, "PATCH", { activo: !p.activo });
+    setAviso(error);
+    if (!error) router.refresh();
+  }
+
+  async function borrarPuesto(p: PuestoEstructura) {
+    if (!confirm(`¿Eliminar el puesto «${p.nombre}»?`)) return;
+    const error = await enviar(`/api/configuracion/puestos/${p.id}`, "DELETE");
+    setAviso(error);
+    if (!error) router.refresh();
+  }
+
   // Departamentos agrupados por sucursal y, con divisiones, por división.
   const arbol = useMemo(() => sucursales.map((s) => {
     const propios = departamentos.filter((d) => d.sucursalId === s.id).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
@@ -90,6 +138,7 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
   return (
     <div className="space-y-6">
       {aviso && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">{aviso}</div>}
+      {exito && <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" role="status">{exito}</div>}
 
       <section className="panel p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -174,34 +223,97 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
       )}
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Departamentos ({departamentos.length})</h2>
-          {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: null })}>Nuevo departamento</button>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-gray-900">Departamentos ({departamentos.length}) y puestos ({puestos.length})</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {sucursales.length > 1 && (
+              <select className="input w-auto" aria-label="Filtrar por sucursal" value={filtroSucursal} onChange={(e) => setFiltroSucursal(e.target.value)}>
+                <option value="">Todas las sucursales</option>
+                {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            )}
+            {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: null })}>Nuevo departamento</button>}
+          </div>
         </div>
         <div className="panel overflow-x-auto">
           <table className="table-base">
-            <thead><tr><th>Departamento</th><th>Código</th><th className="num">Empleados</th><th>Estado</th><th /></tr></thead>
+            <thead><tr><th>Departamento</th><th>Código</th><th className="num">Puestos</th><th className="num">Empleados</th><th>Estado</th><th /></tr></thead>
             <tbody>
-              {arbol.filter((a) => a.grupos.some((g) => g.departamentos.length || g.division)).map(({ sucursal, grupos }) => (
+              {arbol.filter((a) => (!filtroSucursal || a.sucursal.id === filtroSucursal) && a.grupos.some((g) => g.departamentos.length || g.division)).map(({ sucursal, grupos }) => (
                 <Fragment key={sucursal.id}>
-                  <tr><td colSpan={5} className="bg-gray-50 font-semibold text-gray-900">{sucursal.nombre}</td></tr>
+                  <tr><td colSpan={6} className="bg-gray-50 font-semibold text-gray-900">{sucursal.nombre}</td></tr>
                   {grupos.map((g) => (
                     <Fragment key={g.division?.id ?? "sin"}>
-                      {g.titulo && <tr><td colSpan={5} className="pl-8 font-medium text-gray-800">{g.titulo}</td></tr>}
+                      {g.titulo && <tr><td colSpan={6} className="pl-8 font-medium text-gray-800">{g.titulo}</td></tr>}
                       {g.departamentos.length === 0 && g.division && (
-                        <tr><td colSpan={5} className="pl-14 text-xs text-gray-500">Sin departamentos asignados.</td></tr>
+                        <tr><td colSpan={6} className="pl-14 text-xs text-gray-500">Sin departamentos asignados.</td></tr>
                       )}
-                      {g.departamentos.map((d) => (
-                        <tr key={d.id}>
-                          <td className={g.titulo ? "pl-14" : "pl-8"}>{d.nombre}</td>
-                          <td className="font-mono text-xs">{d.codigo ?? "—"}</td>
-                          <td className="num">{d.empleados}</td>
-                          <td><EstadoBadge valor={d.activo ? "ACTIVO" : "INACTIVO"} /></td>
-                          <td className="text-right">
-                            {puedeEditar && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: d })}>Editar</button>}
-                          </td>
-                        </tr>
-                      ))}
+                      {g.departamentos.map((d) => {
+                        const propios = puestosPorDepartamento.get(d.id) ?? [];
+                        const abierto = abiertos.has(d.id);
+                        return (
+                          <Fragment key={d.id}>
+                            <tr>
+                              <td className={g.titulo ? "pl-14" : "pl-8"}>
+                                <button type="button" className="inline-flex items-center gap-1.5 text-left font-medium text-gray-900 hover:text-blue-700" aria-expanded={abierto} onClick={() => alternarAbierto(d.id)}>
+                                  <svg className={`h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform ${abierto ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
+                                  </svg>
+                                  {d.nombre}
+                                </button>
+                              </td>
+                              <td className="font-mono text-xs">{d.codigo ?? "—"}</td>
+                              <td className="num">{propios.length}</td>
+                              <td className="num">{d.empleados}</td>
+                              <td><EstadoBadge valor={d.activo ? "ACTIVO" : "INACTIVO"} /></td>
+                              <td className="whitespace-nowrap text-right">
+                                {puedeEditar && (
+                                  <>
+                                    {d.activo && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "puesto", puesto: null, departamentoId: d.id })}>Agregar puesto</button>}
+                                    {d.activo && sucursales.length > 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setExito(null); setEdicion({ tipo: "copiar", departamento: d }); }}>Copiar</button>}
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: d })}>Editar</button>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                            {abierto && (
+                              <tr>
+                                <td colSpan={6} className="bg-gray-50 p-3">
+                                  {propios.length === 0 ? (
+                                    <p className="pl-8 text-sm text-gray-500">Este departamento todavía no tiene puestos.</p>
+                                  ) : (
+                                    <table className="table-base rounded-lg bg-white" aria-label={`Puestos de ${d.nombre}`}>
+                                      <thead><tr><th>Puesto</th><th>Rango salarial</th><th className="num">Empleados</th><th>Estado</th><th /></tr></thead>
+                                      <tbody>
+                                        {propios.map((p) => (
+                                          <tr key={p.id}>
+                                            <td>
+                                              <span className="font-medium text-gray-900">{p.nombre}</span>
+                                              {p.descripcion && <span className="block text-xs text-gray-500">{p.descripcion}</span>}
+                                            </td>
+                                            <td className="whitespace-nowrap">{textoRango(p)}</td>
+                                            <td className="num">{p.empleados}</td>
+                                            <td><EstadoBadge valor={p.activo ? "ACTIVO" : "INACTIVO"} /></td>
+                                            <td className="whitespace-nowrap text-right">
+                                              {puedeEditar && (
+                                                <>
+                                                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "puesto", puesto: p, departamentoId: p.departamentoId })}>Editar</button>
+                                                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => alternarPuesto(p)}>{p.activo ? "Desactivar" : "Activar"}</button>
+                                                  {p.empleados + p.competencias + p.coberturas === 0 && <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => borrarPuesto(p)}>Eliminar</button>}
+                                                </>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </Fragment>
                   ))}
                 </Fragment>
@@ -226,14 +338,40 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
           onListo={() => { setEdicion(null); router.refresh(); }}
         />
       )}
+      {edicion?.tipo === "puesto" && (
+        <FormPuesto
+          puesto={edicion.puesto}
+          departamentoId={edicion.departamentoId}
+          departamentos={departamentos}
+          nombreSucursal={nombreSucursal}
+          onCerrar={() => setEdicion(null)}
+          onListo={(id) => { setEdicion(null); alternarAbierto(id, true); router.refresh(); }}
+        />
+      )}
+      {edicion?.tipo === "copiar" && (
+        <FormCopiar
+          departamento={edicion.departamento}
+          puestosActivos={(puestosPorDepartamento.get(edicion.departamento.id) ?? []).filter((p) => p.activo).length}
+          sucursales={sucursales}
+          divisiones={divisionesHabilitadas ? divisiones : []}
+          onCerrar={() => setEdicion(null)}
+          onListo={(r) => {
+            setEdicion(null);
+            setExito(r.mensaje);
+            setFiltroSucursal(r.sucursalId);
+            alternarAbierto(r.departamentoId, true);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Formularios ──────────────────────────────────────────────────────────────
 
-function Modal({ titulo, error, cargando, puedeGuardar, onCerrar, onGuardar, children }: {
-  titulo: string; error: string | null; cargando: boolean; puedeGuardar: boolean;
+function Modal({ titulo, error, cargando, puedeGuardar, textoGuardar = "Guardar", onCerrar, onGuardar, children }: {
+  titulo: string; error: string | null; cargando: boolean; puedeGuardar: boolean; textoGuardar?: string;
   onCerrar: () => void; onGuardar: () => void; children: React.ReactNode;
 }) {
   return (
@@ -244,7 +382,7 @@ function Modal({ titulo, error, cargando, puedeGuardar, onCerrar, onGuardar, chi
         {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" className="btn btn-ghost" onClick={onCerrar}>Cancelar</button>
-          <button type="button" className="btn btn-primary" disabled={cargando || !puedeGuardar} onClick={onGuardar}>{cargando ? "Guardando…" : "Guardar"}</button>
+          <button type="button" className="btn btn-primary" disabled={cargando || !puedeGuardar} onClick={onGuardar}>{cargando ? "Guardando…" : textoGuardar}</button>
         </div>
       </div>
     </div>
@@ -350,6 +488,104 @@ function FormDepartamento({ departamento, sucursales, divisiones, onCerrar, onLi
           <input type="checkbox" checked={f.activo} onChange={(e) => setF({ ...f, activo: e.target.checked })} /> Activo
         </label>
       )}
+    </Modal>
+  );
+}
+
+function FormPuesto({ puesto, departamentoId, departamentos, nombreSucursal, onCerrar, onListo }: {
+  puesto: PuestoEstructura | null; departamentoId: string; departamentos: DepartamentoEstructura[]; nombreSucursal: Map<string, string>;
+  onCerrar: () => void; onListo: (departamentoId: string) => void;
+}) {
+  const [f, setF] = useState({
+    nombre: puesto?.nombre ?? "",
+    descripcion: puesto?.descripcion ?? "",
+    departamentoId,
+    salarioMinimo: puesto?.salarioMinimo ? String(puesto.salarioMinimo) : "",
+    salarioMaximo: puesto?.salarioMaximo ? String(puesto.salarioMaximo) : "",
+  });
+  const { cargando, error, guardar } = useGuardar(() => onListo(f.departamentoId));
+  const minimo = Number(f.salarioMinimo || 0);
+  const maximo = Number(f.salarioMaximo || 0);
+  const rangoValido = minimo >= 0 && maximo >= 0 && rangoSalarialValido(minimo, maximo);
+  const fijo = !!puesto && (puesto.empleados > 0 || puesto.coberturas > 0);
+  const opciones = departamentos
+    .filter((d) => d.activo || d.id === departamentoId)
+    .map((d) => ({ id: d.id, etiqueta: etiquetaDepartamento({ nombre: d.nombre, sucursal: { nombre: nombreSucursal.get(d.sucursalId) ?? "" } }) }))
+    .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, "es"));
+  const datos = { nombre: f.nombre, descripcion: f.descripcion || null, departamentoId: f.departamentoId, salarioMinimo: minimo, salarioMaximo: maximo };
+
+  return (
+    <Modal titulo={puesto ? `Editar ${puesto.nombre}` : "Nuevo puesto"} error={error} cargando={cargando}
+      puedeGuardar={!!f.nombre.trim() && !!f.departamentoId && rangoValido} onCerrar={onCerrar}
+      onGuardar={() => puesto ? guardar(`/api/configuracion/puestos/${puesto.id}`, "PATCH", datos) : guardar("/api/configuracion/puestos", "POST", datos)}>
+      <Campo etiqueta="Departamento">
+        <select className="input" value={f.departamentoId} disabled={fijo} onChange={(e) => setF({ ...f, departamentoId: e.target.value })}>
+          {opciones.map((d) => <option key={d.id} value={d.id}>{d.etiqueta}</option>)}
+        </select>
+      </Campo>
+      {fijo && <p className="text-xs text-gray-500">No se puede cambiar de departamento porque tiene empleados o cobertura de horarios.</p>}
+      <Campo etiqueta="Nombre"><input className="input" value={f.nombre} placeholder="Cajero" onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
+      <p className="text-xs text-gray-500">Para que los horarios puedan prestar personal entre sucursales, use el mismo nombre en todas.</p>
+      <Campo etiqueta="Descripción (opcional)"><input className="input" value={f.descripcion} onChange={(e) => setF({ ...f, descripcion: e.target.value })} /></Campo>
+      <div className="grid grid-cols-2 gap-3">
+        <Campo etiqueta="Salario mínimo (opcional)"><input className="input" type="number" min="0" step="0.01" value={f.salarioMinimo} onChange={(e) => setF({ ...f, salarioMinimo: e.target.value })} /></Campo>
+        <Campo etiqueta="Salario máximo (opcional)"><input className="input" type="number" min="0" step="0.01" value={f.salarioMaximo} onChange={(e) => setF({ ...f, salarioMaximo: e.target.value })} /></Campo>
+      </div>
+      {!rangoValido && <p className="text-sm text-red-700" role="alert">El salario mínimo no puede ser mayor que el máximo, y ninguno puede ser negativo.</p>}
+    </Modal>
+  );
+}
+
+function FormCopiar({ departamento, puestosActivos, sucursales, divisiones, onCerrar, onListo }: {
+  departamento: DepartamentoEstructura; puestosActivos: number; sucursales: SucursalEstructura[]; divisiones: DivisionEstructura[];
+  onCerrar: () => void; onListo: (r: { departamentoId: string; sucursalId: string; mensaje: string }) => void;
+}) {
+  const origen = sucursales.find((s) => s.id === departamento.sucursalId);
+  const destinos = sucursales.filter((s) => s.id !== departamento.sucursalId && s.activa && s.empresaId === origen?.empresaId);
+  const [f, setF] = useState({ sucursalId: destinos[0]?.id ?? "", divisionId: "" });
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const opciones = divisiones.filter((v) => v.sucursalId === f.sucursalId && v.activa);
+
+  async function copiar() {
+    setCargando(true);
+    const r = await fetch(`/api/configuracion/departamentos/${departamento.id}/copiar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sucursalId: f.sucursalId, divisionId: f.divisionId || null }),
+    });
+    const d = await r.json().catch(() => ({}));
+    setCargando(false);
+    if (!r.ok) {
+      setError(d.error ?? "No se pudo copiar. Intente de nuevo.");
+      return;
+    }
+    onListo({ departamentoId: d.departamentoId, sucursalId: f.sucursalId, mensaje: d.mensaje });
+  }
+
+  return (
+    <Modal titulo={`Copiar ${departamento.nombre} a otra sucursal`} error={error} cargando={cargando} textoGuardar="Copiar"
+      puedeGuardar={!!f.sucursalId && (opciones.length === 0 || !!f.divisionId)} onCerrar={onCerrar} onGuardar={copiar}>
+      {destinos.length === 0 && <p className="text-sm text-gray-600">No hay otra sucursal activa de esta empresa a la cual copiarlo.</p>}
+      {destinos.length > 0 && (
+        <Campo etiqueta="Sucursal de destino">
+          <select className="input" value={f.sucursalId} onChange={(e) => setF({ sucursalId: e.target.value, divisionId: "" })}>
+            {destinos.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        </Campo>
+      )}
+      {opciones.length > 0 && (
+        <Campo etiqueta="División">
+          <select className="input" value={f.divisionId} onChange={(e) => setF({ ...f, divisionId: e.target.value })}>
+            <option value="">Elija la división</option>
+            {opciones.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
+          </select>
+        </Campo>
+      )}
+      <p className="text-xs text-gray-500">
+        Se copian el departamento y {puestosActivos === 1 ? "su puesto activo" : `sus ${puestosActivos} puestos activos`}, con su rango salarial.
+        Si allí ya existe, sólo se agregan los puestos que le falten. No se copian empleados, cobertura de horarios ni centro de costo.
+      </p>
     </Modal>
   );
 }
