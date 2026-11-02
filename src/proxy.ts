@@ -23,6 +23,17 @@ export default auth(async (req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
 
+  // Credenciales en la dirección: el login enviado como formulario HTML, sin
+  // JavaScript, deja `/login?email=…&password=…`. Esa petición ya llegó, pero la
+  // dirección no se queda en la barra ni en lo que se abra después desde el
+  // historial o un marcador. El login no lee ninguno de los dos parámetros.
+  if (pathname === "/login" && (req.nextUrl.searchParams.has("password") || req.nextUrl.searchParams.has("email"))) {
+    const limpia = new URL(req.url);
+    limpia.searchParams.delete("password");
+    limpia.searchParams.delete("email");
+    return Response.redirect(limpia, 303);
+  }
+
   // CSRF: un navegador ajeno no puede provocar escrituras. Ver lib/auth/origen.ts.
   if (
     pathname.startsWith("/api") &&

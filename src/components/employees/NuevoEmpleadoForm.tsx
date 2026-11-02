@@ -121,7 +121,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
         {(["personal", "laboral"] as const).map((t) => (

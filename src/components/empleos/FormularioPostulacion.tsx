@@ -52,7 +52,7 @@ export default function FormularioPostulacion({ vacanteId, empresa, maxMb }: { v
   const descr = (k: string) => (errores[k]?.length ? { "aria-invalid": true, "aria-describedby": `err-${k}` } : {});
 
   return (
-    <form onSubmit={enviar} className="space-y-4 border border-gray-200 p-5" noValidate>
+    <form method="post" onSubmit={enviar} className="space-y-4 border border-gray-200 p-5" noValidate>
       <h2 className="text-base font-semibold text-gray-900">Postularse</h2>
       <div>
         <label htmlFor="p-nombre" className="mb-1 block text-sm font-medium text-gray-700">Nombre completo</label>

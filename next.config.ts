@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { readFileSync } from "fs";
+import { networkInterfaces } from "os";
 import { join } from "path";
 
 /**
@@ -87,7 +88,23 @@ const salidaStandalone = edicionInstalable || process.env.SALIDA_STANDALONE === 
  */
 const compilacionLigera = process.env.COMPILACION_LIGERA === "1";
 
+/**
+ * `next dev` abierto por la IP de la red (http://192.168.1.106:3009).
+ *
+ * Next 16 responde 403 a su propio JavaScript cuando la página llega por un
+ * nombre que no es localhost: impide que un sitio ajeno lea el código del
+ * servidor de desarrollo. La página se veía pero no funcionaba, y el login se
+ * enviaba como formulario HTML con la clave en la dirección. Se admiten las IP
+ * de ESTE equipo, que es el origen de la página para cualquiera que la abra
+ * desde la red. Sólo lo usa `next dev`; la compilación no cambia.
+ */
+const ipsDelEquipo = Object.values(networkInterfaces())
+  .flatMap((lista) => lista ?? [])
+  .filter((i) => i.family === "IPv4" && !i.internal)
+  .map((i) => i.address);
+
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ipsDelEquipo,
   ...(salidaStandalone ? { output: "standalone" as const } : {}),
   ...(compilacionLigera
     ? {

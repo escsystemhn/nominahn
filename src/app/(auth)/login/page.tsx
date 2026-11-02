@@ -10,7 +10,7 @@
  * Todo lo que muestra la tapa es público (ver lib/inicio-sesion.ts).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -211,8 +211,23 @@ function PieSoporte({ estado, empresa }: { estado: EstadoServicio; empresa: stri
 
 const INPUT = "input h-10";
 
+/**
+ * Falso en el HTML del servidor y hasta que React toma el control de la página.
+ *
+ * Mientras tanto el formulario es HTML puro: sin `onSubmit`, el navegador lo
+ * envía por su cuenta. Así pasó en `next dev` abierto desde la IP de la red, que
+ * bloquea el JavaScript (ver allowedDevOrigins en next.config.ts): la dirección
+ * quedó `/login?email=…&password=…`, en el historial y en el registro del
+ * servidor. Con el botón desactivado no hay envío, tampoco con Enter.
+ */
+const sinSuscripcion = () => () => {};
+function useHidratado() {
+  return useSyncExternalStore(sinSuscripcion, () => true, () => false);
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const hidratado = useHidratado();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [mostrar, setMostrar] = useState(false);
@@ -301,7 +316,9 @@ export default function LoginPage() {
             <h2 className="text-2xl font-semibold text-gray-900">Iniciar sesión</h2>
             <p className="mb-6 mt-1 text-sm text-gray-500">Use las credenciales asignadas por su administrador.</p>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            {/* `method="post"`: si algo llegara a enviarlo sin JavaScript, la clave
+                viaja en el cuerpo, nunca en la dirección. */}
+            <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <div>
                 <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-gray-800">
                   Correo electrónico
@@ -399,9 +416,12 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <button type="submit" disabled={loading} className="btn btn-primary mt-1 h-11 w-full text-base">
-                {loading ? "Ingresando…" : "Entrar"}
+              <button type="submit" disabled={loading || !hidratado} className="btn btn-primary mt-1 h-11 w-full text-base">
+                {!hidratado ? "Cargando…" : loading ? "Ingresando…" : "Entrar"}
               </button>
+              <noscript>
+                <p className="text-sm text-red-800">Active JavaScript en el navegador para poder entrar.</p>
+              </noscript>
             </form>
           </div>
         </div>
