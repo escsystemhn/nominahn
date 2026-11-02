@@ -7,18 +7,514 @@ globalThis.__BUILD_MANIFEST = {
     "static/chunks/0cz1d0mv5g_q7.js"
   ],
   "lowPriorityFiles": [
-    "static/qdJhgNwOBh7DEZMA4zHRf/_buildManifest.js",
-    "static/qdJhgNwOBh7DEZMA4zHRf/_ssgManifest.js",
-    "static/qdJhgNwOBh7DEZMA4zHRf/_clientMiddlewareManifest.js"
+    "static/vwDTrsM7STM9ctKH6_RX-/_buildManifest.js",
+    "static/vwDTrsM7STM9ctKH6_RX-/_ssgManifest.js",
+    "static/vwDTrsM7STM9ctKH6_RX-/_clientMiddlewareManifest.js"
   ],
   "rootMainFiles": [
-    "static/chunks/3yfl9fgvivx3-.js",
-    "static/chunks/3-brhv0yt8g3d.js",
-    "static/chunks/3g4px251sg85e.js",
-    "static/chunks/0h-uhh91ijkha.js",
-    "static/chunks/turbopack-0u-72ogfnsjy8.js"
+    "static/chunks/0om590q-tq0l9.js",
+    "static/chunks/012aevq3fb_k3.js",
+    "static/chunks/3r_48njfqyott.js",
+    "static/chunks/207oa5kzdh64m.js",
+    "static/chunks/turbopack-2c3mg3r-05n1w.js"
   ],
   "rootMainFilesTree": {},
-  "pagesChunkGroupBootstrapParams": {},
+  "pagesChunkGroupBootstrapParams": {
+    "/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/_not-found/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/_global-error/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(auth)/login/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/asistencia/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/biometrico/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/capacitaciones/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/centros-costo/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/configuracion/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/configuracion/competencias/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/dashboard/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/deducciones/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/documentos/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/dotaciones/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/empleados/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/empleados/[id]/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/empleados/[id]/editar/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/empleados/nuevo/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/evaluaciones/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/evaluaciones/nine-box/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/evaluaciones/skill-gap/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/horarios/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/horarios/[id]/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/incapacidades/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/mi-cuenta/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/mi-espacio/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/organigrama/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/plan-cuentas/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/plan-cuentas/configuracion/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/planillas/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/planillas/[id]/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/planillas/nueva/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/politicas/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/portal/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/prestaciones/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/reclutamiento/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/reportes/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/talento/competencias/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/turnos/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/usuarios/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/(dashboard)/usuarios/perfiles/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/empleos/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/empleos/[id]/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/evaluar/[token]/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    },
+    "/licencia/page": {
+      "otherChunks": [
+        "static/chunks/0om590q-tq0l9.js",
+        "static/chunks/012aevq3fb_k3.js",
+        "static/chunks/3r_48njfqyott.js",
+        "static/chunks/207oa5kzdh64m.js"
+      ],
+      "runtimeModuleIds": [
+        94553
+      ]
+    }
+  },
   "chunkLoadingGlobal": "TURBOPACK"
 };

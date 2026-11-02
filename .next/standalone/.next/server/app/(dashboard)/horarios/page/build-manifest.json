@@ -6,15 +6,17 @@
   ],
   "lowPriorityFiles": [],
   "rootMainFiles": [
-    "static/chunks/3yfl9fgvivx3-.js",
-    "static/chunks/3-brhv0yt8g3d.js",
-    "static/chunks/3g4px251sg85e.js",
-    "static/chunks/0h-uhh91ijkha.js",
-    "static/chunks/turbopack-0u-72ogfnsjy8.js"
+    "static/chunks/0om590q-tq0l9.js",
+    "static/chunks/012aevq3fb_k3.js",
+    "static/chunks/3r_48njfqyott.js",
+    "static/chunks/207oa5kzdh64m.js",
+    "static/chunks/turbopack-2c3mg3r-05n1w.js"
   ],
   "pages": {},
   "ampFirstPages": [],
   "rootMainFilesTree": {},
-  "pagesChunkGroupBootstrapParams": {},
+  "pagesChunkGroupBootstrapParams": {
+    "/(dashboard)/horarios/page": {"otherChunks":["static/chunks/0om590q-tq0l9.js","static/chunks/012aevq3fb_k3.js","static/chunks/3r_48njfqyott.js","static/chunks/207oa5kzdh64m.js"],"runtimeModuleIds":[94553]}
+  },
   "chunkLoadingGlobal": "TURBOPACK"
 }

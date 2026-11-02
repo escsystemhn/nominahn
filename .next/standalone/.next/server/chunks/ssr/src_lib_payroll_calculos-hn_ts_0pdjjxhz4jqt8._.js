@@ -1,0 +1,3 @@
+module.exports=[23638,a=>{"use strict";function b(a){return a<=0?0:1===a?10:2===a?12:3===a?15:20}a.i(29099),a.s(["o",0,function(a){return a<1?0:a<2?10:a<3?12:a<4?15:20},"u",0,function(a,c=new Date){let d=new Date(a);if(isNaN(d.getTime())||c<=d)return 0;let e=(c.getTime()-d.getTime())/315576e5,f=Math.floor(e),g=0;for(let a=1;a<=f;a++)g+=b(a);return Math.round(100*(g+=b(f+1)*(e-f)))/100}])}];
+
+//# sourceMappingURL=src_lib_payroll_calculos-hn_ts_0pdjjxhz4jqt8._.js.map

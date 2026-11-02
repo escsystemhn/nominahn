@@ -152,6 +152,14 @@
       "namedRegex": "^/api/configuracion/departamentos/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/configuracion/departamentos/[id]/copiar",
+      "regex": "^/api/configuracion/departamentos/([^/]+?)/copiar(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/departamentos/(?<nxtPid>[^/]+?)/copiar(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/divisiones/[id]",
       "regex": "^/api/configuracion/divisiones/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -166,6 +174,14 @@
         "nxtPcodigo": "nxtPcodigo"
       },
       "namedRegex": "^/api/configuracion/parametros/conceptos/(?<nxtPcodigo>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/puestos/[id]",
+      "regex": "^/api/configuracion/puestos/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/puestos/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
       "page": "/api/documentos/emitidos/[id]",
@@ -660,6 +676,12 @@
       "regex": "^/api/configuracion/parametros/vecinal(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/configuracion/parametros/vecinal(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/puestos",
+      "regex": "^/api/configuracion/puestos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/puestos(?:/)?$"
     },
     {
       "page": "/api/configuracion/sap",

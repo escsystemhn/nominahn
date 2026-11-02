@@ -1,0 +1,3 @@
+module.exports=[16761,a=>a.a(async(b,c)=>{try{a.i(43405),a.i(70396);var d=a.i(73727),e=a.i(90542),f=a.i(2160),g=b([e]);async function h(a){let b=await (0,e.f)();b||(0,d.redirect)("/login");let c=b.user;c?.debeCambiarPassword===!0&&(0,d.redirect)("/mi-cuenta");let g=Array.isArray(a)?a:[a];return(0,f.A)(c.permisos,g)||(0,d.redirect)("/mi-espacio"),c}async function i(){let a=await (0,e.f)();return a||(0,d.redirect)("/login"),a.user}[e]=g.then?(await g)():g,a.s(["h",0,function(a,b){return(0,f.k)(a?.permisos,b)},"c",0,function(a,b){return(0,f.A)(a?.permisos,b)},"j",0,h,"Z",0,i]),c()}catch(a){c(a)}},!1)];
+
+//# sourceMappingURL=src_lib_auth_guard_ts_1ddli7edmb5rt._.js.map

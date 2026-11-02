@@ -1,0 +1,3 @@
+{
+  "/api/configuracion/departamentos/[id]/copiar/route": "app/api/configuracion/departamentos/[id]/copiar/route.js"
+}
