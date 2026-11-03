@@ -21,6 +21,8 @@ interface Props {
   /** Para decir en cada confirmación a cuánta gente y a cuánto dinero afecta. */
   empleados: number;
   neto: string;
+  /** En una frase, lo que encontró la revisión contra la planilla anterior. */
+  revision?: string;
 }
 
 export default function PlanillaActions({
@@ -35,6 +37,7 @@ export default function PlanillaActions({
   puedeEnviar,
   empleados,
   neto,
+  revision,
 }: Props) {
   const router = useRouter();
   const { confirmar, pedirMotivo, avisar } = useAvisos();
@@ -180,7 +183,7 @@ export default function PlanillaActions({
           <button
             onClick={() => cambiarEstado("CALCULADA", {
               titulo: "¿Confirmar la planilla?",
-              detalle: <>{personas}, neto de {neto}. Se cobrarán las cuotas de préstamos y se marcarán los bonos de evaluación. Podrá volver a borrador mientras no esté aprobada.</>,
+              detalle: <>{personas}, neto de {neto}. {revision && `${revision} `}Se cobrarán las cuotas de préstamos y se marcarán los bonos de evaluación. Podrá volver a borrador mientras no esté aprobada.</>,
               accion: "Confirmar planilla",
             }, "Planilla confirmada. Sus cuotas y bonos ya se aplicaron.")}
             disabled={loading}
@@ -224,7 +227,7 @@ export default function PlanillaActions({
             <button
               onClick={() => cambiarEstado("APROBADA", {
                 titulo: "¿Aprobar la planilla?",
-                detalle: <>{personas}, neto de {neto}. Quedará cerrada, con sus importes sellados, y cada empleado podrá ver su comprobante. Si SAP está configurado para enviar al aprobar, el asiento saldrá en este momento.</>,
+                detalle: <>{personas}, neto de {neto}. {revision && `${revision} `}Quedará cerrada, con sus importes sellados, y cada empleado podrá ver su comprobante. Si SAP está configurado para enviar al aprobar, el asiento saldrá en este momento.</>,
                 accion: "Aprobar planilla",
               }, "Planilla aprobada.")}
               disabled={loading}

@@ -89,6 +89,8 @@ export default function Armazon({
           menuAbierto={abierto}
           refMenu={botonMenu}
           onAbrirMenu={() => setAbierto(true)}
+          permisos={permisos}
+          conEmpleado={conEmpleado}
         />
         {avisos}
         <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto px-4 py-5 focus:outline-none sm:px-6 sm:py-6 lg:px-8">

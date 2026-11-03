@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { permisosPorResolver } from "@/lib/asistencia/solicitudes";
 import { prisma } from "@/lib/prisma";
 import { requerirSesion } from "@/lib/auth/guard";
 import { tienePermiso } from "@/lib/auth/permisos";
-import { alcanceEsTotal } from "@/lib/auth/alcance";
 import { z } from "zod";
 import { parsearBody, zFecha } from "@/lib/http/validar";
 import { TipoPermiso } from "@prisma/client";
@@ -31,7 +31,6 @@ export async function GET(req: NextRequest) {
   if (!g.ok) return g.response;
 
   const usuario = g.usuario;
-  const role = usuario.role as string;
   const empleadoId = usuario.empleadoId ?? null;
   const scope = new URL(req.url).searchParams.get("scope");
 
@@ -39,22 +38,8 @@ export async function GET(req: NextRequest) {
     if (!tienePermiso(usuario.permisos, "asistencia.aprobar_permisos")) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
-    /**
-     * Quién ve QUÉ solicitudes: con alcance total, todas las pendientes; con
-     * cualquier alcance más estrecho, sólo las de su equipo directo.
-     *
-     * Se conserva además el criterio por rol para las cuentas SIN perfil: un
-     * gerente heredado tiene alcance TODO por omisión, y sin esta segunda
-     * condición pasaría de ver su equipo a ver toda la empresa — una ampliación
-     * de acceso que esta migración no debe introducir.
-     */
-    const soloEquipo =
-      !alcanceEsTotal(usuario) || role === "GERENTE" || role === "SUPERVISOR";
     const permisos = await prisma.permiso.findMany({
-      where: {
-        estado: "PENDIENTE",
-        ...(soloEquipo && empleadoId ? { empleado: { supervisorId: empleadoId } } : {}),
-      },
+      where: permisosPorResolver(usuario),
       include: {
         empleado: { select: { primerNombre: true, primerApellido: true, codigo: true } },
       },

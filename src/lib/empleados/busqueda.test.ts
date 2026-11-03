@@ -1,33 +1,49 @@
-import { describe, expect, it } from "vitest";
-import { filtroBusquedaEmpleados } from "./busqueda";
+import { describe, expect, it, vi } from "vitest";
+import { filtroBusquedaEmpleados, patronLike } from "./busqueda";
 
-const buscar = (texto: string, conIdentidad = false) =>
-  filtroBusquedaEmpleados(texto, { conIdentidad }) as { AND?: Array<{ OR: Array<Record<string, { contains: string }>> }> };
+/** Lo que llegaría a la base: el texto de la consulta y sus valores. */
+function dobleDeBase(ids: string[] = []) {
+  const consultas: Array<{ sql: string; valores: unknown[] }> = [];
+  const $queryRaw = vi.fn((partes: TemplateStringsArray, ...valores: Array<{ sql?: string; values?: unknown[] }>) => {
+    consultas.push({ sql: partes.join("?") + valores.map((v) => v.sql ?? "").join(" "), valores: valores.flatMap((v) => v.values ?? []) });
+    return Promise.resolve(ids.map((id) => ({ id })));
+  });
+  return { db: { $queryRaw } as never, consultas };
+}
 
 describe("filtroBusquedaEmpleados", () => {
-  it("sin texto no filtra", () => {
-    expect(buscar("")).toEqual({});
-    expect(buscar("   ")).toEqual({});
+  it("sin texto no filtra ni consulta", async () => {
+    const { db, consultas } = dobleDeBase();
+    expect(await filtroBusquedaEmpleados(db, "   ", { conIdentidad: false })).toEqual({});
+    expect(consultas).toHaveLength(0);
   });
 
-  it("cada palabra se exige por separado", () => {
-    const f = buscar("Ana  Mejía ");
-    expect(f.AND).toHaveLength(2);
-    expect(f.AND?.[0].OR[0].primerNombre.contains).toBe("Ana");
-    expect(f.AND?.[1].OR[0].primerNombre.contains).toBe("Mejía");
+  it("cada palabra se exige por separado, sin tildes", async () => {
+    const { db, consultas } = dobleDeBase(["e1"]);
+    expect(await filtroBusquedaEmpleados(db, "Ana  Mejía ", { conIdentidad: false })).toEqual({ id: { in: ["e1"] } });
+    expect(consultas[0].valores).toEqual(["%ana%", "%mejia%"]);
   });
 
-  it("busca también en el segundo nombre y el segundo apellido", () => {
-    const columnas = buscar("Cruz").AND?.[0].OR.flatMap((o) => Object.keys(o));
-    expect(columnas).toEqual(expect.arrayContaining(["segundoNombre", "segundoApellido", "codigo"]));
+  it("sin coincidencias, el filtro no deja pasar a nadie", async () => {
+    const { db } = dobleDeBase([]);
+    expect(await filtroBusquedaEmpleados(db, "nadie", { conIdentidad: false })).toEqual({ id: { in: [] } });
   });
 
-  it("no busca por identidad si la persona no puede verla", () => {
-    expect(buscar("0801").AND?.[0].OR.flatMap((o) => Object.keys(o))).not.toContain("identidad");
-    expect(buscar("0801", true).AND?.[0].OR.flatMap((o) => Object.keys(o))).toContain("identidad");
-  });
+  it("no busca por identidad si la persona no puede verla", async () => {
+    const sin = dobleDeBase();
+    await filtroBusquedaEmpleados(sin.db, "0801", { conIdentidad: false });
+    expect(sin.consultas[0].sql).not.toContain("identidad");
 
-  it("no deja crecer la consulta sin límite", () => {
-    expect(buscar("a b c d e f g h i j").AND).toHaveLength(6);
+    const con = dobleDeBase();
+    await filtroBusquedaEmpleados(con.db, "0801", { conIdentidad: true });
+    expect(con.consultas[0].sql).toContain("identidad");
+  });
+});
+
+describe("patronLike", () => {
+  it("lo que escribe la persona es literal, no un comodín", () => {
+    expect(patronLike("50%")).toBe("%50\\%%");
+    expect(patronLike("a_b")).toBe("%a\\_b%");
+    expect(patronLike("c:\\x")).toBe("%c:\\\\x%");
   });
 });

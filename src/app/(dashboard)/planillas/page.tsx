@@ -19,6 +19,7 @@ import { cargarOpcionesEstructura } from "@/lib/organizacion/estructura-bd";
 export const metadata = { title: "Planillas" };
 
 const TIPOS = ["MENSUAL", "QUINCENAL", "SEMANAL"] as const;
+const ESTADOS = ["BORRADOR", "CALCULADA", "APROBADA", "PAGADA", "ANULADA"] as const;
 const POR_PAGINA = 25;
 
 const COLUMNAS = ["creada", "tipo", "periodo", "bruto", "deducciones", "neto", "estado"] as const;
@@ -41,7 +42,7 @@ function ordenDeConsulta({ campo, dir }: Orden<Columna>): Prisma.PlanillaOrderBy
 export default async function PlanillasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sucursalId?: string; divisionId?: string; departamentoId?: string; orden?: string; dir?: string; page?: string }>;
+  searchParams: Promise<{ sucursalId?: string; divisionId?: string; departamentoId?: string; estado?: string; orden?: string; dir?: string; page?: string }>;
 }) {
   // Antes esta página no llamaba a auth() en absoluto: el menú lateral ocultaba
   // el enlace, pero escribir la URL mostraba la nómina completa a cualquiera.
@@ -57,7 +58,9 @@ export default async function PlanillasPage({
   // cada quien al pagarse): una planilla de toda la empresa también paga a la
   // gente de cada sucursal, y por eso aparece.
   const unidad = { select: { nombre: true } } as const;
-  const where: Prisma.PlanillaWhereInput = hayFiltro ? { detalles: { some: filtroDetallesOrg(alcance) } } : {};
+  const whereUnidad: Prisma.PlanillaWhereInput = hayFiltro ? { detalles: { some: filtroDetallesOrg(alcance) } } : {};
+  const estado = ESTADOS.find((e) => e === sp.estado);
+  const where: Prisma.PlanillaWhereInput = { ...whereUnidad, ...(estado ? { estado } : {}) };
   const orden = leerOrden(sp, COLUMNAS, { campo: "creada", dir: "desc" });
   const pagina = Math.max(1, parseInt(sp.page ?? "1") || 1);
 
@@ -71,7 +74,7 @@ export default async function PlanillasPage({
       take: POR_PAGINA,
     }),
     // Va aparte: la franja no depende de cómo esté ordenada o paginada la lista.
-    Promise.all(TIPOS.map((tipo) => prisma.planilla.findFirst({ where: { ...where, tipo }, orderBy: { createdAt: "desc" } }))),
+    Promise.all(TIPOS.map((tipo) => prisma.planilla.findFirst({ where: { ...whereUnidad, tipo }, orderBy: { createdAt: "desc" } }))),
   ]);
 
   // Enlaces que conservan filtros y orden.
@@ -100,8 +103,14 @@ export default async function PlanillasPage({
           )
         }
       >
-        <FormFiltros campos={["sucursalId", "divisionId", "departamentoId"]} etiqueta="Filtrar planillas" className="flex flex-wrap gap-2">
+        <FormFiltros campos={["sucursalId", "divisionId", "departamentoId", "estado"]} etiqueta="Filtrar planillas" className="flex flex-wrap gap-2">
           <FiltroEstructura {...opciones} inicial={sp} />
+          <select name="estado" defaultValue={estado ?? ""} aria-label="Estado" className="input w-auto">
+            <option value="">Todos los estados</option>
+            {ESTADOS.map((e) => (
+              <option key={e} value={e}>{etiquetaEstado(e)}</option>
+            ))}
+          </select>
         </FormFiltros>
       </PageHeader>
 
@@ -148,16 +157,16 @@ export default async function PlanillasPage({
                 <tr>
                   <td colSpan={9}>
                     <EstadoVacio
-                      titulo={hayFiltro ? "Ninguna planilla incluye personal de esa unidad." : "Todavía no hay planillas."}
+                      titulo={estado ? "Ninguna planilla en ese estado." : hayFiltro ? "Ninguna planilla incluye personal de esa unidad." : "Todavía no hay planillas."}
                       detalle={
-                        hayFiltro
+                        hayFiltro || estado
                           ? "Quite o cambie el filtro para ver las demás."
                           : puedeCrear
                             ? "Genere la primera: queda en borrador para revisarla antes de confirmarla."
                             : "Cuando Nómina genere una, aparecerá aquí."
                       }
                       accion={
-                        puedeCrear && !hayFiltro && (
+                        puedeCrear && !hayFiltro && !estado && (
                           <Link href="/planillas/nueva" className="btn btn-primary">
                             Nueva planilla
                           </Link>

@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react";
 import type { Session } from "next-auth";
 import { iniciales } from "@/lib/utils";
 import { PRODUCTO } from "@/lib/marca";
+import BuscadorGlobal from "./BuscadorGlobal";
 
 /**
  * Barra superior: a la izquierda, de quién son los libros que se están viendo
@@ -20,6 +21,8 @@ export default function TopBar({
   menuAbierto,
   refMenu,
   onAbrirMenu,
+  permisos,
+  conEmpleado,
 }: {
   user: Session["user"];
   /** Nombre de la empresa configurada; sin ella se muestra el producto. */
@@ -29,6 +32,9 @@ export default function TopBar({
   menuAbierto: boolean;
   refMenu: React.RefObject<HTMLButtonElement | null>;
   onAbrirMenu: () => void;
+  /** Lo que el buscador puede ofrecer. */
+  permisos: readonly string[];
+  conEmpleado: boolean;
 }) {
   const nombre = user?.name ?? user?.email ?? "Usuario";
 
@@ -52,7 +58,8 @@ export default function TopBar({
         <span className="truncate font-medium text-gray-900">{empresa ?? PRODUCTO}</span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1 md:gap-2">
+        {conMenu && <BuscadorGlobal permisos={permisos} conEmpleado={conEmpleado} />}
         {/* Único punto de entrada a la propia cuenta: la contraseña se cambia
             desde ahí, y las cuentas sin empleado vinculado no tienen Mi espacio. */}
         <Link

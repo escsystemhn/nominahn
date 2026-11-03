@@ -5,21 +5,21 @@ import { formatDate } from "@/lib/utils";
 import { etiquetaEstado } from "@/components/ui/EstadoBadge";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 
-export default async function ReportesPage() {
+export default async function ReportesPage({ searchParams }: { searchParams: Promise<{ reporte?: string; planillaId?: string }> }) {
   const usuario = await requerirPermisoPagina("reportes.ver");
+  const sp = await searchParams;
 
   // Quien sólo alcanza ciertas sucursales no las ve todas en el filtro. El
   // servidor del reporte aplica el alcance de todos modos.
   const soloSus = usuario.alcance === "SUCURSAL" ? { id: { in: usuario.sucursalesIds ?? [] } } : {};
   const conDivisiones = await divisionesHabilitadas(prisma);
 
-  const [sucursales, divisiones, departamentos, empresas, planillasRaw] = await Promise.all([
+  const [sucursales, divisiones, departamentos, planillasRaw] = await Promise.all([
     prisma.sucursal.findMany({ where: soloSus, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
     conDivisiones
       ? prisma.division.findMany({ select: { id: true, nombre: true, sucursalId: true }, orderBy: { nombre: "asc" } })
       : Promise.resolve([]),
     prisma.departamento.findMany({ select: { id: true, nombre: true, sucursalId: true, divisionId: true }, orderBy: { nombre: "asc" } }),
-    prisma.empresa.findMany({ select: { id: true, nombre: true } }),
     // Planillas vigentes: para acotar los reportes de planilla a una sola y para
     // el archivo del banco (que además exige que esté aprobada o pagada). Incluye
     // los borradores, que se revisan aquí antes de confirmarlos.
@@ -43,8 +43,9 @@ export default async function ReportesPage() {
       sucursales={sucursales}
       divisiones={divisiones}
       departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
-      empresas={empresas}
       planillas={planillas}
+      reporteInicial={sp.reporte}
+      planillaInicial={planillas.some((p) => p.id === sp.planillaId) ? sp.planillaId : undefined}
     />
   );
 }

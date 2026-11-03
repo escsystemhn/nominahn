@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
 
   const filtros: Prisma.EmpleadoWhereInput = {
     AND: [
-      filtroBusquedaEmpleados(search, { conIdentidad: vePII }),
+      await filtroBusquedaEmpleados(prisma, search, { conIdentidad: vePII }),
       sucursalId ? { sucursalId } : {},
       departamentoId ? { departamentoId } : {},
       estado ? { estado: estado as EstadoEmpleado } : {},

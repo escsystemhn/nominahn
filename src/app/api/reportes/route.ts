@@ -322,6 +322,7 @@ export async function GET(req: NextRequest) {
     titulo = "Historial Salarial";
     cabeceras = ["Empleado", "Salario Anterior", "Salario Nuevo", "Fecha Cambio", "Motivo", "Tipo"];
     const historial = await prisma.historialSalario.findMany({
+      where: porEmpleado,
       include: { empleado: true },
       orderBy: { fechaCambio: "desc" },
       take: 200,

@@ -4,20 +4,24 @@ import FilaEnlace from "@/components/ui/FilaEnlace";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { puede, puedeAlguno } from "@/lib/auth/guard";
-import { formatCurrency, formatDate, hoyHN, TZ_HN, LOCALE } from "@/lib/utils";
+import { formatCurrency, formatDate, hoyHN, nombreCompleto, TZ_HN, LOCALE } from "@/lib/utils";
+import { conAlcance, filtroEmpleados, filtroPorEmpleado, type UsuarioConAlcance } from "@/lib/auth/alcance";
+import { permisosPorResolver } from "@/lib/asistencia/solicitudes";
+import { sumarPor } from "@/lib/payroll/money";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
 
 export const metadata = { title: "Inicio" };
 
+/** Con cuánta anticipación se avisa que un contrato está por vencer. */
+const DIAS_AVISO_CONTRATO = 30;
+
 /**
- * El inicio responde «¿qué hay que hacer hoy?», no «¿qué hace el sistema?».
+ * El inicio responde «¿qué está esperando por mí?», no «¿qué hace el sistema?».
  *
- * Antes mostraba la lista de módulos y porcentajes de ley quemados en el
- * código (IHSS 2.5 %, RAP 1.5 %…), que ya no son ciertos para toda empresa
- * desde que los parámetros se configuran. Ahora enseña conteos del día,
- * lo pendiente de aprobar y las últimas planillas, cada cosa sólo si el
- * perfil tiene permiso de verla.
+ * Primero lo pendiente, en el orden en que urge: cada fila dice qué hay y lleva a
+ * resolverlo. Sólo aparece lo que esta cuenta puede resolver, contado dentro de su
+ * alcance: una lista de cosas ajenas se deja de leer en dos días.
  */
 function saludoSegunHora(): string {
   const hora = Number(
@@ -47,17 +51,36 @@ export default async function DashboardPage() {
   const calculaPlanillas = puede(usuario, "planillas.calcular");
   const apruebaPrestamos = puede(usuario, "deducciones.asignar");
 
-  const [empleados, activos, marcajesHoy, permisosPendientes, planillasSinAprobar, ultimas, prestamosPendientes] =
+  const apruebaPlanillas = puede(usuario, "planillas.aprobar");
+  const pagaPlanillas = puede(usuario, "planillas.pagar");
+  const veContratos = puede(usuario, "empleados.pii");
+  const enviaSap = puede(usuario, "planillas.sap_enviar");
+  // Sin sesión legible no se cuenta nada: es el mismo fallo seguro de `filtroEmpleados`.
+  const alcance: UsuarioConAlcance & { role?: string | null } = usuario ?? { alcance: "PROPIO" };
+
+  const hoy = hoyHN();
+  const limiteContratos = new Date(hoy.getTime() + DIAS_AVISO_CONTRATO * 86_400_000);
+  const contratosPorVencer = {
+    activo: true,
+    fechaFin: { not: null, lte: limiteContratos },
+    empleado: { AND: [{ estado: { not: "INACTIVO" as const } }, filtroEmpleados(alcance)] },
+  };
+
+  const [empleados, activos, marcajesHoy, permisosPendientes, abiertas, ultimas, prestamosPendientes, contratos, totalContratos, erroresSap] =
     await Promise.all([
-      veEmpleados ? prisma.empleado.count() : null,
-      veEmpleados ? prisma.empleado.count({ where: { estado: "ACTIVO" } }) : null,
+      veEmpleados ? prisma.empleado.count({ where: conAlcance({}, alcance) }) : null,
+      veEmpleados ? prisma.empleado.count({ where: conAlcance({ estado: "ACTIVO" }, alcance) }) : null,
       // `hoyHN()` da la medianoche UTC del día de hoy en Honduras, que es lo
       // que compara bien contra una columna @db.Date.
-      veAsistencia ? prisma.marcaje.count({ where: { fecha: hoyHN() } }) : null,
-      apruebaPermisos ? prisma.permiso.count({ where: { estado: "PENDIENTE" } }) : null,
-      vePlanillas
-        ? prisma.planilla.count({ where: { estado: { in: ["BORRADOR", "CALCULADA"] } } })
-        : null,
+      veAsistencia ? prisma.marcaje.count({ where: { fecha: hoy, ...filtroPorEmpleado(alcance) } }) : null,
+      apruebaPermisos ? prisma.permiso.count({ where: permisosPorResolver(alcance) }) : 0,
+      calculaPlanillas || apruebaPlanillas || pagaPlanillas
+        ? prisma.planilla.findMany({
+            where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA"] } },
+            orderBy: { fechaFin: "desc" },
+            select: { id: true, estado: true, totalNeto: true },
+          })
+        : [],
       vePlanillas
         ? prisma.planilla.findMany({
             orderBy: { createdAt: "desc" },
@@ -65,8 +88,78 @@ export default async function DashboardPage() {
             select: { id: true, tipo: true, fechaInicio: true, fechaFin: true, estado: true, totalNeto: true },
           })
         : [],
-      apruebaPrestamos ? prisma.solicitudPrestamo.count({ where: { estado: "PENDIENTE" } }) : null,
+      apruebaPrestamos ? prisma.solicitudPrestamo.count({ where: { estado: "PENDIENTE", ...filtroPorEmpleado(alcance) } }) : 0,
+      veContratos
+        ? prisma.contrato.findMany({
+            where: contratosPorVencer,
+            orderBy: { fechaFin: "asc" },
+            take: 3,
+            select: {
+              fechaFin: true,
+              empleadoId: true,
+              empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true } },
+            },
+          })
+        : [],
+      veContratos ? prisma.contrato.count({ where: contratosPorVencer }) : 0,
+      enviaSap
+        ? prisma.sapEnvioAsiento.findMany({ where: { estado: "ERROR" }, select: { planillaId: true }, orderBy: { updatedAt: "desc" } })
+        : [],
     ]);
+
+  // Una sola: directo a ella. Varias: a la lista, ya filtrada.
+  const destinoPlanillas = (estado: string, lista: Array<{ id: string }>) =>
+    lista.length === 1 ? `/planillas/${lista[0].id}` : `/planillas?estado=${estado}`;
+  const planillasEn = (estado: string) => abiertas.filter((p) => p.estado === estado);
+  const netoDe = (lista: typeof abiertas) => `Neto de ${formatCurrency(sumarPor(lista, (p) => p.totalNeto))}.`;
+  const porPagar = pagaPlanillas ? planillasEn("APROBADA") : [];
+  const porAprobar = apruebaPlanillas ? planillasEn("CALCULADA") : [];
+  const borradores = calculaPlanillas ? planillasEn("BORRADOR") : [];
+
+  const pendientes = [
+    enviaSap && erroresSap.length > 0 && {
+      n: erroresSap.length,
+      titulo: erroresSap.length === 1 ? "Envío a SAP con error" : "Envíos a SAP con error",
+      detalle: "SAP no los aceptó o se agotaron los reintentos: hace falta revisarlos.",
+      href: `/planillas/${erroresSap[0].planillaId}`,
+    },
+    porPagar.length > 0 && {
+      n: porPagar.length,
+      titulo: porPagar.length === 1 ? "Planilla aprobada por pagar" : "Planillas aprobadas por pagar",
+      detalle: netoDe(porPagar),
+      href: destinoPlanillas("APROBADA", porPagar),
+    },
+    porAprobar.length > 0 && {
+      n: porAprobar.length,
+      titulo: porAprobar.length === 1 ? "Planilla por aprobar" : "Planillas por aprobar",
+      detalle: `${netoDe(porAprobar)} ${porAprobar.length === 1 ? "Ya cobró" : "Ya cobraron"} cuotas y bonos.`,
+      href: destinoPlanillas("CALCULADA", porAprobar),
+    },
+    borradores.length > 0 && {
+      n: borradores.length,
+      titulo: borradores.length === 1 ? "Borrador por confirmar" : "Borradores por confirmar",
+      detalle: `${netoDe(borradores)} Todavía no ${borradores.length === 1 ? "cobra" : "cobran"} nada.`,
+      href: destinoPlanillas("BORRADOR", borradores),
+    },
+    permisosPendientes > 0 && {
+      n: permisosPendientes,
+      titulo: permisosPendientes === 1 ? "Solicitud de permiso por aprobar" : "Solicitudes de permiso por aprobar",
+      detalle: "Permisos y vacaciones que esperan respuesta.",
+      href: "/mi-espacio",
+    },
+    prestamosPendientes > 0 && {
+      n: prestamosPendientes,
+      titulo: prestamosPendientes === 1 ? "Solicitud de préstamo por atender" : "Solicitudes de préstamo por atender",
+      detalle: "Enviadas por los empleados desde Mi espacio.",
+      href: "/deducciones",
+    },
+    totalContratos > 0 && {
+      n: totalContratos,
+      titulo: totalContratos === 1 ? "Contrato por vencer" : "Contratos por vencer",
+      detalle: `${contratos.map((c) => `${nombreCompleto(c.empleado)}, ${formatDate(c.fechaFin as Date)}`).join("; ")}${totalContratos > contratos.length ? `; y ${totalContratos - contratos.length} más` : ""}.`,
+      href: totalContratos === 1 ? `/empleados/${contratos[0].empleadoId}?tab=contrato` : "/empleados",
+    },
+  ].filter((x): x is Exclude<typeof x, false> => Boolean(x));
 
   const nombrePila = usuario?.name?.split(" ")[0] ?? "";
   const fechaLarga = new Intl.DateTimeFormat(LOCALE, {
@@ -90,24 +183,6 @@ export default async function DashboardPage() {
       label: "Marcajes de hoy",
       valor: marcajesHoy ?? 0,
       detalle: "entradas y salidas registradas",
-    },
-    apruebaPermisos && {
-      href: "/mi-espacio",
-      label: "Solicitudes por aprobar",
-      valor: permisosPendientes ?? 0,
-      detalle: "permisos y vacaciones",
-    },
-    apruebaPrestamos && (prestamosPendientes ?? 0) > 0 && {
-      href: "/deducciones",
-      label: "Préstamos por aprobar",
-      valor: prestamosPendientes ?? 0,
-      detalle: "solicitudes desde Mi espacio",
-    },
-    vePlanillas && {
-      href: "/planillas",
-      label: "Planillas sin aprobar",
-      valor: planillasSinAprobar ?? 0,
-      detalle: "en borrador o calculadas",
     },
   ].filter((m): m is Exclude<typeof m, false> => Boolean(m));
 
@@ -150,6 +225,30 @@ export default async function DashboardPage() {
         title={nombrePila ? `${saludoSegunHora()}, ${nombrePila}` : saludoSegunHora()}
         description={fechaTitulo}
       />
+
+      <section aria-labelledby="pendientes-titulo">
+        <h2 id="pendientes-titulo" className="text-base font-semibold text-gray-900">Pendientes</h2>
+        <div className="panel mt-3 overflow-hidden">
+          {pendientes.length === 0 ? (
+            <EstadoVacio titulo="No hay nada esperando por usted." detalle="Lo que le toque resolver aparecerá aquí." />
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {pendientes.map((x) => (
+                <li key={x.titulo}>
+                  <Link href={x.href} className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-gray-50">
+                    <span className="tnum w-9 shrink-0 text-right text-2xl font-semibold leading-none text-gray-900">{x.n}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-gray-900">{x.titulo}</span>
+                      <span className="block text-sm text-gray-500">{x.detalle}</span>
+                    </span>
+                    <IconChevron />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
 
       {metricas.length > 0 && (
         <section aria-label="Resumen de hoy">

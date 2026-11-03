@@ -1,53 +1,70 @@
 "use client";
 
 /**
- * Reportes: se ven dentro de la aplicación y desde el visor se exportan a
- * Excel o PDF (y CSV para quien lo necesite). Los filtros de arriba aplican a
- * cualquier reporte que se abra o descargue.
+ * Reportes: se elige uno y se ven sólo los filtros que ese reporte usa. Antes había un
+ * único formulario para los dieciséis, y quien filtraba por fecha un reporte que no las
+ * usa creía estar viendo un período que en realidad no se aplicaba.
+ *
+ * La lista de filtros de cada reporte (`DefReporte`) sale de lo que `/api/reportes` lee
+ * de verdad para ese reporte: si se cambia allá, hay que cambiarla aquí.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
 import { columnasNumericas, metaFila, type MetaFila } from "@/lib/reportes/salida-celdas";
 
 interface Props {
-  /** El administrador habilitó el nivel División (Configuración → Estructura organizacional). */
+  /** El administrador habilitó el nivel División (Configuración, Estructura organizacional). */
   conDivisiones: boolean;
   sucursales: Array<{ id: string; nombre: string }>;
   /** Vacío si el administrador no habilitó el nivel División. */
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
-  empresas: Array<{ id: string; nombre: string }>;
   /** Planillas vigentes; sólo las aprobadas o pagadas sirven para el archivo del banco. */
   planillas: Array<{ id: string; etiqueta: string; dispersable: boolean }>;
+  /** Para llegar con un reporte ya elegido, por ejemplo desde un borrador. */
+  reporteInicial?: string;
+  planillaInicial?: string;
 }
 
-/** Reportes que operan sobre UNA planilla concreta, no sobre un rango de fechas. */
-const REQUIEREN_PLANILLA = new Set(["nomina-banco"]);
-/** Reportes que pueden acotarse a una planilla; sin elegirla, usan las fechas. */
-const ACEPTAN_PLANILLA = new Set(["planilla-detallada", "resumen-planilla", "ihss-historico", "isr-dmr"]);
+/** Qué período usa el reporte: ninguno, opcional, obligatorio o un año. */
+type Periodo = "ninguno" | "opcional" | "requerido" | "anio";
+/** Si el reporte trabaja sobre una planilla concreta. */
+type UsoPlanilla = "no" | "opcional" | "requerida";
 
-const reportes = [
-  { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Deducciones por empleado, agrupadas por sucursal, división y departamento con subtotales", categoria: "Planillas" },
-  { id: "resumen-planilla", nombre: "Resumen de planilla", descripcion: "Totales por sucursal, división y departamento, en árbol", categoria: "Planillas" },
-  { id: "nomina-banco", nombre: "Nómina para banco", descripcion: "Archivo con transferencias bancarias para pago de nómina", categoria: "Planillas" },
-  { id: "ihss-planilla", nombre: "Planilla IHSS (proyectada)", descripcion: "Aportes IHSS EM/IVM estimados sobre el salario actual de los empleados activos", categoria: "Legal" },
-  { id: "ihss-historico", nombre: "Planilla IHSS (histórica)", descripcion: "Aportes IHSS EM/IVM realmente registrados en las planillas del período (usa fechas)", categoria: "Legal" },
-  { id: "rap-planilla", nombre: "Planilla RAP", descripcion: "Reporte de aportes al RAP", categoria: "Legal" },
-  { id: "isr-dmr", nombre: "Retenciones de ISR del mes (DMR)", descripcion: "RTN, ingreso anual proyectado, deducción y base mensual y retención de quien tuvo ISR en el mes (usa fechas)", categoria: "Legal" },
-  { id: "isr-anual", nombre: "Constancia anual de ISR", descripcion: "Constancia de retención de ISR por empleado para declaración anual", categoria: "Legal" },
-  { id: "13vo-proyeccion", nombre: "Proyección del decimotercer mes", descripcion: "Acumulado de provisión de décimo tercer mes", categoria: "Provisiones" },
-  { id: "14vo-proyeccion", nombre: "Proyección del decimocuarto mes", descripcion: "Acumulado de provisión de décimo cuarto mes", categoria: "Provisiones" },
-  { id: "vacaciones-proyeccion", nombre: "Provisión de vacaciones", descripcion: "Saldo acumulado de vacaciones y provisión por empleado", categoria: "Provisiones" },
-  { id: "empleados-activos", nombre: "Listado de empleados", descripcion: "Directorio completo de empleados con datos laborales", categoria: "RRHH" },
-  { id: "historial-salarial", nombre: "Historial salarial", descripcion: "Cambios de salario por empleado o colectivo", categoria: "RRHH" },
-  { id: "asistencia-mensual", nombre: "Asistencia mensual", descripcion: "Reporte de asistencia, ausencias y horas extra por mes", categoria: "Asistencia" },
-  { id: "puntualidad", nombre: "Puntualidad", descripcion: "Llegadas tarde según el turno y días laborales sin marca (usa fechas)", categoria: "Asistencia" },
-  { id: "evaluaciones-resumen", nombre: "Resumen de evaluaciones", descripcion: "Calificaciones de desempeño y competencias por período", categoria: "RRHH" },
+interface DefReporte {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  categoria: string;
+  periodo: Periodo;
+  planilla: UsoPlanilla;
+}
+
+const reportes: DefReporte[] = [
+  { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Deducciones por empleado, agrupadas por sucursal, división y departamento con subtotales.", categoria: "Planillas", periodo: "opcional", planilla: "opcional" },
+  { id: "resumen-planilla", nombre: "Resumen de planilla", descripcion: "Totales por sucursal, división y departamento, en árbol.", categoria: "Planillas", periodo: "opcional", planilla: "opcional" },
+  { id: "nomina-banco", nombre: "Nómina para banco", descripcion: "Transferencias bancarias para pagar una planilla aprobada o pagada.", categoria: "Planillas", periodo: "ninguno", planilla: "requerida" },
+  { id: "ihss-planilla", nombre: "Planilla IHSS (proyectada)", descripcion: "Aportes IHSS EM/IVM estimados sobre el salario actual de los empleados activos.", categoria: "Legal", periodo: "ninguno", planilla: "no" },
+  { id: "ihss-historico", nombre: "Planilla IHSS (histórica)", descripcion: "Aportes IHSS EM/IVM realmente registrados en las planillas del período.", categoria: "Legal", periodo: "opcional", planilla: "opcional" },
+  { id: "rap-planilla", nombre: "Planilla RAP", descripcion: "Aportes al RAP de los empleados activos.", categoria: "Legal", periodo: "ninguno", planilla: "no" },
+  { id: "isr-dmr", nombre: "Retenciones de ISR del mes (DMR)", descripcion: "RTN, ingreso anual proyectado, deducción y base mensual y retención de quien tuvo ISR en el mes.", categoria: "Legal", periodo: "requerido", planilla: "opcional" },
+  { id: "isr-anual", nombre: "Constancia anual de ISR", descripcion: "Constancia de retención de ISR por empleado para la declaración anual.", categoria: "Legal", periodo: "anio", planilla: "no" },
+  { id: "13vo-proyeccion", nombre: "Proyección del decimotercer mes", descripcion: "Acumulado de la provisión del décimo tercer mes.", categoria: "Provisiones", periodo: "anio", planilla: "no" },
+  { id: "14vo-proyeccion", nombre: "Proyección del decimocuarto mes", descripcion: "Acumulado de la provisión del décimo cuarto mes.", categoria: "Provisiones", periodo: "anio", planilla: "no" },
+  { id: "vacaciones-proyeccion", nombre: "Provisión de vacaciones", descripcion: "Saldo acumulado de vacaciones y provisión por empleado.", categoria: "Provisiones", periodo: "ninguno", planilla: "no" },
+  { id: "empleados-activos", nombre: "Listado de empleados", descripcion: "Directorio de empleados activos con sus datos laborales.", categoria: "RRHH", periodo: "ninguno", planilla: "no" },
+  { id: "historial-salarial", nombre: "Historial salarial", descripcion: "Los 200 cambios de salario más recientes.", categoria: "RRHH", periodo: "ninguno", planilla: "no" },
+  { id: "evaluaciones-resumen", nombre: "Resumen de evaluaciones", descripcion: "Calificaciones de desempeño y competencias por período.", categoria: "RRHH", periodo: "opcional", planilla: "no" },
+  { id: "asistencia-mensual", nombre: "Asistencia mensual", descripcion: "Asistencia, ausencias y horas extra del período.", categoria: "Asistencia", periodo: "opcional", planilla: "no" },
+  { id: "puntualidad", nombre: "Puntualidad", descripcion: "Llegadas tarde según el turno y días laborales sin marca.", categoria: "Asistencia", periodo: "requerido", planilla: "no" },
 ];
 
-const categorias = ["Todos", "Planillas", "Legal", "Provisiones", "RRHH", "Asistencia"];
+const categorias = ["Planillas", "Legal", "Provisiones", "RRHH", "Asistencia"];
+
+const anioActual = new Date().getFullYear();
+const ANIOS = [anioActual, anioActual - 1, anioActual - 2, anioActual - 3];
 
 type Formato = "XLSX" | "PDF" | "CSV";
 const ETIQUETA_FORMATO: Record<Formato, string> = { XLSX: "Excel", PDF: "PDF", CSV: "CSV" };
@@ -79,23 +96,40 @@ function nombreDescarga(res: Response, reporteId: string): string {
   return `${reporteId}_${new Date().toISOString().split("T")[0]}.${ext}`;
 }
 
-export default function ReportesClient({ conDivisiones, sucursales, divisiones, departamentos, empresas, planillas }: Props) {
-  const [categoria, setCategoria] = useState("Todos");
+const etiquetaCampo = "mb-1 block text-xs font-medium text-gray-700";
+
+export default function ReportesClient({ conDivisiones, sucursales, divisiones, departamentos, planillas, reporteInicial, planillaInicial }: Props) {
+  const [elegido, setElegido] = useState(() => reportes.find((r) => r.id === reporteInicial)?.id ?? reportes[0].id);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visor, setVisor] = useState<Visor | null>(null);
   const [porDivision, setPorDivision] = useState(false);
+  // Los valores se conservan al pasar de un reporte a otro: lo usual es sacar varios del mismo período.
   const [filtros, setFiltros] = useState({
     fechaDesde: "",
     fechaHasta: "",
+    anio: String(anioActual),
     sucursalId: "",
     divisionId: "",
     departamentoId: "",
-    empresaId: empresas[0]?.id ?? "",
-    planillaId: "",
+    planillaId: planillaInicial ?? "",
   });
+  const panel = useRef<HTMLElement>(null);
 
-  const filtrados = categoria === "Todos" ? reportes : reportes.filter((r) => r.categoria === categoria);
+  const reporte = reportes.find((r) => r.id === elegido) ?? reportes[0];
+  const descripcion = conDivisiones ? reporte.descripcion : reporte.descripcion.replace("sucursal, división y departamento", "sucursal y departamento");
+  // El archivo del banco sólo admite una planilla aprobada o pagada.
+  const planillasDelReporte = reporte.planilla === "requerida" ? planillas.filter((p) => p.dispersable) : planillas;
+
+  function elegir(id: string) {
+    setElegido(id);
+    setError(null);
+    window.history.replaceState(null, "", `?reporte=${id}`);
+    // En pantalla angosta el panel queda debajo de la lista: hay que llevar la vista hasta él.
+    if (window.matchMedia("(max-width: 1023.98px)").matches) {
+      requestAnimationFrame(() => panel.current?.scrollIntoView({ block: "start" }));
+    }
+  }
 
   const campo = (k: keyof typeof filtros) => ({
     value: filtros[k],
@@ -103,7 +137,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
       setFiltros((f) => ({ ...f, [k]: e.target.value })),
   });
 
-  // Selectores en cascada: Sucursal → División → Departamento. Al cambiar un
+  // Selectores en cascada: Sucursal, División, Departamento. Al cambiar un
   // nivel se limpian los de abajo, que podrían ya no pertenecerle.
   const divisionesVisibles = divisiones.filter((v) => !filtros.sucursalId || v.sucursalId === filtros.sucursalId);
   const departamentosVisibles = departamentos.filter((d) =>
@@ -113,33 +147,42 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
   const cambiarSucursal = (sucursalId: string) => setFiltros((f) => ({ ...f, sucursalId, divisionId: "", departamentoId: "" }));
   const cambiarDivision = (divisionId: string) => setFiltros((f) => ({ ...f, divisionId, departamentoId: "" }));
 
-  function validar(reporteId: string): boolean {
-    if (REQUIEREN_PLANILLA.has(reporteId)) {
-      const pl = planillas.find((p) => p.id === filtros.planillaId);
-      if (!pl || !pl.dispersable) {
-        setError("Seleccione en «Planilla» la planilla a dispersar: debe estar aprobada o pagada.");
-        return false;
-      }
+  function validar(): boolean {
+    if (reporte.planilla === "requerida" && !planillasDelReporte.some((p) => p.id === filtros.planillaId)) {
+      setError("Seleccione la planilla: debe estar aprobada o pagada.");
+      return false;
+    }
+    if (reporte.periodo === "requerido" && (!filtros.fechaDesde || !filtros.fechaHasta)) {
+      setError("Indique las fechas Desde y Hasta.");
+      return false;
     }
     return true;
   }
 
-  function url(reporteId: string, formato: Formato | "JSON"): string {
-    // La planilla sólo viaja a los reportes que la usan: los demás trabajan por fechas.
-    const { planillaId, ...resto } = filtros;
-    const usaPlanilla = REQUIEREN_PLANILLA.has(reporteId) || (ACEPTAN_PLANILLA.has(reporteId) && planillaId);
+  function url(formato: Formato | "JSON"): string {
+    const q = new URLSearchParams({ reporteId: reporte.id, formato });
+    // Viaja sólo lo que este reporte usa: el documento no debe decir que se filtró por algo que no aplicó.
+    if (reporte.periodo === "opcional" || reporte.periodo === "requerido") {
+      if (filtros.fechaDesde) q.set("fechaDesde", filtros.fechaDesde);
+      if (filtros.fechaHasta) q.set("fechaHasta", filtros.fechaHasta);
+    }
+    // Estos reportes toman el año de la fecha inicial.
+    if (reporte.periodo === "anio") q.set("fechaDesde", `${filtros.anio}-01-01`);
+    if (filtros.sucursalId) q.set("sucursalId", filtros.sucursalId);
+    if (filtros.divisionId) q.set("divisionId", filtros.divisionId);
+    if (filtros.departamentoId) q.set("departamentoId", filtros.departamentoId);
+    if (reporte.planilla !== "no" && filtros.planillaId) q.set("planillaId", filtros.planillaId);
     // Sólo cambia lo que se imprime: en pantalla se sigue viendo el árbol completo.
-    const separar = reporteId === "planilla-detallada" && conDivisiones && porDivision && formato !== "JSON";
-    const params = new URLSearchParams({ reporteId, ...resto, ...(usaPlanilla ? { planillaId } : {}), ...(separar ? { porDivision: "1" } : {}), formato });
-    return `/api/reportes?${params.toString()}`;
+    if (reporte.id === "planilla-detallada" && conDivisiones && porDivision && formato !== "JSON") q.set("porDivision", "1");
+    return `/api/reportes?${q.toString()}`;
   }
 
-  async function ver(reporteId: string) {
+  async function ver() {
     setError(null);
-    if (!validar(reporteId)) return;
-    setOcupado(`${reporteId}:ver`);
+    if (!validar()) return;
+    setOcupado(`${reporte.id}:ver`);
     try {
-      const res = await fetch(url(reporteId, "JSON"));
+      const res = await fetch(url("JSON"));
       const d = await res.json().catch(() => null);
       if (!res.ok) throw new Error(d?.error ?? "No se pudo generar el reporte.");
       setVisor(d as Visor);
@@ -150,12 +193,12 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
     }
   }
 
-  async function descargar(reporteId: string, formato: Formato) {
+  async function descargar(formato: Formato) {
     setError(null);
-    if (!validar(reporteId)) return;
-    setOcupado(`${reporteId}:${formato}`);
+    if (!validar()) return;
+    setOcupado(`${reporte.id}:${formato}`);
     try {
-      const res = await fetch(url(reporteId, formato));
+      const res = await fetch(url(formato));
       // El servidor explica por qué no puede generarlo; antes se mostraba un
       // mensaje genérico o, peor, se descargaba un archivo vacío.
       if (!res.ok) {
@@ -166,7 +209,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
       const enlace = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = enlace;
-      a.download = nombreDescarga(res, reporteId);
+      a.download = nombreDescarga(res, reporte.id);
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -185,119 +228,134 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
         description="Planillas, obligaciones legales, provisiones y personal. Se ven aquí mismo y se exportan a Excel o PDF."
       />
 
-      {/* Filtros globales: se aplican a todos los reportes de abajo. */}
-      <section className="panel p-5">
-        <h2 className="text-sm font-semibold text-gray-900">Filtros</h2>
-        <p className="mt-0.5 text-xs text-gray-500">Se aplican a cualquier reporte que abra o descargue.</p>
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
-          <div>
-            <label htmlFor="rep-desde" className="mb-1 block text-xs font-medium text-gray-700">Desde</label>
-            <input id="rep-desde" type="date" {...campo("fechaDesde")} className="input" />
-          </div>
-          <div>
-            <label htmlFor="rep-hasta" className="mb-1 block text-xs font-medium text-gray-700">Hasta</label>
-            <input id="rep-hasta" type="date" {...campo("fechaHasta")} className="input" />
-          </div>
-          <div>
-            <label htmlFor="rep-sucursal" className="mb-1 block text-xs font-medium text-gray-700">Sucursal</label>
-            <select id="rep-sucursal" value={filtros.sucursalId} onChange={(e) => cambiarSucursal(e.target.value)} className="input">
-              <option value="">Todas</option>
-              {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-            </select>
-          </div>
-          {conDivisiones && (
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <nav aria-label="Lista de reportes" className="space-y-4">
+          {categorias.map((c) => (
+            <div key={c}>
+              <h2 className="px-3 pb-1 text-xs font-medium text-gray-500">{c}</h2>
+              <ul>
+                {reportes.filter((r) => r.categoria === c).map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      aria-current={r.id === elegido ? "true" : undefined}
+                      onClick={() => elegir(r.id)}
+                      className={cn(
+                        "w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors max-lg:py-2.5",
+                        r.id === elegido ? "bg-blue-100 font-semibold text-blue-950" : "text-gray-700 hover:bg-gray-100"
+                      )}
+                    >
+                      {r.nombre}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+
+        <section id="panel-reporte" ref={panel} aria-labelledby="reporte-titulo" className="panel scroll-mt-4 p-5 lg:sticky lg:top-0">
+          <h2 id="reporte-titulo" className="text-lg font-semibold text-gray-900">{reporte.nombre}</h2>
+          <p className="mt-0.5 text-sm text-gray-500">{descripcion}</p>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {reporte.planilla !== "no" && (
+              <div className="sm:col-span-2 xl:col-span-3">
+                <label htmlFor="rep-planilla" className={etiquetaCampo}>
+                  Planilla{reporte.planilla === "requerida" && " (obligatoria)"}
+                </label>
+                <select id="rep-planilla" {...campo("planillaId")} className="input">
+                  <option value="">
+                    {reporte.planilla === "requerida"
+                      ? planillasDelReporte.length ? "Seleccione…" : "No hay planillas aprobadas o pagadas"
+                      : planillasDelReporte.length ? "Todas, según las fechas" : "No hay planillas vigentes"}
+                  </option>
+                  {planillasDelReporte.map((p) => <option key={p.id} value={p.id}>{p.etiqueta}</option>)}
+                </select>
+              </div>
+            )}
+            {(reporte.periodo === "opcional" || reporte.periodo === "requerido") && (
+              <>
+                <div>
+                  <label htmlFor="rep-desde" className={etiquetaCampo}>Desde{reporte.periodo === "requerido" && " (obligatorio)"}</label>
+                  <input id="rep-desde" type="date" {...campo("fechaDesde")} className="input" />
+                </div>
+                <div>
+                  <label htmlFor="rep-hasta" className={etiquetaCampo}>Hasta{reporte.periodo === "requerido" && " (obligatorio)"}</label>
+                  <input id="rep-hasta" type="date" {...campo("fechaHasta")} className="input" />
+                </div>
+              </>
+            )}
+            {reporte.periodo === "anio" && (
+              <div>
+                <label htmlFor="rep-anio" className={etiquetaCampo}>Año</label>
+                <select id="rep-anio" {...campo("anio")} className="input">
+                  {ANIOS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+            )}
             <div>
-              <label htmlFor="rep-division" className="mb-1 block text-xs font-medium text-gray-700">División</label>
-              <select id="rep-division" value={filtros.divisionId} onChange={(e) => cambiarDivision(e.target.value)} className="input">
+              <label htmlFor="rep-sucursal" className={etiquetaCampo}>Sucursal</label>
+              <select id="rep-sucursal" value={filtros.sucursalId} onChange={(e) => cambiarSucursal(e.target.value)} className="input">
                 <option value="">Todas</option>
-                {divisionesVisibles.map((v) => (
-                  <option key={v.id} value={v.id}>{filtros.sucursalId ? v.nombre : `${v.nombre} (${nombreSucursal(v.sucursalId)})`}</option>
+                {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            </div>
+            {conDivisiones && (
+              <div>
+                <label htmlFor="rep-division" className={etiquetaCampo}>División</label>
+                <select id="rep-division" value={filtros.divisionId} onChange={(e) => cambiarDivision(e.target.value)} className="input">
+                  <option value="">Todas</option>
+                  {divisionesVisibles.map((v) => (
+                    <option key={v.id} value={v.id}>{filtros.sucursalId ? v.nombre : `${v.nombre} (${nombreSucursal(v.sucursalId)})`}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label htmlFor="rep-depto" className={etiquetaCampo}>Departamento</label>
+              <select id="rep-depto" {...campo("departamentoId")} className="input">
+                <option value="">Todos</option>
+                {departamentosVisibles.map((d) => (
+                  <option key={d.id} value={d.id}>{filtros.sucursalId ? d.nombre : `${d.nombre} (${nombreSucursal(d.sucursalId)})`}</option>
                 ))}
               </select>
             </div>
-          )}
-          <div>
-            <label htmlFor="rep-depto" className="mb-1 block text-xs font-medium text-gray-700">Departamento</label>
-            <select id="rep-depto" {...campo("departamentoId")} className="input">
-              <option value="">Todos</option>
-              {departamentosVisibles.map((d) => (
-                <option key={d.id} value={d.id}>{filtros.sucursalId ? d.nombre : `${d.nombre} (${nombreSucursal(d.sucursalId)})`}</option>
-              ))}
-            </select>
           </div>
-          <div className="col-span-2 md:col-span-1">
-            <label htmlFor="rep-planilla" className="mb-1 block text-xs font-medium text-gray-700">
-              Planilla <span className="font-normal text-gray-500">(reportes de planilla, IHSS histórica, DMR y archivo del banco)</span>
+
+          {reporte.id === "planilla-detallada" && conDivisiones && (
+            <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={porDivision} onChange={(e) => setPorDivision(e.target.checked)} />
+              Imprimir cada división en hoja aparte (PDF y Excel)
             </label>
-            <select id="rep-planilla" {...campo("planillaId")} className="input">
-              <option value="">{planillas.length ? "Todas, según las fechas" : "No hay planillas vigentes"}</option>
-              {planillas.map((p) => <option key={p.id} value={p.id}>{p.etiqueta}</option>)}
-            </select>
+          )}
+
+          {error && (
+            <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {error}
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={ver} disabled={ocupado !== null} className="btn btn-primary">
+              {ocupado === `${reporte.id}:ver` ? "Generando…" : "Ver en pantalla"}
+            </button>
+            <button type="button" onClick={() => descargar("XLSX")} disabled={ocupado !== null} className="btn btn-secondary">
+              {ocupado === `${reporte.id}:XLSX` ? "Generando…" : "Excel"}
+            </button>
+            <button type="button" onClick={() => descargar("PDF")} disabled={ocupado !== null} className="btn btn-secondary">
+              {ocupado === `${reporte.id}:PDF` ? "Generando…" : "PDF"}
+            </button>
           </div>
-        </div>
-      </section>
-
-      {error && (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
-        </div>
-      )}
-
-      <div role="tablist" aria-label="Categoría de reportes" className="flex gap-1 overflow-x-auto border-b border-gray-200">
-        {categorias.map((c) => (
-          <button
-            key={c}
-            type="button"
-            role="tab"
-            aria-selected={categoria === c}
-            onClick={() => setCategoria(c)}
-            className={cn(
-              "-mb-px whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
-              categoria === c ? "border-blue-500 font-medium text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"
-            )}
-          >
-            {c}
-          </button>
-        ))}
+        </section>
       </div>
-
-      <ul className="panel divide-y divide-gray-100">
-        {filtrados.map((r) => (
-          <li key={r.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <h3 className="text-sm font-medium text-gray-900">{r.nombre}</h3>
-                {categoria === "Todos" && <span className="text-xs text-gray-500">{r.categoria}</span>}
-              </div>
-              <p className="mt-0.5 text-xs text-gray-500">{conDivisiones ? r.descripcion : r.descripcion.replace("sucursal, división y departamento", "sucursal y departamento")}</p>
-              {r.id === "planilla-detallada" && conDivisiones && (
-                <label className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-gray-700">
-                  <input type="checkbox" checked={porDivision} onChange={(e) => setPorDivision(e.target.checked)} />
-                  Imprimir cada división en hoja aparte (PDF y Excel)
-                </label>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button type="button" onClick={() => ver(r.id)} disabled={ocupado !== null} className="btn btn-primary btn-sm">
-                {ocupado === `${r.id}:ver` ? "Generando" : "Ver"}
-              </button>
-              <button type="button" onClick={() => descargar(r.id, "XLSX")} disabled={ocupado !== null} className="btn btn-secondary btn-sm" title="Descargar en Excel">
-                {ocupado === `${r.id}:XLSX` ? "Generando" : "Excel"}
-              </button>
-              <button type="button" onClick={() => descargar(r.id, "PDF")} disabled={ocupado !== null} className="btn btn-secondary btn-sm" title="Descargar en PDF">
-                {ocupado === `${r.id}:PDF` ? "Generando" : "PDF"}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
 
       {visor && (
         <VisorReporte
           visor={visor}
           ocupado={ocupado}
           onCerrar={() => setVisor(null)}
-          onExportar={(formato) => descargar(visor.reporteId, formato)}
+          onExportar={(formato) => descargar(formato)}
         />
       )}
     </div>

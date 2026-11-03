@@ -305,6 +305,28 @@ const navItems: NavEntry[] = [
   },
 ];
 
+// Sin permisos declarados, el enlace es para toda cuenta con sesión.
+function permitidoEnMenu(item: NavItem, permisos: readonly string[], conEmpleado: boolean) {
+  return (
+    (item.href !== "/mi-espacio" || conEmpleado || tieneAlguno(permisos, ["asistencia.aprobar_permisos"])) &&
+    (!item.permisos || tieneAlguno(permisos, item.permisos))
+  );
+}
+
+// Sin empleado vinculado, lo único que hay en Mi espacio son las aprobaciones.
+const etiquetaEnMenu = (item: { href: string; label: string }, conEmpleado: boolean) =>
+  item.href === "/mi-espacio" && !conEmpleado ? "Aprobaciones" : item.label;
+
+/** Las pantallas que esta cuenta tiene en su menú, para buscarlas por nombre. */
+export function opcionesDeMenu(permisos: readonly string[], conEmpleado: boolean): Array<{ href: string; label: string; seccion?: string }> {
+  return navItems.flatMap((entry) => {
+    if (esSeccion(entry)) {
+      return entry.items.filter((i) => permitidoEnMenu(i, permisos, conEmpleado)).map((i) => ({ href: i.href, label: i.label, seccion: entry.label }));
+    }
+    return permitidoEnMenu(entry, permisos, conEmpleado) ? [{ href: entry.href, label: etiquetaEnMenu(entry, conEmpleado) }] : [];
+  });
+}
+
 export default function Sidebar({
   permisos,
   conEmpleado,
@@ -341,10 +363,7 @@ export default function Sidebar({
   const alternar = (id: string, abierta: boolean) =>
     escribirSecciones({ ...abiertas, [id]: !abierta });
 
-  // Sin permisos declarados, el enlace es para toda cuenta con sesión.
-  const permitido = (item: NavItem) =>
-    (item.href !== "/mi-espacio" || conEmpleado || tieneAlguno(permisos, ["asistencia.aprobar_permisos"])) &&
-    (!item.permisos || tieneAlguno(permisos, item.permisos));
+  const permitido = (item: NavItem) => permitidoEnMenu(item, permisos, conEmpleado);
 
   // Una sección se muestra solo si el rol puede ver al menos uno de sus módulos.
   const visible = navItems.reduce<NavEntry[]>((acc, entry) => {
@@ -479,8 +498,7 @@ export default function Sidebar({
               )}
             >
               <span className={cn(active ? "text-blue-400" : "text-white/60")}>{entry.icon}</span>
-              {/* Sin empleado vinculado, lo único que hay ahí son las aprobaciones. */}
-              {entry.href === "/mi-espacio" && !conEmpleado ? "Aprobaciones" : entry.label}
+              {etiquetaEnMenu(entry, conEmpleado)}
             </Link>
           );
         })}

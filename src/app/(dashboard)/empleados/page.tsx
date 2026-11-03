@@ -58,7 +58,7 @@ export default async function EmpleadosPage({
   // `conAlcance` combina con AND: quien sólo alcanza una sucursal no ve a nadie de otra,
   // aunque la pida en la dirección.
   const where = conAlcance(
-    { AND: [filtroBusquedaEmpleados(search, { conIdentidad: vePII }), sucursalId ? { sucursalId } : {}] },
+    { AND: [await filtroBusquedaEmpleados(prisma, search, { conIdentidad: vePII }), sucursalId ? { sucursalId } : {}] },
     usuario
   );
   const sinSucursales = usuario.alcance === "SUCURSAL" && !usuario.sucursalesIds?.length;

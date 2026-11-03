@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { resumenDeRevision } from "@/lib/payroll/revision-planilla";
+import { cargarRevision } from "@/lib/payroll/revision-planilla-bd";
+import BarraEstadoPlanilla from "@/components/payroll/BarraEstadoPlanilla";
+import RevisionPlanilla from "@/components/payroll/RevisionPlanilla";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, formatDate, nombreCompleto } from "@/lib/utils";
@@ -64,9 +68,18 @@ export default async function DetallePlanillaPage({
   });
 
   if (!planilla) notFound();
-  const anuladaPor = planilla.anuladaPor
-    ? await prisma.user.findUnique({ where: { id: planilla.anuladaPor }, select: { name: true, email: true } })
-    : null;
+  // Quién dio cada paso: las columnas guardan el id de la cuenta.
+  const firmantes = await prisma.user.findMany({
+    where: { id: { in: [planilla.aprobadoPor, planilla.pagadoPor, planilla.anuladaPor].filter((x): x is string => !!x) } },
+    select: { id: true, name: true, email: true },
+  });
+  const firmante = (id: string | null) => {
+    const u = firmantes.find((x) => x.id === id);
+    return u ? (u.name ?? u.email) : null;
+  };
+  // Se revisa mientras todavía se puede hacer algo al respecto: antes de confirmar y antes de aprobar.
+  const enRevision = planilla.estado === "BORRADOR" || planilla.estado === "CALCULADA";
+  const { revision, anterior } = enRevision ? await cargarRevision(prisma, planilla) : { revision: null, anterior: null };
   const totalLineas = hayFiltro ? await prisma.planillaDetalle.count({ where: { planillaId: id } }) : planilla.detalles.length;
 
   // Enviar sólo tiene sentido con la planilla cerrada: antes de aprobarla, el
@@ -142,7 +155,7 @@ export default async function DetallePlanillaPage({
         }
         actions={
           <>
-            <EstadoBadge valor={planilla.estado} className="mr-2 text-sm" />
+            {planilla.estado === "ANULADA" && <EstadoBadge valor={planilla.estado} className="mr-2 text-sm" />}
             <PlanillaActions
               planillaId={planilla.id}
               estado={planilla.estado}
@@ -155,17 +168,28 @@ export default async function DetallePlanillaPage({
               puedeEnviar={puedeEnviar}
               empleados={totalLineas}
               neto={formatCurrency(planilla.totalNeto)}
+              revision={revision ? resumenDeRevision(revision) : undefined}
             />
           </>
         }
       />
+
+      {planilla.estado !== "ANULADA" && (
+        <BarraEstadoPlanilla
+          estado={planilla.estado}
+          creada={planilla.createdAt}
+          aprobada={{ por: firmante(planilla.aprobadoPor), el: planilla.cerradaAt }}
+          pagada={{ por: firmante(planilla.pagadoPor), el: planilla.fechaPago }}
+        />
+      )}
 
       {planilla.estado === "BORRADOR" && (
         <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <p className="font-semibold">Esta planilla está en borrador.</p>
           <p className="mt-1">
             Todavía no se ha cobrado ninguna cuota ni se ha marcado ningún bono, y los empleados no ven su comprobante.
-            Revise las líneas y los <Link href="/reportes" className="font-medium underline underline-offset-2">reportes</Link>.
+            Revise la conciliación, las líneas y los{" "}
+            <Link href={`/reportes?reporte=planilla-detallada&planillaId=${planilla.id}`} className="font-medium underline underline-offset-2">reportes</Link>.
             Si corrige horas, deducciones o salarios, use Recalcular. Cuando esté correcta, Confirmar planilla.
           </p>
         </div>
@@ -176,12 +200,14 @@ export default async function DetallePlanillaPage({
           <p className="font-semibold">Esta planilla está anulada.</p>
           <p className="mt-1">
             {planilla.motivoAnulacion ? `Motivo: ${planilla.motivoAnulacion}.` : "Se anuló sin registrar un motivo."}
-            {anuladaPor && ` La anuló ${anuladaPor.name ?? anuladaPor.email}.`}
+            {firmante(planilla.anuladaPor) && ` La anuló ${firmante(planilla.anuladaPor)}.`}
           </p>
         </div>
       )}
 
       <FranjaCifras cifras={resumen} etiqueta="Totales de la planilla" />
+
+      {revision && <RevisionPlanilla revision={revision} anterior={anterior} accion={planilla.estado === "BORRADOR" ? "confirmar" : "aprobar"} />}
 
       {puedeArchivoBanco && (
         <div className="flex flex-wrap items-start gap-3">
