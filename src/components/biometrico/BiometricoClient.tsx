@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAvisos } from "@/components/ui/Avisos";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import CuarentenaPines, {
   type PinEnCuarentena,
   type OpcionEmpleado,
@@ -57,6 +61,7 @@ export default function BiometricoClient({
   asignados,
 }: Props) {
   const router = useRouter();
+  const { confirmar, avisar } = useAvisos();
   const [pestana, setPestana] = useState<"dispositivos" | "pines" | "marcaciones">("dispositivos");
   const [loading, setLoading] = useState(false);
   const [probandoId, setProbandoId] = useState<string | null>(null);
@@ -110,7 +115,7 @@ export default function BiometricoClient({
       setModal(null);
       router.refresh();
     } catch {
-      alert("No se pudo guardar el dispositivo. Intente nuevamente.");
+      avisar.error("No se pudo guardar el dispositivo. Intente nuevamente.");
     } finally {
       setLoading(false);
     }
@@ -126,18 +131,18 @@ export default function BiometricoClient({
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
-      alert("No se pudo cambiar el estado. Intente nuevamente.");
+      avisar.error("No se pudo cambiar el estado. Intente nuevamente.");
     }
   }
 
   async function eliminar(id: string) {
-    if (!confirm("¿Eliminar este dispositivo?")) return;
+    if (!(await confirmar({ titulo: "¿Eliminar este dispositivo?", accion: "Eliminar", peligro: true }))) return;
     try {
       const res = await fetch(`/api/biometrico/dispositivos/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       router.refresh();
     } catch {
-      alert("No se pudo eliminar. Intente nuevamente.");
+      avisar.error("No se pudo eliminar. Intente nuevamente.");
     }
   }
 
@@ -148,15 +153,16 @@ export default function BiometricoClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "No se pudo probar la conexión");
 
-      alert(
-        `${data.ok ? "✅ Conexión correcta" : "❌ Sin conexión"}\n\n` +
-          `Equipo: ${data.dispositivo} (${ETIQUETA_MARCA[data.marca as Marca] ?? data.marca})\n` +
-          `Destino: ${data.destino}\n` +
-          `Tiempo: ${data.msTranscurridos} ms\n\n` +
-          data.detalle
-      );
+      const resultado =
+        `${data.ok ? "Conexión correcta" : "Sin conexión"}\n\n` +
+        `Equipo: ${data.dispositivo} (${ETIQUETA_MARCA[data.marca as Marca] ?? data.marca})\n` +
+        `Destino: ${data.destino}\n` +
+        `Tiempo: ${data.msTranscurridos} ms\n\n` +
+        data.detalle;
+      if (data.ok) avisar.exito(resultado);
+      else avisar.error(resultado);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "No se pudo probar la conexión.");
+      avisar.error(e instanceof Error ? e.message : "No se pudo probar la conexión.");
     } finally {
       setProbandoId(null);
     }
@@ -167,13 +173,13 @@ export default function BiometricoClient({
     try {
       const res = await fetch(`/api/biometrico/sync/${id}`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error");
+      if (!res.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
       const enCuarentena =
         data.enCuarentena > 0
           ? `\n\n${data.enCuarentena} marca(s) con PIN sin asignar quedaron en cuarentena. ` +
             "Asigne el PIN a su empleado para que se conviertan en jornadas."
           : "";
-      alert(
+      avisar.exito(
         `Sincronización de ${data.dispositivo}\n\n` +
           `Marcas leídas: ${data.eventosLeidos}\n` +
           `Nuevas: ${data.eventosNuevos}\n` +
@@ -182,7 +188,7 @@ export default function BiometricoClient({
       );
       router.refresh();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "No se pudo sincronizar. Intente nuevamente.");
+      avisar.error(e instanceof Error ? e.message : "No se pudo sincronizar. Intente nuevamente.");
     } finally {
       setSyncingId(null);
     }
@@ -203,21 +209,18 @@ export default function BiometricoClient({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Reloj biométrico</h1>
-          <p className="text-sm text-gray-500">Dispositivos ZKTeco y Hikvision, y sincronización de asistencia</p>
-        </div>
-        {pestana === "dispositivos" && (
-          <button
-            onClick={abrirCrear}
-            className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800"
-          >
-            Agregar dispositivo
-          </button>
-        )}
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Reloj biométrico"
+        description="Dispositivos ZKTeco y Hikvision, y sincronización de asistencia."
+        actions={
+          pestana === "dispositivos" && (
+            <button onClick={abrirCrear} className="btn btn-primary">
+              Agregar dispositivo
+            </button>
+          )
+        }
+      />
 
       {/* Pestañas */}
       <div className="flex gap-1 border-b border-gray-200">
@@ -263,102 +266,94 @@ export default function BiometricoClient({
 
       {pestana === "dispositivos" && (
       <>
-      {/* Info banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
-        <span className="text-amber-500 text-xl shrink-0">⚠️</span>
-        <div className="text-sm text-amber-800">
-          <p className="font-medium mb-1">Falta el driver de comunicación con el equipo</p>
-          <p>
-            La tubería completa ya funciona: ingesta idempotente, cuarentena de PIN sin asignar,
-            reparto de jornada y registro en Asistencia. Lo que falta es la pieza que habla con cada
-            marca &mdash; <strong>ISAPI</strong> para Hikvision y{" "}
-            <code className="bg-amber-100 px-1 rounded">node-zklib</code> para ZKTeco &mdash; y para
-            escribirla hace falta el modelo exacto del equipo. Hasta entonces, &laquo;Sincronizar&raquo;
-            responde diciendo qué driver falta.
-          </p>
-        </div>
+      {/* Aviso: falta conectar con el equipo */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="mb-1 font-medium">Falta conectar con el equipo</p>
+        <p>
+          Todo lo demás ya funciona: el registro de las marcas sin duplicarlas, las marcas con PIN
+          sin asignar, el reparto de la jornada y el paso a Asistencia. Lo que falta es la parte que
+          habla con cada marca de reloj (Hikvision y ZKTeco), y para escribirla hace falta el modelo
+          exacto del equipo. Hasta entonces, &laquo;Sincronizar&raquo; responde diciendo qué falta.
+        </p>
       </div>
 
       {/* Tabla dispositivos */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="panel overflow-hidden">
+        <div className="overflow-x-auto">
+        <table className="table-base tabla-tarjetas">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Dispositivo</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Marca</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Dirección</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Sucursal</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Última Sync</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Acciones</th>
+            <tr>
+              <th>Dispositivo</th>
+              <th>Marca</th>
+              <th>Dirección</th>
+              <th>Sucursal</th>
+              <th>Última sincronización</th>
+              <th>Estado</th>
+              <th>Acciones</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody>
             {dispositivos.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-10 text-gray-400">
-                  No hay dispositivos configurados. Agregue el primero.
+                <td colSpan={7}>
+                  <EstadoVacio
+                    titulo="No hay dispositivos configurados."
+                    detalle="Agregue el primer reloj para traer las marcaciones de asistencia."
+                    accion={
+                      <button onClick={abrirCrear} className="btn btn-secondary">
+                        Agregar dispositivo
+                      </button>
+                    }
+                  />
                 </td>
               </tr>
             ) : (
               dispositivos.map((d) => (
-                <tr key={d.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${d.activo ? "bg-green-400" : "bg-gray-300"}`} />
-                      <span className="font-medium text-gray-900">{d.nombre}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                      {ETIQUETA_MARCA[d.marca] ?? d.marca}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-blue-700">
+                <tr key={d.id}>
+                  <td data-titulo className="font-medium text-gray-900">{d.nombre}</td>
+                  <td data-etiqueta="Marca">{ETIQUETA_MARCA[d.marca] ?? d.marca}</td>
+                  <td data-etiqueta="Dirección" className="font-mono text-xs text-blue-700">
                     {d.ip}:{d.puerto}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{nombreSucursal(d.sucursalId)}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{formatSync(d.ultimaSync)}</td>
-                  <td className="px-4 py-3">
+                  <td data-etiqueta="Sucursal" className="text-gray-600">{nombreSucursal(d.sucursalId)}</td>
+                  <td data-etiqueta="Última sincronización" className="text-xs text-gray-500">{formatSync(d.ultimaSync)}</td>
+                  <td data-etiqueta="Estado">
                     <button
                       onClick={() => toggleActivo(d)}
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
-                        d.activo
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      }`}
+                      title="Haga clic para activar o desactivar el dispositivo"
+                      className="rounded px-1 py-0.5 hover:bg-gray-100"
                     >
-                      {d.activo ? "Activo" : "Inactivo"}
+                      <EstadoBadge valor={d.activo ? "ACTIVO" : "INACTIVO"} />
                     </button>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                  <td data-accion>
+                    <div className="flex flex-wrap items-center gap-1">
                       {/* Antes de sincronizar: separa un fallo de red de uno de
                           credenciales o de ingesta. Se permite aun inactivo,
                           que es justo cuando se está diagnosticando. */}
                       <button
                         onClick={() => probar(d.id)}
                         disabled={probandoId === d.id}
-                        className="px-3 py-1 border border-blue-200 text-blue-700 text-xs rounded-lg hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="btn btn-secondary btn-sm"
                       >
                         {probandoId === d.id ? "Probando…" : "Probar conexión"}
                       </button>
                       <button
                         onClick={() => sincronizar(d.id)}
                         disabled={syncingId === d.id || !d.activo}
-                        className="px-3 py-1 bg-blue-700 text-white text-xs rounded-lg hover:bg-blue-800 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                        className="btn btn-secondary btn-sm"
                       >
-                        {syncingId === d.id ? "Sync..." : "Sincronizar"}
+                        {syncingId === d.id ? "Sincronizando…" : "Sincronizar"}
                       </button>
                       <button
                         onClick={() => abrirEditar(d)}
-                        className="px-3 py-1 border border-gray-200 text-gray-600 text-xs rounded-lg hover:bg-gray-50"
+                        className="btn btn-ghost btn-sm"
                       >
                         Editar
                       </button>
                       <button
                         onClick={() => eliminar(d.id)}
-                        className="px-3 py-1 border border-red-200 text-red-600 text-xs rounded-lg hover:bg-red-50"
+                        className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50"
                       >
                         Eliminar
                       </button>
@@ -369,19 +364,20 @@ export default function BiometricoClient({
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Guía de configuración */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3">
+      <div className="panel p-5 space-y-3">
         <h2 className="font-semibold text-gray-800">Pasos para conectar un reloj</h2>
         <ol className="space-y-2 text-sm text-gray-600 list-none">
           {[
-            ["1", "Conecte el reloj a la misma red local que el servidor donde corre NominaHN."],
-            ["2", "Anote la IP del equipo: en ZKTeco, Menú → Comunicación → Ethernet; en Hikvision, Red → TCP/IP."],
+            ["1", "Conecte el reloj a la misma red local que el servidor donde corre el sistema."],
+            ["2", "Anote la IP del equipo: en ZKTeco, Menú, Comunicación, Ethernet; en Hikvision, Red, TCP/IP."],
             ["3", "Agregue el dispositivo aquí eligiendo su marca. Hikvision pide además usuario y contraseña del equipo."],
             ["4", 'Presione "Sincronizar" para traer las marcaciones.'],
             ["5", "Los PIN que el reloj reporte y no estén asignados quedan en cuarentena: asígnelos a su empleado y las marcas anteriores se procesan solas."],
-            ["6", "Para que sea automático, programe un cron que llame a POST /api/cron/biometrico con el encabezado x-cron-secret."],
+            ["6", "Para que sea automático, pida a quien administra el servidor que programe una llamada periódica a POST /api/cron/biometrico con el encabezado x-cron-secret."],
           ].map(([n, text]) => (
             <li key={n} className="flex gap-3">
               <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">{n}</span>
@@ -396,110 +392,110 @@ export default function BiometricoClient({
       {/* Modal crear/editar */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
+          <div className="panel shadow-2xl p-6 w-full max-w-md space-y-4">
             <h3 className="font-semibold text-gray-900 text-lg">
-              {modal === "crear" ? "Agregar Dispositivo" : "Editar Dispositivo"}
+              {modal === "crear" ? "Agregar dispositivo" : "Editar dispositivo"}
             </h3>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Nombre del dispositivo</label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-gray-800">Nombre del dispositivo</span>
               <input
                 value={form.nombre}
                 onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                placeholder="Ej: Reloj Principal Tegucigalpa"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Ej.: Reloj principal Tegucigalpa"
+                className="input"
               />
-            </div>
+            </label>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Marca</label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-gray-800">Marca</span>
               <select
                 value={form.marca}
                 onChange={(e) => cambiarMarca(e.target.value as Marca)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="input"
               >
                 <option value="ZKTECO">ZKTeco &mdash; protocolo propietario, puerto 4370</option>
                 <option value="HIKVISION">Hikvision &mdash; ISAPI sobre HTTP, puerto 80</option>
               </select>
-            </div>
+            </label>
 
             <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Dirección IP</label>
+              <label className="col-span-2 block text-sm">
+                <span className="mb-1 block font-medium text-gray-800">Dirección IP</span>
                 <input
                   value={form.ip}
                   onChange={(e) => setForm((f) => ({ ...f, ip: e.target.value }))}
                   placeholder="192.168.1.100"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input font-mono"
                 />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Puerto</label>
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-gray-800">Puerto</span>
                 <input
                   type="number"
                   value={form.puerto}
                   onChange={(e) => setForm((f) => ({ ...f, puerto: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input font-mono"
                 />
-              </div>
+              </label>
             </div>
 
             {/* Hikvision autentica cada petición ISAPI con Digest; ZKTeco no. */}
             {form.marca === "HIKVISION" && (
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Usuario del equipo</label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-800">Usuario del equipo</span>
                   <input
                     value={form.usuario}
                     onChange={(e) => setForm((f) => ({ ...f, usuario: e.target.value }))}
                     placeholder="admin"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Contraseña</label>
+                </label>
+                <label className="block text-sm">
+                  <span className="mb-1 block font-medium text-gray-800">Contraseña</span>
                   <input
                     type="password"
                     value={form.password}
                     onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                     placeholder={modal === "editar" ? "Sin cambios" : ""}
                     autoComplete="new-password"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="input"
                   />
-                  <p className="text-[11px] text-gray-500 mt-1">
+                  <span className="mt-1 block text-xs text-gray-500">
                     Se guarda cifrada y nunca se devuelve al navegador.
-                  </p>
-                </div>
+                  </span>
+                </label>
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Sucursal (opcional)</label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-gray-800">Sucursal (opcional)</span>
               <select
                 value={form.sucursalId}
                 onChange={(e) => setForm((f) => ({ ...f, sucursalId: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="input"
               >
                 <option value="">Todas las sucursales</option>
                 {sucursales.map((s) => (
                   <option key={s.id} value={s.id}>{s.nombre}</option>
                 ))}
               </select>
-            </div>
+            </label>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setModal(null)}
-                className="flex-1 py-2 border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50"
+                className="btn btn-ghost"
               >
                 Cancelar
               </button>
               <button
                 onClick={guardar}
                 disabled={loading || !form.nombre || !form.ip}
-                className="flex-1 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:bg-blue-400"
+                className="btn btn-primary"
               >
-                {loading ? "Guardando..." : modal === "crear" ? "Agregar" : "Guardar"}
+                {loading ? "Guardando…" : modal === "crear" ? "Agregar" : "Guardar"}
               </button>
             </div>
           </div>

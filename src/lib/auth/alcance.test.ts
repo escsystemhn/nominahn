@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { filtroEmpleados, filtroPorEmpleado, conAlcance, alcanzaEmpleado, alcanceEsTotal } from "./alcance";
+import { filtroEmpleados, filtroPorEmpleado, conAlcance, alcanzaEmpleado, alcanzaUbicacion, filtroSucursales, alcanceEsTotal } from "./alcance";
 
 const NINGUNA = { id: { in: [] } };
 
@@ -113,5 +113,38 @@ describe("alcanceEsTotal", () => {
     expect(alcanceEsTotal({ alcance: "TODO" })).toBe(true);
     expect(alcanceEsTotal({})).toBe(true);
     expect(alcanceEsTotal({ alcance: "SUCURSAL", sucursalesIds: ["s1"] })).toBe(false);
+  });
+});
+
+describe("filtroSucursales", () => {
+  it("con alcance total no filtra", () => {
+    expect(filtroSucursales({ alcance: "TODO" })).toEqual({});
+  });
+
+  it("con alcance de sucursal, sólo las asignadas", () => {
+    expect(filtroSucursales({ alcance: "SUCURSAL", sucursalesIds: ["s1"] })).toEqual({ id: { in: ["s1"] } });
+  });
+
+  it("sin el dato que hace falta, cierra", () => {
+    const ninguna = { id: { in: [] } };
+    expect(filtroSucursales({ alcance: "SUCURSAL" })).toEqual(ninguna);
+    expect(filtroSucursales({ alcance: "DEPARTAMENTO" })).toEqual(ninguna);
+    expect(filtroSucursales({ alcance: "PROPIO" })).toEqual(ninguna);
+  });
+});
+
+describe("alcanzaUbicacion", () => {
+  const destino = { sucursalId: "s1", departamentoId: "d1" };
+
+  it("deja colocar a alguien sólo dentro del alcance", () => {
+    expect(alcanzaUbicacion({ alcance: "TODO" }, destino)).toBe(true);
+    expect(alcanzaUbicacion({ alcance: "SUCURSAL", sucursalesIds: ["s1"] }, destino)).toBe(true);
+    expect(alcanzaUbicacion({ alcance: "SUCURSAL", sucursalesIds: ["s2"] }, destino)).toBe(false);
+    expect(alcanzaUbicacion({ alcance: "DEPARTAMENTO", departamentoId: "d1" }, destino)).toBe(true);
+    expect(alcanzaUbicacion({ alcance: "DEPARTAMENTO", departamentoId: "d2" }, destino)).toBe(false);
+  });
+
+  it("quien sólo alcanza su propio expediente no coloca a nadie", () => {
+    expect(alcanzaUbicacion({ alcance: "PROPIO", empleadoId: "e1" }, destino)).toBe(false);
   });
 });

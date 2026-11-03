@@ -11,7 +11,7 @@ export default async function CapacitacionesPage() {
     select: { id: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, codigo: true },
     orderBy: { primerApellido: "asc" },
   });
-  const empleadosOpts = empleados.map((e) => ({ id: e.id, nombre: `${e.codigo} · ${nombreCompleto(e)}` }));
+  const empleadosOpts = empleados.map((e) => ({ id: e.id, nombre: `${e.codigo}, ${nombreCompleto(e)}` }));
 
   return (
     <CapacitacionesClient

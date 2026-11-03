@@ -26,6 +26,7 @@ import { aNumero, minimo, sumar, sumarPor, money, redondear, CERO, type Money } 
 import { aXlsx, aPdf, contarDetalles, metaFila, type HojaReporte, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
 import { reportePuntualidad, MAX_DIAS_REPORTE } from "@/lib/asistencia/tardanzas";
 import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
+import { PRODUCTO } from "@/lib/marca";
 
 export async function GET(req: NextRequest) {
   const g = await requerirPermiso("reportes.ver");
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
   let datos: string[][] = [];
   let filas: MetaFila[] | undefined;
   let hojas: HojaReporte[] | undefined;
-  let titulo = "Reporte NominaHN";
+  let titulo = "Reporte";
   let cabeceras: string[] = [];
 
   // Un solo filtro de personas para todos los reportes: los tres niveles a la
@@ -468,7 +469,7 @@ export async function GET(req: NextRequest) {
       bruto: Money; ihss: Money; rap: Money; afp: Money; isr: Money;
     }>();
 
-    // Meses pagados FUERA de NominaHN e importados para el cálculo personalizado
+    // Meses pagados FUERA de Gestión360 Nómina e importados para el cálculo personalizado
     // del ISR: también son sueldo devengado e ISR retenido del año. Si un mes
     // está importado, sus planillas no se suman (es el mismo mes dos veces).
     const importados = await prisma.acumuladoIsr.findMany({
@@ -777,7 +778,7 @@ export async function GET(req: NextRequest) {
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>NominaHN — ${escaparHtml(titulo)}</title>
+<title>${PRODUCTO}: ${escaparHtml(titulo)}</title>
 <style>
   body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; }
   h1 { color: #1e40af; font-size: 16px; }
@@ -791,7 +792,7 @@ export async function GET(req: NextRequest) {
 </style>
 </head>
 <body>
-<h1>NominaHN — ${escaparHtml(titulo)}</h1>
+<h1>${PRODUCTO}: ${escaparHtml(titulo)}</h1>
 <p>Generado: ${escaparHtml(new Date().toLocaleString("es-HN"))} | Total registros: ${contarDetalles(datos, filas)}</p>
 <table>
 <thead><tr>${cabeceras.map((h) => `<th>${escaparHtml(h)}</th>`).join("")}</tr></thead>
@@ -803,7 +804,7 @@ ${datos.map((row: string[], i: number) => {
   }).join("\n")}
 </tbody>
 </table>
-<div class="footer">NominaHN · Sistema Integral de RRHH · Honduras</div>
+<div class="footer">${PRODUCTO}</div>
 </body>
 </html>`;
 

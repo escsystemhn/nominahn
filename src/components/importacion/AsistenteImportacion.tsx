@@ -15,6 +15,8 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import FranjaCifras from "@/components/ui/FranjaCifras";
 import type { InformeValidacion, ModoImportacion, RecursoImportacion, ResultadoImportacion } from "@/lib/importacion/tipos";
 
 interface Props {
@@ -114,20 +116,20 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="panel flex max-h-[90vh] w-full max-w-4xl flex-col shadow-xl">
         {/* Cabecera */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{titulo}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {paso === "subir" && "Paso 1 de 3 · Elegir archivo"}
-              {paso === "revisar" && "Paso 2 de 3 · Revisar antes de aplicar"}
-              {paso === "hecho" && "Paso 3 de 3 · Listo"}
+              {paso === "subir" && "Paso 1 de 3: elegir archivo"}
+              {paso === "revisar" && "Paso 2 de 3: revisar antes de aplicar"}
+              {paso === "hecho" && "Paso 3 de 3: listo"}
             </p>
           </div>
           <button
             onClick={onCerrar}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-2"
+            className="text-gray-500 hover:text-gray-600 text-2xl leading-none px-2"
             aria-label="Cerrar"
           >
             ×
@@ -151,7 +153,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                   href={`/api/exportar/${recurso}?plantilla=1&formato=xlsx`}
                   className="inline-flex items-center gap-2 text-blue-700 hover:text-blue-900 font-medium"
                 >
-                  ↓ Descargar plantilla de Excel, con instrucciones
+                  Descargar plantilla de Excel, con instrucciones
                 </a>
                 <a href={`/api/exportar/${recurso}?plantilla=1`} className="text-gray-500 hover:text-gray-800">
                   o en CSV
@@ -196,7 +198,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                   }}
                   className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-700 file:text-white file:text-sm file:font-medium hover:file:bg-blue-800 file:cursor-pointer"
                 />
-                <p className="text-xs text-gray-400 mt-3">
+                <p className="text-xs text-gray-500 mt-3">
                   Archivo de Excel (.xlsx) o .csv, hasta 5 MB. El CSV puede venir separado por comas
                   o por punto y coma, y guardado en cualquier codificación.
                 </p>
@@ -209,17 +211,20 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
           {/* ─── PASO 2 ─────────────────────────────────────────────────── */}
           {paso === "revisar" && informe && (
             <div className="space-y-5">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Contador etiqueta="Se crearán" valor={informe.totalCrear} tono="verde" />
-                <Contador etiqueta="Se actualizarán" valor={informe.totalActualizar} tono="azul" />
-                <Contador etiqueta="Se omitirán" valor={informe.totalOmitir} tono="gris" />
-                <Contador etiqueta="Con errores" valor={informe.totalErrores} tono="rojo" />
-              </div>
+              <FranjaCifras
+                etiqueta="Resultado de la revisión"
+                cifras={[
+                  { label: "Se crearán", valor: informe.totalCrear },
+                  { label: "Se actualizarán", valor: informe.totalActualizar },
+                  { label: "Se omitirán", valor: informe.totalOmitir },
+                  { label: "Con errores", valor: informe.totalErrores },
+                ]}
+              />
 
               {/* Nada se ha escrito todavía: el mensaje lo dice explícitamente
                   para que cerrar aquí no dé miedo. */}
               <p className="text-xs text-gray-500">
-                Archivo <span className="font-medium">{informe.nombreArchivo}</span> ·{" "}
+                Archivo <span className="font-medium">{informe.nombreArchivo}</span>:{" "}
                 {informe.totalFilas} fila(s) leídas. Todavía no se ha guardado ningún cambio.
               </p>
 
@@ -243,7 +248,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
 
               {avisos.length > 0 && (
                 <ListaIncidencias
-                  titulo={`${avisos.length} advertencia(s) — no bloquean la importación`}
+                  titulo={`${avisos.length} advertencia(s), no bloquean la importación`}
                   incidencias={avisos}
                   tono="ambar"
                 />
@@ -252,26 +257,26 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
               {informe.filas.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Detalle por fila</h3>
-                  <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr className="border-b border-gray-100">
-                          <th className="text-left px-3 py-2 font-medium text-gray-600 w-16">Línea</th>
-                          <th className="text-left px-3 py-2 font-medium text-gray-600 w-28">Acción</th>
-                          <th className="text-left px-3 py-2 font-medium text-gray-600">Registro</th>
-                          <th className="text-left px-3 py-2 font-medium text-gray-600">Cambios</th>
+                  <div className="panel max-h-72 overflow-hidden overflow-y-auto">
+                    <table className="table-base">
+                      <thead className="sticky top-0">
+                        <tr>
+                          <th className="w-16">Línea</th>
+                          <th className="w-28">Acción</th>
+                          <th>Registro</th>
+                          <th>Cambios</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody>
                         {informe.filas.map((fila) => (
-                          <tr key={fila.linea} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 font-mono text-xs text-gray-400">{fila.linea}</td>
-                            <td className="px-3 py-2">
+                          <tr key={fila.linea}>
+                            <td className="font-mono text-xs text-gray-500">{fila.linea}</td>
+                            <td>
                               <EtiquetaAccion accion={fila.accion} />
                             </td>
-                            <td className="px-3 py-2 text-gray-800">{fila.referencia}</td>
-                            <td className="px-3 py-2 text-xs text-gray-500">
-                              {fila.cambios?.join(" · ") || "—"}
+                            <td className="text-gray-800">{fila.referencia}</td>
+                            <td className="text-xs text-gray-500">
+                              {fila.cambios?.join("; ") || "—"}
                             </td>
                           </tr>
                         ))}
@@ -286,12 +291,11 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
           {/* ─── PASO 3 ─────────────────────────────────────────────────── */}
           {paso === "hecho" && resultado && (
             <div className="py-6 text-center space-y-3">
-              <div className="text-4xl">✓</div>
               <h3 className="text-lg font-semibold text-gray-900">Importación aplicada</h3>
               <p className="text-sm text-gray-600">
                 {resultado.creados} registro(s) creado(s) y {resultado.actualizados} actualizado(s).
               </p>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-500">
                 La operación quedó registrada en la auditoría del sistema.
               </p>
             </div>
@@ -305,14 +309,14 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
               <button
                 onClick={reiniciar}
                 disabled={cargando}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                className="btn btn-ghost"
               >
                 Elegir otro archivo
               </button>
               <button
                 onClick={confirmar}
                 disabled={cargando || !informe?.aplicable}
-                className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-primary"
               >
                 {cargando
                   ? "Aplicando…"
@@ -326,20 +330,20 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
             <>
               <button
                 onClick={reiniciar}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
+                className="btn btn-ghost"
               >
                 Importar otro archivo
               </button>
               <button
                 onClick={onCerrar}
-                className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800"
+                className="btn btn-primary"
               >
                 Cerrar
               </button>
             </>
           )}
           {paso === "subir" && (
-            <button onClick={onCerrar} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+            <button onClick={onCerrar} className="btn btn-ghost">
               Cancelar
             </button>
           )}
@@ -357,31 +361,14 @@ const TONOS = {
   ambar: "bg-amber-50 border-amber-200 text-amber-900",
 } as const;
 
-function Contador({ etiqueta, valor, tono }: { etiqueta: string; valor: number; tono: keyof typeof TONOS }) {
-  return (
-    <div className={`px-3 py-2 rounded-lg border ${TONOS[tono]}`}>
-      <div className="text-xl font-bold">{valor}</div>
-      <div className="text-xs">{etiqueta}</div>
-    </div>
-  );
-}
-
 function EtiquetaAccion({ accion }: { accion: string }) {
-  const estilos: Record<string, string> = {
-    CREAR: "bg-green-100 text-green-800",
-    ACTUALIZAR: "bg-blue-100 text-blue-800",
-    OMITIR: "bg-gray-100 text-gray-500",
+  const texto: Record<string, { etiqueta: string; tono: "ok" | "marca" | "neutro" }> = {
+    CREAR: { etiqueta: "Alta", tono: "ok" },
+    ACTUALIZAR: { etiqueta: "Actualizar", tono: "marca" },
+    OMITIR: { etiqueta: "Omitir", tono: "neutro" },
   };
-  const texto: Record<string, string> = {
-    CREAR: "Alta",
-    ACTUALIZAR: "Actualizar",
-    OMITIR: "Omitir",
-  };
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${estilos[accion] ?? ""}`}>
-      {texto[accion] ?? accion}
-    </span>
-  );
+  const t = texto[accion];
+  return <EstadoBadge valor={accion} etiqueta={t?.etiqueta ?? accion} tono={t?.tono ?? "neutro"} />;
 }
 
 function ListaIncidencias({
@@ -403,8 +390,8 @@ function ListaIncidencias({
         {incidencias.slice(0, VISIBLES).map((inc, i) => (
           <li key={`${inc.linea}-${i}`} className="text-xs">
             <span className="font-mono opacity-70">Línea {inc.linea}</span>
-            {inc.columna && <span className="font-medium"> · {inc.columna}</span>}
-            <span> — {inc.mensaje}</span>
+            {inc.columna && <span className="font-medium">, {inc.columna}</span>}
+            <span>: {inc.mensaje}</span>
           </li>
         ))}
       </ul>

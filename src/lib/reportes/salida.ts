@@ -17,6 +17,7 @@ import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interface
 // La lectura de celdas y filas tiene una sola definición, compartida con el
 // visor del navegador (que no puede importar este archivo por exceljs y pdfmake).
 import { valorCelda, columnasNumericas, metaFila, contarDetalles, type HojaReporte, type TipoCelda, type MetaFila } from "./salida-celdas";
+import { PRODUCTO } from "@/lib/marca";
 
 export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles } from "./salida-celdas";
 export type { HojaReporte, TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
@@ -81,7 +82,7 @@ const FONDO_GRUPO_EXCEL = ["FFDCE6EA", "FFE9EFF2", "FFF3F6F8"];
 
 export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "NominaHN";
+  wb.creator = PRODUCTO;
   wb.created = r.generado;
 
   if (r.hojas?.length) {
@@ -309,11 +310,11 @@ export async function aPdf(r: ReporteTabla): Promise<Buffer> {
     pageOrientation: apaisado ? "landscape" : "portrait",
     pageMargins: [36, 36, 36, 40],
     defaultStyle: { font: "Helvetica", fontSize: 9, color: "#142129" },
-    info: { title: r.titulo, author: "NominaHN", creator: "NominaHN" },
+    info: { title: r.titulo, author: PRODUCTO, creator: PRODUCTO },
     content: contenido,
     footer: (pagina: number, total: number) => ({
       columns: [
-        { text: "NominaHN", fontSize: 8, color: TENUE, margin: [36, 10, 0, 0] },
+        { text: PRODUCTO, fontSize: 8, color: TENUE, margin: [36, 10, 0, 0] },
         { text: `Página ${pagina} de ${total}`, fontSize: 8, color: TENUE, alignment: "right", margin: [0, 10, 36, 0] },
       ],
     }),

@@ -19,6 +19,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAvisos } from "@/components/ui/Avisos";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 type Alcance = "TODO" | "SUCURSAL" | "DEPARTAMENTO" | "PROPIO";
 
@@ -65,6 +69,7 @@ const NUEVO: Omit<Perfil, "id" | "esSistema" | "usuariosAsignados"> = {
 
 export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }: Props) {
   const router = useRouter();
+  const { confirmar } = useAvisos();
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ perfil: Perfil | null; datos: typeof NUEVO } | null>(null);
@@ -105,7 +110,7 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
   }
 
   async function eliminar(perfil: Perfil) {
-    if (!window.confirm(`¿Eliminar el perfil "${perfil.nombre}"?`)) return;
+    if (!(await confirmar({ titulo: `¿Eliminar el perfil "${perfil.nombre}"?`, accion: "Eliminar", peligro: true }))) return;
     await llamar(`/api/perfiles/${perfil.id}`, { method: "DELETE" });
   }
 
@@ -163,24 +168,24 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <Link href="/usuarios" className="text-xs text-blue-600 hover:text-blue-800">
-            ← Volver a usuarios
-          </Link>
-          <h1 className="text-xl font-bold text-gray-900 mt-1">Perfiles de acceso</h1>
-          <p className="text-sm text-gray-500">
-            Cada perfil agrupa permisos y un alcance de datos. Se asigna a las cuentas desde Usuarios.
-          </p>
-        </div>
-        <button
-          onClick={() => setEditor({ perfil: null, datos: { ...NUEVO } })}
-          className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800"
-        >
-          Nuevo perfil
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Perfiles de acceso"
+        description="Cada perfil agrupa permisos y un alcance de datos. Se asigna a las cuentas desde Usuarios."
+        actions={
+          <>
+            <Link href="/usuarios" className="btn btn-ghost">
+              Volver a usuarios
+            </Link>
+            <button
+              onClick={() => setEditor({ perfil: null, datos: { ...NUEVO } })}
+              className="btn btn-primary"
+            >
+              Nuevo perfil
+            </button>
+          </>
+        }
+      />
 
       {error && (
         <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
@@ -190,28 +195,31 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {perfiles.length === 0 && (
-          <p className="text-sm text-gray-400 col-span-full py-8 text-center">
-            Todavía no hay perfiles. Mientras tanto, los permisos de cada cuenta se derivan de su rol.
-          </p>
+          <div className="col-span-full">
+            <EstadoVacio
+              titulo="Todavía no hay perfiles."
+              detalle="Cree el primero con «Nuevo perfil». Mientras tanto, los permisos de cada cuenta se derivan de su rol."
+            />
+          </div>
         )}
         {perfiles.map((p) => (
           <div
             key={p.id}
-            className={`bg-white rounded-xl border p-4 flex flex-col gap-2 ${
-              p.activo ? "border-gray-200" : "border-gray-200 opacity-60"
+            className={`panel p-4 flex flex-col gap-2 ${
+              p.activo ? "" : "opacity-60"
             }`}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
                 <h2 className="font-semibold text-gray-900">{p.nombre}</h2>
-                <p className="text-xs font-mono text-gray-400">{p.codigo}</p>
+                <p className="text-xs font-mono text-gray-500">{p.codigo}</p>
               </div>
               {p.esSistema && (
                 <span
-                  className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 shrink-0"
+                  className="shrink-0 text-xs text-gray-500"
                   title="Perfil de sistema: no se puede editar ni eliminar, para que la instalación nunca se quede sin un perfil capaz de administrar accesos."
                 >
-                  sistema
+                  De sistema
                 </span>
               )}
             </div>
@@ -235,9 +243,9 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
               </div>
             </dl>
 
-            <div className="flex gap-3 text-xs mt-2 pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-xs mt-2 pt-2 border-t border-gray-100">
               {p.esSistema ? (
-                <span className="text-gray-400">
+                <span className="text-gray-500">
                   Protegido: duplíquelo para crear una variante.
                 </span>
               ) : (
@@ -256,7 +264,7 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
                         },
                       })
                     }
-                    className="text-blue-600 hover:text-blue-800 font-medium"
+                    className="btn btn-ghost btn-sm"
                   >
                     Editar
                   </button>
@@ -264,7 +272,7 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
                     onClick={() => eliminar(p)}
                     disabled={cargando || p.usuariosAsignados > 0}
                     title={p.usuariosAsignados > 0 ? "Tiene usuarios asignados." : undefined}
-                    className="text-red-600 hover:text-red-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50"
                   >
                     Eliminar
                   </button>
@@ -274,7 +282,7 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
                   forma de partir de uno protegido sin rehacer sus permisos. */}
               <button
                 onClick={() => duplicar(p)}
-                className="text-gray-600 hover:text-gray-900 ml-auto"
+                className="btn btn-ghost btn-sm ml-auto"
               >
                 Duplicar
               </button>
@@ -285,9 +293,9 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
 
       {editor && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+          <div className="panel shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
             <div className="px-6 py-4 border-b border-gray-100 shrink-0">
-              <h2 className="text-lg font-bold text-gray-900">
+              <h2 className="text-lg font-semibold text-gray-900">
                 {editor.perfil ? `Editar «${editor.perfil.nombre}»` : "Nuevo perfil de acceso"}
               </h2>
               {editor.perfil && editor.perfil.usuariosAsignados > 0 && (
@@ -300,18 +308,18 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
             <div className="px-6 py-5 overflow-y-auto flex-1 space-y-5">
               <div className="grid sm:grid-cols-2 gap-4">
                 <label className="block">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Nombre</span>
+                  <span className="block text-sm font-medium text-gray-800 mb-1">Nombre</span>
                   <input
                     value={editor.datos.nombre}
                     onChange={(e) =>
                       setEditor({ ...editor, datos: { ...editor.datos, nombre: e.target.value } })
                     }
                     placeholder="Supervisor de sucursal"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="input"
                   />
                 </label>
                 <label className="block">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Código</span>
+                  <span className="block text-sm font-medium text-gray-800 mb-1">Código</span>
                   <input
                     value={editor.datos.codigo}
                     disabled={!!editor.perfil}
@@ -319,25 +327,25 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
                       setEditor({ ...editor, datos: { ...editor.datos, codigo: e.target.value } })
                     }
                     placeholder="SUPERVISOR_SUC"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-50 disabled:text-gray-500"
+                    className="input font-mono disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </label>
               </div>
 
               <label className="block">
-                <span className="block text-sm font-medium text-gray-700 mb-1">Descripción</span>
+                <span className="block text-sm font-medium text-gray-800 mb-1">Descripción</span>
                 <input
                   value={editor.datos.descripcion ?? ""}
                   onChange={(e) =>
                     setEditor({ ...editor, datos: { ...editor.datos, descripcion: e.target.value } })
                   }
                   placeholder="Para quién es este perfil y qué se espera que haga"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  className="input"
                 />
               </label>
 
               <fieldset>
-                <legend className="text-sm font-medium text-gray-700 mb-2">Alcance de datos</legend>
+                <legend className="text-sm font-medium text-gray-800 mb-2">Alcance de datos</legend>
                 <p className="text-xs text-gray-500 mb-2">
                   Los permisos dicen QUÉ puede hacer; el alcance, sobre QUIÉNES.
                 </p>
@@ -369,7 +377,7 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
               </fieldset>
 
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-1">Permisos</h3>
+                <h3 className="text-sm font-medium text-gray-800 mb-1">Permisos</h3>
                 <p className="text-xs text-gray-500 mb-3">
                   {editor.datos.permisos.length} seleccionado(s). Las acciones marcadas como
                   sensibles mueven dinero, sacan datos personales del sistema o alteran registros en
@@ -396,13 +404,13 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
                             <div className="flex gap-2 text-xs shrink-0">
                               <button
                                 onClick={() => alternarModulo(modulo, true)}
-                                className="text-blue-600 hover:text-blue-800"
+                                className="btn btn-ghost btn-sm"
                               >
                                 Todos
                               </button>
                               <button
                                 onClick={() => alternarModulo(modulo, false)}
-                                className="text-gray-500 hover:text-gray-700"
+                                className="btn btn-ghost btn-sm"
                               >
                                 Ninguno
                               </button>
@@ -436,13 +444,11 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
                                   <span className="text-sm text-gray-900">
                                     {permiso.etiqueta}
                                     {permiso.sensible && (
-                                      <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-800 font-medium">
-                                        sensible
-                                      </span>
+                                      <EstadoBadge valor="SENSIBLE" etiqueta="Sensible" tono="aviso" className="ml-2" />
                                     )}
                                   </span>
                                   <span className="block text-xs text-gray-500">{permiso.descripcion}</span>
-                                  <span className="block text-xs font-mono text-gray-300">{permiso.codigo}</span>
+                                  <span className="block text-xs font-mono text-gray-500">{permiso.codigo}</span>
                                 </span>
                               </label>
                             );
@@ -474,14 +480,14 @@ export default function PerfilesClient({ perfiles, catalogo, permisosDelActor }:
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
               <button
                 onClick={() => setEditor(null)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
+                className="btn btn-ghost"
               >
                 Cancelar
               </button>
               <button
                 onClick={guardar}
                 disabled={cargando || !editor.datos.nombre || (!editor.perfil && !editor.datos.codigo)}
-                className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-50"
+                className="btn btn-primary"
               >
                 {cargando ? "Guardando…" : "Guardar perfil"}
               </button>

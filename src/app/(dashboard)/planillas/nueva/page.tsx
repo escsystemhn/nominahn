@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import NuevaPlanillaForm from "@/components/payroll/NuevaPlanillaForm";
+import PageHeader from "@/components/ui/PageHeader";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 
@@ -17,11 +18,9 @@ export default async function NuevaPlanillaPage() {
   ]);
 
   return (
-    <div className="max-w-2xl">
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-gray-900">Nueva planilla</h1>
-        <p className="text-sm text-gray-500">Configure y calcule una nueva planilla de pago</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Nueva planilla" description="Configure y calcule una nueva planilla de pago." />
+      <div className="max-w-2xl">
       <NuevaPlanillaForm
         empresas={empresas}
         sucursales={sucursales}
@@ -29,6 +28,7 @@ export default async function NuevaPlanillaPage() {
         departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
         conDivisiones={conDivisiones}
       />
+      </div>
     </div>
   );
 }

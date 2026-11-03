@@ -17,6 +17,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
 import { Prisma, EstadoEmpleado } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso, puede } from "@/lib/auth/guard";
@@ -67,18 +68,7 @@ export async function GET(req: NextRequest) {
 
   const filtros: Prisma.EmpleadoWhereInput = {
     AND: [
-      search
-        ? {
-            OR: [
-              { primerNombre: { contains: search, mode: "insensitive" } },
-              { primerApellido: { contains: search, mode: "insensitive" } },
-              { codigo: { contains: search, mode: "insensitive" } },
-              // Igual que en /api/empleados: buscar por identidad revelaría el
-              // número a quien no puede verlo.
-              ...(vePII ? [{ identidad: { contains: search, mode: "insensitive" as const } }] : []),
-            ],
-          }
-        : {},
+      filtroBusquedaEmpleados(search, { conIdentidad: vePII }),
       sucursalId ? { sucursalId } : {},
       departamentoId ? { departamentoId } : {},
       estado ? { estado: estado as EstadoEmpleado } : {},

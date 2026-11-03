@@ -63,13 +63,24 @@ export function etiquetaEstado(valor: string): string {
  * contexto: una planilla «Aprobada» aún no se paga (aviso); una solicitud
  * «Aprobada» ya está resuelta a favor (ok).
  */
-export default function EstadoBadge({ valor, className, tono: tonoForzado }: { valor: string; className?: string; tono?: Tono }) {
+export default function EstadoBadge({
+  valor,
+  className,
+  tono: tonoForzado,
+  etiqueta,
+}: {
+  valor: string;
+  className?: string;
+  tono?: Tono;
+  /** Para un estado propio de una pantalla, que no está en la lista de arriba. */
+  etiqueta?: string;
+}) {
   const def = ESTADOS[valor];
   const tono = tonoForzado ?? def?.tono ?? "neutro";
   return (
     <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-gray-700", className)}>
       <span aria-hidden="true" className={cn("h-1.5 w-1.5 shrink-0 rounded-full", PUNTO[tono])} />
-      {etiquetaEstado(valor)}
+      {etiqueta ?? etiquetaEstado(valor)}
     </span>
   );
 }

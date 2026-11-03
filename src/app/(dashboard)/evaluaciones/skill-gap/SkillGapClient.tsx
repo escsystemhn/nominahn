@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 interface Brecha {
   competenciaId: string;
@@ -30,7 +32,7 @@ function NivelBar({ actual, requerido }: { actual: number; requerido: number }) 
   const color = brecha <= 0 ? "bg-emerald-500" : brecha === 1 ? "bg-yellow-500" : "bg-red-500";
 
   return (
-    <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+    <div className="relative h-2 overflow-hidden rounded-full bg-gray-200">
       <div className={`absolute left-0 top-0 h-full rounded-full ${color}`} style={{ width: `${pctActual}%` }} />
       {/* Marca del nivel requerido */}
       <div
@@ -60,53 +62,54 @@ export default function SkillGapClient({ puestos, puestoIdActual, datos }: Props
     .slice(0, 5);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Análisis de brechas de competencias</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Comparación nivel actual vs nivel requerido por puesto</p>
-        </div>
-        <select
-          value={puestoIdActual}
-          onChange={(e) => router.push(`?puestoId=${e.target.value}`)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          <option value="">Seleccionar puesto...</option>
-          {puestos.map((p) => (
-            <option key={p.id} value={p.id}>{p.nombre}</option>
-          ))}
-        </select>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Análisis de brechas de competencias"
+        description="Comparación del nivel actual con el nivel requerido por puesto."
+        actions={
+          <select
+            aria-label="Puesto"
+            value={puestoIdActual}
+            onChange={(e) => router.push(`?puestoId=${e.target.value}`)}
+            className="input w-64"
+          >
+            <option value="">Seleccionar puesto…</option>
+            {puestos.map((p) => (
+              <option key={p.id} value={p.id}>{p.nombre}</option>
+            ))}
+          </select>
+        }
+      />
 
       {!puestoIdActual && (
-        <div className="bg-blue-50 text-blue-700 rounded-xl p-6 text-center text-sm">
-          Selecciona un puesto para ver el análisis de brechas de competencias.
+        <div className="panel">
+          <EstadoVacio titulo="Todavía no hay un puesto elegido." detalle="Seleccione un puesto para ver el análisis de brechas de competencias." />
         </div>
       )}
 
       {puestoIdActual && datos.length === 0 && (
-        <div className="bg-gray-50 text-gray-500 rounded-xl p-6 text-center text-sm">
-          No hay empleados activos en este puesto con evaluaciones disponibles.
+        <div className="panel">
+          <EstadoVacio titulo="No hay datos para este puesto." detalle="Ningún empleado activo del puesto tiene evaluaciones finalizadas, o el puesto no tiene competencias asignadas." />
         </div>
       )}
 
       {datos.length > 0 && (
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-4">
           {/* Brechas críticas */}
           {topBrechas.length > 0 && (
             <div className="xl:col-span-1">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Brechas más críticas</h3>
+              <div className="panel p-5">
+                <h3 className="mb-3 text-sm font-semibold text-gray-800">Brechas más críticas</h3>
                 <div className="space-y-3">
                   {topBrechas.map((b) => (
                     <div key={b.id}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-gray-700 truncate max-w-[120px]">{b.nombre}</span>
-                        <span className="font-bold text-red-600">-{b.promedio.toFixed(1)}</span>
+                      <div className="mb-1 flex justify-between text-xs">
+                        <span className="max-w-[120px] truncate text-gray-700">{b.nombre}</span>
+                        <span className="tnum font-semibold text-gray-900">−{b.promedio.toFixed(1)}</span>
                       </div>
-                      <div className="h-1.5 bg-red-100 rounded-full">
+                      <div className="h-1.5 rounded-full bg-red-100">
                         <div
-                          className="h-full bg-red-500 rounded-full"
+                          className="h-full rounded-full bg-red-500"
                           style={{ width: `${Math.min((b.promedio / 5) * 100, 100)}%` }}
                         />
                       </div>
@@ -119,65 +122,67 @@ export default function SkillGapClient({ puestos, puestoIdActual, datos }: Props
 
           {/* Tabla de empleados */}
           <div className={topBrechas.length > 0 ? "xl:col-span-3" : "xl:col-span-4"}>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="px-4 py-3 text-left font-medium text-gray-600">Empleado</th>
-                    {datos[0].competencias.map((c) => (
-                      <th key={c.competenciaId} className="px-2 py-3 text-center font-medium text-gray-600 text-xs max-w-[80px]">
-                        {c.nombre}
-                      </th>
-                    ))}
-                    <th className="px-4 py-3 text-center font-medium text-gray-600">Brecha total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {datos.map(({ empleado, competencias }) => {
-                    const brechaTotal = competencias.reduce((acc, c) => acc + Math.max(0, c.brecha), 0);
-                    return (
-                      <tr key={empleado.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3">
-                          <a href={`/empleados/${empleado.id}`} className="font-medium text-blue-700 hover:underline block">
-                            {empleado.nombre}
-                          </a>
-                          <span className="text-xs text-gray-400">{empleado.codigo}</span>
-                        </td>
-                        {competencias.map((comp) => (
-                          <td key={comp.competenciaId} className="px-2 py-3 min-w-[80px]">
-                            <div className="text-center mb-1">
-                              <span
-                                className={`text-xs font-semibold ${
-                                  comp.brecha <= 0 ? "text-emerald-600" : comp.brecha === 1 ? "text-yellow-600" : "text-red-600"
-                                }`}
-                              >
-                                {comp.nivelActual === 0 ? "N/E" : NIVEL_LABEL[comp.nivelActual]}
-                              </span>
-                            </div>
-                            <NivelBar actual={comp.nivelActual} requerido={comp.nivelRequerido} />
-                            {comp.brecha > 0 && (
-                              <p className="text-xs text-center text-red-500 mt-1">−{comp.brecha}</p>
-                            )}
+            <div className="panel overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="table-base">
+                  <thead>
+                    <tr>
+                      <th>Empleado</th>
+                      {datos[0].competencias.map((c) => (
+                        <th key={c.competenciaId} className="max-w-[80px] text-center">
+                          {c.nombre}
+                        </th>
+                      ))}
+                      <th className="text-center">Brecha total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datos.map(({ empleado, competencias }) => {
+                      const brechaTotal = competencias.reduce((acc, c) => acc + Math.max(0, c.brecha), 0);
+                      return (
+                        <tr key={empleado.id}>
+                          <td>
+                            <a href={`/empleados/${empleado.id}`} className="block font-medium text-blue-700 hover:underline">
+                              {empleado.nombre}
+                            </a>
+                            <span className="text-xs text-gray-500">{empleado.codigo}</span>
                           </td>
-                        ))}
-                        <td className="px-4 py-3 text-center">
-                          <span
-                            className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
-                              brechaTotal === 0
-                                ? "bg-emerald-100 text-emerald-700"
-                                : brechaTotal <= 2
-                                ? "bg-yellow-100 text-yellow-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {brechaTotal === 0 ? "✓" : `-${brechaTotal}`}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          {competencias.map((comp) => (
+                            <td key={comp.competenciaId} className="min-w-[80px]">
+                              <div className="mb-1 text-center">
+                                <span
+                                  className={`text-xs font-semibold ${
+                                    comp.brecha <= 0 ? "text-emerald-700" : comp.brecha === 1 ? "text-yellow-700" : "text-red-600"
+                                  }`}
+                                >
+                                  {comp.nivelActual === 0 ? "Sin evaluar" : NIVEL_LABEL[comp.nivelActual]}
+                                </span>
+                              </div>
+                              <NivelBar actual={comp.nivelActual} requerido={comp.nivelRequerido} />
+                              {comp.brecha > 0 && (
+                                <p className="mt-1 text-center text-xs text-red-700">−{comp.brecha}</p>
+                              )}
+                            </td>
+                          ))}
+                          <td className="text-center">
+                            <span
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
+                                brechaTotal === 0
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : brechaTotal <= 2
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {brechaTotal === 0 ? "0" : `−${brechaTotal}`}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

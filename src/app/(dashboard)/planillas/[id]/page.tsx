@@ -9,6 +9,8 @@ import ArchivoBanco from "@/components/payroll/ArchivoBanco";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import { correoDeComprobantes } from "@/lib/email/destinatario";
 import PageHeader from "@/components/ui/PageHeader";
+import FranjaCifras from "@/components/ui/FranjaCifras";
+import FormFiltros from "@/components/ui/FormFiltros";
 import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
 import FiltroEstructura from "@/components/organizacion/FiltroEstructura";
 import { aplanarEstructura, agruparPorEstructura, describirAlcance, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
@@ -62,6 +64,9 @@ export default async function DetallePlanillaPage({
   });
 
   if (!planilla) notFound();
+  const anuladaPor = planilla.anuladaPor
+    ? await prisma.user.findUnique({ where: { id: planilla.anuladaPor }, select: { name: true, email: true } })
+    : null;
   const totalLineas = hayFiltro ? await prisma.planillaDetalle.count({ where: { planillaId: id } }) : planilla.detalles.length;
 
   // Enviar sólo tiene sentido con la planilla cerrada: antes de aprobarla, el
@@ -119,7 +124,7 @@ export default async function DetallePlanillaPage({
   const resumen = [
     { label: "Total bruto", valor: formatCurrency(planilla.totalBruto) },
     { label: "Deducciones del empleado", valor: formatCurrency(planilla.totalDeducciones) },
-    { label: "Total neto a pagar", valor: formatCurrency(planilla.totalNeto), destacado: true },
+    { label: "Total neto a pagar", valor: formatCurrency(planilla.totalNeto), destacada: true },
     { label: "Aportes patronales", valor: formatCurrency(planilla.totalEmpleador) },
   ];
 
@@ -138,7 +143,19 @@ export default async function DetallePlanillaPage({
         actions={
           <>
             <EstadoBadge valor={planilla.estado} className="mr-2 text-sm" />
-            <PlanillaActions planillaId={planilla.id} estado={planilla.estado} puedeCalcular={puede(usuario, "planillas.calcular")} />
+            <PlanillaActions
+              planillaId={planilla.id}
+              estado={planilla.estado}
+              puedeCalcular={puede(usuario, "planillas.calcular")}
+              puedeAprobar={puede(usuario, "planillas.aprobar")}
+              puedePagar={puede(usuario, "planillas.pagar")}
+              puedeAnular={puede(usuario, "planillas.anular")}
+              puedeReabrir={puede(usuario, "planillas.reabrir")}
+              puedeAnularPagada={puede(usuario, "planillas.anular_pagada")}
+              puedeEnviar={puedeEnviar}
+              empleados={totalLineas}
+              neto={formatCurrency(planilla.totalNeto)}
+            />
           </>
         }
       />
@@ -154,18 +171,17 @@ export default async function DetallePlanillaPage({
         </div>
       )}
 
-      <section aria-label="Totales de la planilla">
-        <div className="grid grid-cols-2 divide-y divide-gray-200 border-b border-gray-200 lg:grid-cols-4 lg:divide-x lg:divide-y-0">
-          {resumen.map((s) => (
-            <div key={s.label} className="px-5 py-4 first:pl-0 lg:px-6 lg:first:pl-0">
-              <p className="text-sm text-gray-500">{s.label}</p>
-              <p className={`tnum mt-1 text-xl font-semibold leading-none ${s.destacado ? "text-blue-800" : "text-gray-900"}`}>
-                {s.valor}
-              </p>
-            </div>
-          ))}
+      {planilla.estado === "ANULADA" && (
+        <div role="status" className="rounded-lg border border-gray-300 bg-gray-50 p-4 text-sm text-gray-800">
+          <p className="font-semibold">Esta planilla está anulada.</p>
+          <p className="mt-1">
+            {planilla.motivoAnulacion ? `Motivo: ${planilla.motivoAnulacion}.` : "Se anuló sin registrar un motivo."}
+            {anuladaPor && ` La anuló ${anuladaPor.name ?? anuladaPor.email}.`}
+          </p>
         </div>
-      </section>
+      )}
+
+      <FranjaCifras cifras={resumen} etiqueta="Totales de la planilla" />
 
       {puedeArchivoBanco && (
         <div className="flex flex-wrap items-start gap-3">
@@ -177,10 +193,14 @@ export default async function DetallePlanillaPage({
         <SapEstadoPlanilla planillaId={planilla.id} estadoPlanilla={planilla.estado} puedeEnviar={puedeEnviarSap} />
       )}
 
-      <form className="flex flex-wrap items-center gap-2" aria-label="Filtrar las líneas de la planilla">
-        <FiltroEstructura {...opciones} inicial={sp} />
-        <button type="submit" className="btn btn-secondary">Filtrar</button>
-        {hayFiltro && <a href={`/planillas/${planilla.id}`} className="btn btn-ghost">Quitar filtros</a>}
+      <div className="flex flex-wrap items-center gap-2">
+        <FormFiltros
+          campos={["sucursalId", "divisionId", "departamentoId"]}
+          etiqueta="Filtrar las líneas de la planilla"
+          className="flex min-w-0 max-w-full flex-wrap items-center gap-2"
+        >
+          <FiltroEstructura {...opciones} inicial={sp} />
+        </FormFiltros>
         {hayFiltro && (
           <span className="text-sm text-gray-500">
             {planilla.detalles.length} de {totalLineas} empleados
@@ -194,10 +214,10 @@ export default async function DetallePlanillaPage({
             )}
           </span>
         )}
-      </form>
+      </div>
 
       <div className="panel overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="tabla-fija overflow-x-auto">
           <table className="table-base text-xs">
             <thead>
               <tr>
@@ -255,7 +275,7 @@ export default async function DetallePlanillaPage({
                   <td className="num whitespace-nowrap px-3 py-2 text-gray-500">
                     {formatCurrency(d.ihssEmpleado)}
                     {d.ihssFijo && (
-                      <span className="block text-[10px] text-gray-400" title="Monto fijo pactado en la ficha del empleado">
+                      <span className="block text-xs text-gray-500" title="Monto fijo pactado en la ficha del empleado">
                         fijo
                       </span>
                     )}

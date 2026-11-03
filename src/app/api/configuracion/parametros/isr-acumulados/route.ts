@@ -1,5 +1,5 @@
 /**
- * Acumulados del ISR de meses pagados FUERA de NominaHN, para el cálculo
+ * Acumulados del ISR de meses pagados FUERA de Gestión360 Nómina, para el cálculo
  * personalizado: se importan de la hoja «Retención en la fuente».
  *
  *   POST   (multipart, `archivo` .xlsx, `hastaMes` opcional) → vista previa, no escribe

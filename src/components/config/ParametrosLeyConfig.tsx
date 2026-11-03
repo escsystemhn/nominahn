@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 import { derivarCuotasISR, validarTramosISR, validarTramosVecinal } from "@/lib/payroll/tramos";
+import EstadoBadge from "@/components/ui/EstadoBadge";
 import MetodoIsrConfig from "./MetodoIsrConfig";
 
 type Modo = "PORCENTAJE" | "MONTO_FIJO";
@@ -52,12 +53,10 @@ interface Datos {
   empleadosConIhssFijo: number;
 }
 
-const campo =
-  "w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400";
-const etiqueta = "block text-xs font-medium text-gray-700 mb-1";
-const tarjeta = "bg-white rounded-xl border border-gray-100 shadow-sm p-5";
-const botonPrimario =
-  "px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-50";
+const campo = "input";
+const etiqueta = "mb-1 block text-sm font-medium text-gray-800";
+const tarjeta = "panel p-5";
+const botonPrimario = "btn btn-primary";
 
 const txt = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
 /** "" → null; lo demás a número (el servidor rechaza lo que no lo sea). */
@@ -87,7 +86,7 @@ export default function ParametrosLeyConfig() {
         if (!res.ok) throw new Error(d.error ?? "No se pudieron cargar los parámetros");
         setDatos(d);
       } catch (e) {
-        if (vivo) setError(e instanceof Error ? e.message : "Error al cargar");
+        if (vivo) setError(e instanceof Error ? e.message : "No se pudieron cargar los parámetros");
       }
     })();
     return () => {
@@ -98,13 +97,13 @@ export default function ParametrosLeyConfig() {
   if (error) {
     return <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{error}</div>;
   }
-  if (!datos) return <p className="text-sm text-gray-400">Cargando…</p>;
+  if (!datos) return <p className="text-sm text-gray-500">Cargando…</p>;
 
   const recargar = () => setRecarga((r) => r + 1);
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-900 space-y-1">
+      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-900 space-y-1">
         <p className="font-medium">Estos valores cambian lo que se descuenta a todos los empleados.</p>
         <p>
           Se aplican desde el próximo cálculo de planilla. Las planillas ya calculadas o cerradas conservan sus
@@ -187,7 +186,7 @@ function ConceptoCard({ concepto: c, onGuardado }: { concepto: Concepto; onGuard
       setOk(true);
       onGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al guardar");
+      setError(e instanceof Error ? e.message : "No se pudo guardar");
     } finally {
       setGuardando(false);
     }
@@ -203,9 +202,7 @@ function ConceptoCard({ concepto: c, onGuardado }: { concepto: Concepto; onGuard
           <p className="text-xs text-gray-500 mt-0.5">{c.descripcion}</p>
         </div>
         {(!c.enBase || !c.activo) && (
-          <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px]">
-            Valores por defecto
-          </span>
+          <EstadoBadge valor="DEFECTO" etiqueta="Valores por defecto" tono="aviso" className="shrink-0" />
         )}
       </div>
 
@@ -230,19 +227,17 @@ function ConceptoCard({ concepto: c, onGuardado }: { concepto: Concepto; onGuard
         <>
           <div className="grid grid-cols-2 gap-3">
             {c.tieneEmpleado && (
-              <div>
-                <label className={etiqueta}>Empleado (L. mensual)</label>
+              <label className="block"><span className={etiqueta}>Empleado (L. mensual)</span>
                 <input type="number" step="0.01" min="0" value={form.montoFijoEmpleado}
                   onChange={(e) => set("montoFijoEmpleado", e.target.value)} className={campo} name="montoFijoEmpleado" />
-              </div>
+              </label>
             )}
-            <div>
-              <label className={etiqueta}>Patrono (L. mensual)</label>
+            <label className="block"><span className={etiqueta}>Patrono (L. mensual)</span>
               <input type="number" step="0.01" min="0" value={form.montoFijoEmpleador}
                 onChange={(e) => set("montoFijoEmpleador", e.target.value)} className={campo} name="montoFijoEmpleador" />
-            </div>
+            </label>
           </div>
-          <p className="text-[11px] text-gray-500">
+          <p className="text-xs text-gray-500">
             Se aplica igual a todos los empleados, sin importar su salario
             {c.tienePiso ? " (también a quien gana menos del piso)" : ""}. En planillas quincenales o semanales se
             prorratea al período. Porcentajes guardados para volver a ese modo:{" "}
@@ -254,34 +249,30 @@ function ConceptoCard({ concepto: c, onGuardado }: { concepto: Concepto; onGuard
         <>
           <div className="grid grid-cols-2 gap-3">
             {c.tieneEmpleado && (
-              <div>
-                <label className={etiqueta}>Empleado (%)</label>
+              <label className="block"><span className={etiqueta}>Empleado (%)</span>
                 <input type="number" step="0.01" min="0" max="100" value={form.porcentajeEmpleado}
                   onChange={(e) => set("porcentajeEmpleado", e.target.value)} className={campo} name="porcentajeEmpleado" />
-              </div>
+              </label>
             )}
-            <div>
-              <label className={etiqueta}>Patrono (%)</label>
+            <label className="block"><span className={etiqueta}>Patrono (%)</span>
               <input type="number" step="0.01" min="0" max="100" value={form.porcentajeEmpleador}
                 onChange={(e) => set("porcentajeEmpleador", e.target.value)} className={campo} name="porcentajeEmpleador" />
-            </div>
+            </label>
             {c.tienePiso && (
-              <div>
-                <label className={etiqueta}>Piso de la base (L.)</label>
+              <label className="block"><span className={etiqueta}>Piso de la base (L.)</span>
                 <input type="number" step="0.01" min="0" value={form.topeMinimo}
                   onChange={(e) => set("topeMinimo", e.target.value)} className={campo} name="topeMinimo" />
-              </div>
+              </label>
             )}
             {c.tieneTope && (
-              <div>
-                <label className={etiqueta}>Techo de la base (L.)</label>
+              <label className="block"><span className={etiqueta}>Techo de la base (L.)</span>
                 <input type="number" step="0.01" min="0" value={form.topeMaximo}
                   onChange={(e) => set("topeMaximo", e.target.value)} className={campo} name="topeMaximo" />
-              </div>
+              </label>
             )}
           </div>
           {c.tienePiso && (
-            <p className="text-[11px] text-gray-500">
+            <p className="text-xs text-gray-500">
               Cotiza el excedente del salario sobre el piso, hasta el techo. Quien gana el piso o menos no aporta RAP.
             </p>
           )}
@@ -291,7 +282,7 @@ function ConceptoCard({ concepto: c, onGuardado }: { concepto: Concepto; onGuard
       {c.codigo === "RESERVA_LABORAL" && (
         // El Art. 6 del Decreto 47-2024 manda deducir el saldo del RAP del auxilio
         // de cesantía. El sistema no lleva ese saldo: decirlo aquí evita pagar dos veces.
-        <p className="text-[11px] px-2 py-1.5 rounded-lg bg-amber-50 text-amber-800">
+        <p className="text-xs px-2 py-1.5 rounded-lg bg-amber-50 text-amber-800">
           La liquidación de prestaciones todavía no descuenta el saldo acumulado en el RAP: al liquidar, réstelo
           a mano del auxilio de cesantía con el estado de cuenta del trabajador.
         </p>
@@ -302,9 +293,9 @@ function ConceptoCard({ concepto: c, onGuardado }: { concepto: Concepto; onGuard
       )}
 
       <div className="flex items-center justify-between pt-1">
-        <p className="text-[11px] text-gray-400">
+        <p className="text-xs text-gray-500">
           {ok
-            ? "✓ Guardado"
+            ? "Guardado"
             : c.actualizado
               ? `Modificado: ${new Date(c.actualizado).toLocaleString("es-HN")}`
               : ""}
@@ -416,7 +407,7 @@ function TablaISR({ inicial, onGuardado }: { inicial: Datos["isr"]; onGuardado: 
       setOk(true);
       onGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al guardar");
+      setError(e instanceof Error ? e.message : "No se pudo guardar");
     } finally {
       setGuardando(false);
     }
@@ -432,10 +423,9 @@ function TablaISR({ inicial, onGuardado }: { inicial: Datos["isr"]; onGuardado: 
             reciente que esté guardado.
           </p>
         </div>
-        <div className="w-28">
-          <label className={etiqueta}>Año</label>
+        <label className="block w-28"><span className={etiqueta}>Año</span>
           <input type="number" value={anio} onChange={(e) => { setOk(false); setAnio(e.target.value); }} className={campo} name="anioISR" />
-        </div>
+        </label>
       </div>
 
       {inicial.porDefecto && (
@@ -445,33 +435,33 @@ function TablaISR({ inicial, onGuardado }: { inicial: Datos["isr"]; onGuardado: 
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="table-base">
           <thead>
-            <tr className="text-left text-xs text-gray-500 border-b">
-              <th className="py-2 pr-2 font-medium">#</th>
-              <th className="py-2 pr-2 font-medium">Desde (L.)</th>
-              <th className="py-2 pr-2 font-medium">Hasta (L.)</th>
-              <th className="py-2 pr-2 font-medium">Tasa (%)</th>
-              <th className="py-2 pr-2 font-medium">Cuota fija (L.)</th>
-              <th className="py-2 pr-2 font-medium">Excedente desde (L.)</th>
-              <th className="py-2 font-medium" />
+            <tr>
+              <th>#</th>
+              <th>Desde (L.)</th>
+              <th>Hasta (L.)</th>
+              <th>Tasa (%)</th>
+              <th>Cuota fija (L.)</th>
+              <th>Excedente desde (L.)</th>
+              <th><span className="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody>
             {filas.map((f, i) => (
-              <tr key={i} className="border-b border-gray-50">
-                <td className="py-1.5 pr-2 text-xs text-gray-400">{i + 1}</td>
-                <td className="py-1.5 pr-2"><input type="number" step="0.01" value={f.desde} onChange={(e) => editar(i, "desde", e.target.value)} className={campo} /></td>
-                <td className="py-1.5 pr-2">
+              <tr key={i}>
+                <td className="text-xs text-gray-500">{i + 1}</td>
+                <td><input type="number" step="0.01" value={f.desde} onChange={(e) => editar(i, "desde", e.target.value)} className={campo} aria-label={`Desde del tramo ${i + 1}`} /></td>
+                <td>
                   <input type="number" step="0.01" value={f.hasta} onChange={(e) => editar(i, "hasta", e.target.value)}
-                    className={campo} placeholder={i === filas.length - 1 ? "En adelante" : ""} />
+                    className={campo} aria-label={`Hasta del tramo ${i + 1}`} placeholder={i === filas.length - 1 ? "En adelante" : ""} />
                 </td>
-                <td className="py-1.5 pr-2"><input type="number" step="0.01" value={f.porcentaje} onChange={(e) => editar(i, "porcentaje", e.target.value)} className={campo} /></td>
-                <td className="py-1.5 pr-2"><input type="number" step="0.01" value={f.cuotaFija} onChange={(e) => editar(i, "cuotaFija", e.target.value)} className={campo} /></td>
-                <td className="py-1.5 pr-2"><input type="number" step="0.01" value={f.excedenteDesde} onChange={(e) => editar(i, "excedenteDesde", e.target.value)} className={campo} /></td>
-                <td className="py-1.5 text-right">
+                <td><input type="number" step="0.01" value={f.porcentaje} onChange={(e) => editar(i, "porcentaje", e.target.value)} className={campo} aria-label={`Tasa del tramo ${i + 1}`} /></td>
+                <td><input type="number" step="0.01" value={f.cuotaFija} onChange={(e) => editar(i, "cuotaFija", e.target.value)} className={campo} aria-label={`Cuota fija del tramo ${i + 1}`} /></td>
+                <td><input type="number" step="0.01" value={f.excedenteDesde} onChange={(e) => editar(i, "excedenteDesde", e.target.value)} className={campo} aria-label={`Excedente desde del tramo ${i + 1}`} /></td>
+                <td className="text-right">
                   <button type="button" onClick={() => { setOk(false); setFilas((fs) => fs.filter((_, j) => j !== i)); }}
-                    disabled={filas.length <= 1} className="text-xs text-red-600 hover:underline disabled:text-gray-300" aria-label={`Quitar tramo ${i + 1}`}>
+                    disabled={filas.length <= 1} className="btn btn-ghost btn-sm text-red-700" aria-label={`Quitar tramo ${i + 1}`}>
                     Quitar
                   </button>
                 </td>
@@ -483,11 +473,11 @@ function TablaISR({ inicial, onGuardado }: { inicial: Datos["isr"]; onGuardado: 
 
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => { setOk(false); setFilas((fs) => [...fs, { desde: "", hasta: "", porcentaje: "", cuotaFija: "", excedenteDesde: "" }]); }}
-          className="px-3 py-1.5 border border-gray-300 text-xs rounded-lg hover:bg-gray-50">
+          className="btn btn-secondary btn-sm">
           Agregar tramo
         </button>
         <button type="button" onClick={calcularCuotas}
-          className="px-3 py-1.5 border border-blue-200 text-blue-700 text-xs rounded-lg hover:bg-blue-50"
+          className="btn btn-secondary btn-sm"
           title="Calcula la cuota fija y el excedente de cada tramo a partir de los rangos y las tasas">
           Calcular cuotas fijas desde las tasas
         </button>
@@ -504,8 +494,8 @@ function TablaISR({ inicial, onGuardado }: { inicial: Datos["isr"]; onGuardado: 
       )}
 
       <div className="flex items-center justify-between">
-        <p className="text-[11px] text-gray-400">
-          {ok ? "✓ Tabla guardada" : "La cuota fija es el impuesto acumulado de los tramos anteriores."}
+        <p className="text-xs text-gray-500">
+          {ok ? "Tabla guardada" : "La cuota fija es el impuesto acumulado de los tramos anteriores."}
         </p>
         <button onClick={guardar} disabled={guardando || errores.length > 0} className={botonPrimario}>
           {guardando ? "Guardando…" : "Guardar tabla ISR"}
@@ -559,7 +549,7 @@ function TablaVecinal({ inicial, onGuardado }: { inicial: Datos["vecinal"]; onGu
       setOk(true);
       onGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al guardar");
+      setError(e instanceof Error ? e.message : "No se pudo guardar");
     } finally {
       setGuardando(false);
     }
@@ -585,14 +575,12 @@ function TablaVecinal({ inicial, onGuardado }: { inicial: Datos["vecinal"]; onGu
           </p>
         </div>
         <div className="flex gap-2">
-          <div className="w-44">
-            <label className={etiqueta}>Municipio</label>
+          <label className="block w-44"><span className={etiqueta}>Municipio</span>
             <input value={municipio} onChange={(e) => { setOk(false); setMunicipio(e.target.value); }} className={campo} name="municipio" />
-          </div>
-          <div className="w-24">
-            <label className={etiqueta}>Año</label>
+          </label>
+          <label className="block w-24"><span className={etiqueta}>Año</span>
             <input type="number" value={anio} onChange={(e) => { setOk(false); setAnio(e.target.value); }} className={campo} name="anioVecinal" />
-          </div>
+          </label>
         </div>
       </div>
 
@@ -603,29 +591,29 @@ function TablaVecinal({ inicial, onGuardado }: { inicial: Datos["vecinal"]; onGu
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm max-w-2xl">
+        <table className="table-base max-w-2xl">
           <thead>
-            <tr className="text-left text-xs text-gray-500 border-b">
-              <th className="py-2 pr-2 font-medium">#</th>
-              <th className="py-2 pr-2 font-medium">Desde (L. anual)</th>
-              <th className="py-2 pr-2 font-medium">Hasta (L. anual)</th>
-              <th className="py-2 pr-2 font-medium">Tarifa (L. por millar)</th>
-              <th className="py-2 font-medium" />
+            <tr>
+              <th>#</th>
+              <th>Desde (L. anual)</th>
+              <th>Hasta (L. anual)</th>
+              <th>Tarifa (L. por millar)</th>
+              <th><span className="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody>
             {filas.map((f, i) => (
-              <tr key={i} className="border-b border-gray-50">
-                <td className="py-1.5 pr-2 text-xs text-gray-400">{i + 1}</td>
-                <td className="py-1.5 pr-2"><input type="number" step="0.01" value={f.desde} onChange={(e) => editar(i, "desde", e.target.value)} className={campo} /></td>
-                <td className="py-1.5 pr-2">
+              <tr key={i}>
+                <td className="text-xs text-gray-500">{i + 1}</td>
+                <td><input type="number" step="0.01" value={f.desde} onChange={(e) => editar(i, "desde", e.target.value)} className={campo} aria-label={`Desde del tramo ${i + 1}`} /></td>
+                <td>
                   <input type="number" step="0.01" value={f.hasta} onChange={(e) => editar(i, "hasta", e.target.value)}
-                    className={campo} placeholder={i === filas.length - 1 ? "En adelante" : ""} />
+                    className={campo} aria-label={`Hasta del tramo ${i + 1}`} placeholder={i === filas.length - 1 ? "En adelante" : ""} />
                 </td>
-                <td className="py-1.5 pr-2"><input type="number" step="0.01" value={f.porMillar} onChange={(e) => editar(i, "porMillar", e.target.value)} className={campo} /></td>
-                <td className="py-1.5 text-right">
+                <td><input type="number" step="0.01" value={f.porMillar} onChange={(e) => editar(i, "porMillar", e.target.value)} className={campo} aria-label={`Tarifa por millar del tramo ${i + 1}`} /></td>
+                <td className="text-right">
                   <button type="button" onClick={() => { setOk(false); setFilas((fs) => fs.filter((_, j) => j !== i)); }}
-                    disabled={filas.length <= 1} className="text-xs text-red-600 hover:underline disabled:text-gray-300" aria-label={`Quitar tramo ${i + 1}`}>
+                    disabled={filas.length <= 1} className="btn btn-ghost btn-sm text-red-700" aria-label={`Quitar tramo ${i + 1}`}>
                     Quitar
                   </button>
                 </td>
@@ -636,16 +624,16 @@ function TablaVecinal({ inicial, onGuardado }: { inicial: Datos["vecinal"]; onGu
       </div>
 
       <button type="button" onClick={() => { setOk(false); setFilas((fs) => [...fs, { desde: fs[fs.length - 1]?.hasta ?? "", hasta: "", porMillar: "" }]); }}
-        className="px-3 py-1.5 border border-gray-300 text-xs rounded-lg hover:bg-gray-50">
+        className="btn btn-secondary btn-sm">
         Agregar tramo
       </button>
 
       <Avisos errores={errores} error={error} />
 
       <div className="flex items-center justify-between">
-        <p className="text-[11px] text-gray-400">
+        <p className="text-xs text-gray-500">
           {ok
-            ? "✓ Tabla guardada; este municipio queda como el vigente"
+            ? "Tabla guardada; este municipio queda como el vigente"
             : impuestoEjemplo !== null
               ? `Ejemplo: un ingreso anual de ${formatCurrency(ejemplo)} paga ${formatCurrency(Math.round(impuestoEjemplo * 100) / 100)} al año.`
               : ""}
@@ -663,7 +651,7 @@ function Avisos({ errores, error }: { errores: string[]; error: string | null })
   return (
     <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-800 space-y-0.5 whitespace-pre-line">
       {error && <p>{error}</p>}
-      {errores.map((e) => <p key={e}>• {e}</p>)}
+      {errores.map((e) => <p key={e}>{e}</p>)}
     </div>
   );
 }

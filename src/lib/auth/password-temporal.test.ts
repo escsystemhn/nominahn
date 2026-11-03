@@ -121,8 +121,13 @@ describe("requerirPermisoPagina", () => {
   });
 
   it("sin permiso y sin bloqueo, el destino sigue siendo /mi-espacio", async () => {
-    sesion = { user: { id: "u1", permisos: [], debeCambiarPassword: false } };
+    sesion = { user: { id: "u1", permisos: [], debeCambiarPassword: false, empleadoId: "e1" } };
     expect(await destinoDe(() => requerirPermisoPagina("empleados.ver"))).toBe("/mi-espacio");
+  });
+
+  it("sin permiso y sin empleado vinculado, va al inicio: no tiene espacio propio", async () => {
+    sesion = { user: { id: "u1", permisos: [], debeCambiarPassword: false } };
+    expect(await destinoDe(() => requerirPermisoPagina("empleados.ver"))).toBe("/dashboard");
   });
 
   it("con la contraseña ya cambiada, no redirige", async () => {

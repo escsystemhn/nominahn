@@ -10,9 +10,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import PageHeader from "@/components/ui/PageHeader";
 import ArchivoBanco from "@/components/payroll/ArchivoBanco";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import FranjaCifras from "@/components/ui/FranjaCifras";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { tienePermiso } from "@/lib/auth/permisos";
 import {
@@ -104,6 +107,7 @@ const formVacio = {
 };
 
 export default function PrestacionesClient({ tabInicial, permisos, empleados, sucursales }: Props) {
+  const { confirmar } = useAvisos();
   const [tab, setTab] = useState<"liquidaciones" | "decimos">(tabInicial);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [dialogo, setDialogo] = useState<Dialogo>(null);
@@ -178,7 +182,11 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
 
   async function guardar() {
     const emp = empleados.find((e) => e.id === form.empleadoId);
-    if (!confirm(`Al guardar la liquidación, ${emp?.nombre ?? "el empleado"} queda inactivo y deja de entrar en las planillas. ¿Continuar?`)) return;
+    if (!(await confirmar({
+      titulo: "¿Guardar la liquidación?",
+      detalle: `Al guardar la liquidación, ${emp?.nombre ?? "el empleado"} queda inactivo y deja de entrar en las planillas.`,
+      accion: "Guardar",
+    }))) return;
     setOcupado(true);
     try {
       const res = await fetch("/api/liquidaciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpoLiquidacion(true)) });
@@ -310,7 +318,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                     ))}
                   </select>
                   {empSel && (
-                    <p className="mt-1 text-[11px] text-gray-500">
+                    <p className="mt-1 text-xs text-gray-500">
                       Ingresó el {formatDate(empSel.fechaIngreso)}. Salario base {formatCurrency(empSel.salarioBase)}.
                     </p>
                   )}
@@ -378,17 +386,17 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                     <div><dt className="text-xs text-gray-500">Tamaño de empresa</dt><dd className="text-gray-900">{simulacion.esMicroempresa ? "Hasta 10 trabajadores" : "Más de 10 trabajadores"}</dd></div>
                   </dl>
                   <div className="overflow-x-auto">
-                    <table className="table-base text-sm">
+                    <table className="table-base">
                       <thead>
-                        <tr><th className="px-3">Concepto</th><th className="px-3">Fundamento</th><th className="num px-3">Días</th><th className="num px-3">Monto</th></tr>
+                        <tr><th>Concepto</th><th>Fundamento</th><th className="num">Días</th><th className="num">Monto</th></tr>
                       </thead>
                       <tbody>
                         {simulacion.conceptos.map((c) => (
                           <tr key={c.concepto}>
-                            <td className="px-3 py-2">{c.concepto}</td>
-                            <td className="px-3 py-2 text-xs text-gray-500">{c.base}</td>
-                            <td className="num px-3 py-2">{c.dias ?? ""}</td>
-                            <td className="num px-3 py-2">{formatCurrency(c.monto)}</td>
+                            <td>{c.concepto}</td>
+                            <td className="text-xs text-gray-500">{c.base}</td>
+                            <td className="num">{c.dias ?? ""}</td>
+                            <td className="num">{formatCurrency(c.monto)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -416,20 +424,20 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
 
           <section className="panel overflow-hidden" aria-label="Liquidaciones emitidas">
             {liquidaciones === null ? (
-              <p className="p-6 text-sm text-gray-400">Cargando…</p>
+              <p className="p-6 text-sm text-gray-500">Cargando…</p>
             ) : liquidaciones.length === 0 ? (
-              <p className="p-6 text-sm text-gray-500">Todavía no hay liquidaciones. {puedeGenerar ? "Use «Nueva liquidación» para calcular la primera." : ""}</p>
+              <EstadoVacio titulo="Todavía no hay liquidaciones." detalle={puedeGenerar ? "Use Nueva liquidación para calcular la primera." : "Cuando Nómina emita una, aparecerá aquí."} />
             ) : (
               <div className="overflow-x-auto">
-                <table className="table-base text-sm">
+                <table className="table-base tabla-tarjetas">
                   <thead>
                     <tr>
-                      <th className="px-4">Empleado</th>
-                      <th className="px-4">Causa</th>
-                      <th className="px-4">Salida</th>
-                      <th className="num px-4">Total a pagar</th>
-                      <th className="px-4">Estado</th>
-                      <th className="px-4 text-right">Acciones</th>
+                      <th>Empleado</th>
+                      <th>Causa</th>
+                      <th>Salida</th>
+                      <th className="num">Total a pagar</th>
+                      <th>Estado</th>
+                      <th className="text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -438,18 +446,18 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                       const nombre = nombreDe(l.empleado);
                       return (
                         <tr key={l.id}>
-                          <td className="px-4 py-2.5">
+                          <td data-titulo>
                             <div className="font-medium text-gray-900">{nombre}</div>
                             <div className="text-xs text-gray-500">{l.empleado.codigo}</div>
                           </td>
-                          <td className="px-4 py-2.5">{etiquetaCausa(l.causa)}</td>
-                          <td className="tnum px-4 py-2.5">{formatDate(l.fechaSalida)}</td>
-                          <td className="num px-4 py-2.5 font-medium">{formatCurrency(Number(l.totalAPagar))}</td>
-                          <td className="px-4 py-2.5">
+                          <td data-etiqueta="Causa">{etiquetaCausa(l.causa)}</td>
+                          <td data-etiqueta="Salida" className="tnum whitespace-nowrap">{formatDate(l.fechaSalida)}</td>
+                          <td data-etiqueta="Total a pagar" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(l.totalAPagar))}</td>
+                          <td data-etiqueta="Estado">
                             <EstadoBadge valor={l.estado} />
-                            {l.fechaPago && <span className="block text-[11px] text-gray-500">Pagada el {formatDate(l.fechaPago)}</span>}
+                            {l.fechaPago && <span className="block text-xs text-gray-500">Pagada el {formatDate(l.fechaPago)}</span>}
                           </td>
-                          <td className="px-4 py-2.5">
+                          <td data-accion>
                             <div className="flex flex-wrap justify-end gap-2">
                               <a className="btn btn-ghost btn-sm" href={`/api/liquidaciones/${l.id}/pdf?modo=ver`} target="_blank" rel="noopener noreferrer">PDF</a>
                               {acciones.includes("APROBADA") && (
@@ -459,7 +467,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                                 <button type="button" className="btn btn-primary btn-sm" onClick={() => setDialogo({ tipo: "pagar-liq", id: l.id, nombre })}>Registrar pago</button>
                               )}
                               {acciones.includes("ANULADA") && (
-                                <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => setDialogo({ tipo: "anular-liq", id: l.id, nombre, estado: l.estado })}>Anular</button>
+                                <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => setDialogo({ tipo: "anular-liq", id: l.id, nombre, estado: l.estado })}>Anular</button>
                               )}
                             </div>
                           </td>
@@ -510,12 +518,15 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
           </section>
 
           {decimos && decimos.length > 0 && (
-            <dl className="grid grid-cols-2 gap-x-8 gap-y-3 border-b border-gray-200 pb-4 text-sm sm:grid-cols-4">
-              <div><dt className="text-xs text-gray-500">Empleados</dt><dd className="tnum text-lg font-semibold text-gray-900">{resumenDec.empleados}</dd></div>
-              <div><dt className="text-xs text-gray-500">Devengado</dt><dd className="tnum text-lg font-semibold text-gray-900">{formatCurrency(resumenDec.devengado)}</dd></div>
-              <div><dt className="text-xs text-gray-500">ISR retenido</dt><dd className="tnum text-lg font-semibold text-gray-900">{formatCurrency(resumenDec.isr)}</dd></div>
-              <div><dt className="text-xs text-gray-500">Neto a pagar</dt><dd className="tnum text-lg font-semibold text-blue-800">{formatCurrency(resumenDec.neto)}</dd></div>
-            </dl>
+            <FranjaCifras
+              etiqueta="Resumen de décimos"
+              cifras={[
+                { label: "Empleados", valor: resumenDec.empleados },
+                { label: "Devengado", valor: formatCurrency(resumenDec.devengado) },
+                { label: "ISR retenido", valor: formatCurrency(resumenDec.isr) },
+                { label: "Neto a pagar", valor: formatCurrency(resumenDec.neto), destacada: true },
+              ]}
+            />
           )}
 
           {puedePagar && decimos && decimos.some((d) => d.estado !== "ANULADA") && (
@@ -535,23 +546,23 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
               </div>
             )}
             {decimos === null ? (
-              <p className="p-6 text-sm text-gray-400">Cargando…</p>
+              <p className="p-6 text-sm text-gray-500">Cargando…</p>
             ) : decimos.length === 0 ? (
-              <p className="p-6 text-sm text-gray-500">No hay décimos calculados para este año. {puedeGenerar ? "Use «Calcular»." : ""}</p>
+              <EstadoVacio titulo="No hay décimos calculados para este año." detalle={puedeGenerar ? "Elija el décimo y el año, y use Calcular." : "Cuando Nómina los calcule, aparecerán aquí."} />
             ) : (
               <div className="overflow-x-auto">
-                <table className="table-base text-sm">
+                <table className="table-base tabla-tarjetas">
                   <thead>
                     <tr>
-                      <th className="px-3">Empleado</th>
-                      <th className="num px-3">Días</th>
-                      <th className="num px-3">Salario promedio</th>
-                      <th className="num px-3">Devengado</th>
-                      <th className="num px-3">Exento</th>
-                      <th className="num px-3">ISR</th>
-                      <th className="num px-3">Neto</th>
-                      <th className="px-3">Estado</th>
-                      <th className="px-3" />
+                      <th>Empleado</th>
+                      <th className="num">Días</th>
+                      <th className="num">Salario promedio</th>
+                      <th className="num">Devengado</th>
+                      <th className="num">Exento</th>
+                      <th className="num">ISR</th>
+                      <th className="num">Neto</th>
+                      <th>Estado</th>
+                      <th><span className="sr-only">Acciones</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -559,23 +570,23 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                       const acciones = accionesDecimo(d.estado, permisos);
                       return (
                         <tr key={d.id}>
-                          <td className="px-3 py-2">
+                          <td data-titulo>
                             <div className="text-gray-900">{nombreDe(d.empleado)}</div>
                             <div className="text-xs text-gray-500">{d.empleado.codigo}{d.esProporcional ? ", proporcional" : ""}</div>
                           </td>
-                          <td className="num px-3 py-2">{d.diasComputados}</td>
-                          <td className="num px-3 py-2">{formatCurrency(Number(d.salarioPromedio))}</td>
-                          <td className="num px-3 py-2">{formatCurrency(Number(d.montoDevengado))}</td>
-                          <td className="num px-3 py-2 text-gray-500">{formatCurrency(Number(d.montoExento))}</td>
-                          <td className="num px-3 py-2 text-gray-500">{formatCurrency(Number(d.isrRetenido))}</td>
-                          <td className="num px-3 py-2 font-medium">{formatCurrency(Number(d.montoPagado))}</td>
-                          <td className="px-3 py-2">
+                          <td data-etiqueta="Días" className="num">{d.diasComputados}</td>
+                          <td data-etiqueta="Salario promedio" className="num whitespace-nowrap">{formatCurrency(Number(d.salarioPromedio))}</td>
+                          <td data-etiqueta="Devengado" className="num whitespace-nowrap">{formatCurrency(Number(d.montoDevengado))}</td>
+                          <td data-etiqueta="Exento" className="num whitespace-nowrap text-gray-500">{formatCurrency(Number(d.montoExento))}</td>
+                          <td data-etiqueta="ISR" className="num whitespace-nowrap text-gray-500">{formatCurrency(Number(d.isrRetenido))}</td>
+                          <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(d.montoPagado))}</td>
+                          <td data-etiqueta="Estado">
                             <EstadoBadge valor={d.estado} />
-                            {d.fechaPago && <span className="block text-[11px] text-gray-500">{formatDate(d.fechaPago)}</span>}
+                            {d.fechaPago && <span className="block text-xs text-gray-500">{formatDate(d.fechaPago)}</span>}
                           </td>
-                          <td className="px-3 py-2 text-right">
+                          <td data-accion className="text-right">
                             {acciones.includes("ANULADA") && (
-                              <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => setDialogo({ tipo: "anular-dec", ids: [d.id], estado: d.estado, nombre: nombreDe(d.empleado) })}>Anular</button>
+                              <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => setDialogo({ tipo: "anular-dec", ids: [d.id], estado: d.estado, nombre: nombreDe(d.empleado) })}>Anular</button>
                             )}
                           </td>
                         </tr>
@@ -666,7 +677,7 @@ function DialogoEstado({
         )}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onCerrar} disabled={enviando}>Cancelar</button>
-          <button type="submit" className={`btn ${esPago ? "btn-primary" : "btn-secondary text-red-700"}`} disabled={enviando}>
+          <button type="submit" className={`btn ${esPago ? "btn-primary" : "border border-red-300 bg-white text-red-700 hover:bg-red-50"}`} disabled={enviando}>
             {enviando ? "Guardando…" : esPago ? "Registrar pago" : "Anular"}
           </button>
         </div>

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import { Campo } from "@/components/ui/ModalForm";
 
 interface PuestoComp {
   puestoId: string;
@@ -24,11 +27,11 @@ interface Props {
   puestos: { id: string; nombre: string }[];
 }
 
-const CATEGORIA_COLOR: Record<string, string> = {
-  CORE: "bg-blue-100 text-blue-700",
-  LIDERAZGO: "bg-purple-100 text-purple-700",
-  TECNICA: "bg-orange-100 text-orange-700",
-  COMPORTAMIENTO: "bg-teal-100 text-teal-700",
+const CATEGORIA_LABEL: Record<string, string> = {
+  CORE: "Core",
+  LIDERAZGO: "Liderazgo",
+  TECNICA: "Técnica",
+  COMPORTAMIENTO: "Comportamiento",
 };
 
 const NIVELES = ["INICIAL", "BASICO", "INTERMEDIO", "AVANZADO", "EXPERTO"];
@@ -93,63 +96,57 @@ export default function CompetenciasClient({ competencias, puestos }: Props) {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Competencias</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Catálogo y matriz de competencias por puesto</p>
-        </div>
-        <button
-          onClick={() => setMostrarForm(!mostrarForm)}
-          className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 transition-colors"
-        >
-          Nueva competencia
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Competencias"
+        description="Catálogo y matriz de competencias por puesto."
+        actions={
+          <button onClick={() => setMostrarForm(!mostrarForm)} className="btn btn-primary">
+            Nueva competencia
+          </button>
+        }
+      />
 
       {/* Formulario nueva competencia */}
       {mostrarForm && (
-        <form onSubmit={crearCompetencia} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6 space-y-4">
+        <form onSubmit={crearCompetencia} className="panel space-y-4 p-5">
           <h3 className="font-semibold text-gray-800">Nueva competencia</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Nombre *</label>
+            <Campo etiqueta="Nombre *">
               <input
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="input"
               />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Categoría</label>
+            </Campo>
+            <Campo etiqueta="Categoría">
               <select
                 value={categoria}
                 onChange={(e) => setCategoria(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="input"
               >
                 <option value="CORE">Core</option>
                 <option value="LIDERAZGO">Liderazgo</option>
                 <option value="TECNICA">Técnica</option>
                 <option value="COMPORTAMIENTO">Comportamiento</option>
               </select>
-            </div>
+            </Campo>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+          <Campo etiqueta="Descripción">
             <textarea
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+              className="input resize-none"
             />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => setMostrarForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
+          </Campo>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setMostrarForm(false)} className="btn btn-ghost">
               Cancelar
             </button>
-            <button type="submit" disabled={guardando} className="px-4 py-2 text-sm bg-blue-700 text-white rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
-              {guardando ? "Guardando..." : "Guardar"}
+            <button type="submit" disabled={guardando} className="btn btn-primary">
+              {guardando ? "Guardando…" : "Guardar"}
             </button>
           </div>
         </form>
@@ -158,33 +155,36 @@ export default function CompetenciasClient({ competencias, puestos }: Props) {
       {/* Lista de competencias */}
       <div className="space-y-3">
         {competencias.length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm">
-            No hay competencias definidas. Crea la primera.
+          <div className="panel">
+            <EstadoVacio
+              titulo="Todavía no hay competencias definidas."
+              detalle="Cree la primera con el botón «Nueva competencia» y luego asígnela a los puestos que la requieren."
+            />
           </div>
         )}
 
         {competencias.map((comp) => (
-          <div key={comp.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <div key={comp.id} className="panel">
             {/* Header */}
             <button
               onClick={() => setExpanded(expanded === comp.id ? null : comp.id)}
-              className="w-full flex items-center justify-between p-5 text-left"
+              className="flex w-full items-center justify-between p-5 text-left"
             >
               <div className="flex items-center gap-3">
                 <div>
                   <p className="font-semibold text-gray-900">{comp.nombre}</p>
                   {comp.descripcion && (
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{comp.descripcion}</p>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-gray-500">{comp.descripcion}</p>
                   )}
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORIA_COLOR[comp.categoria] ?? "bg-gray-100 text-gray-600"}`}>
-                  {comp.categoria}
+                <span className="text-xs text-gray-500">
+                  {CATEGORIA_LABEL[comp.categoria] ?? comp.categoria}
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-400">{comp.puestosCompetencia.length} puestos</span>
+                <span className="text-xs text-gray-500">{comp.puestosCompetencia.length} puestos</span>
                 <svg
-                  className={`w-4 h-4 text-gray-400 transition-transform ${expanded === comp.id ? "rotate-180" : ""}`}
+                  className={`h-4 w-4 text-gray-500 transition-transform ${expanded === comp.id ? "rotate-180" : ""}`}
                   fill="none" stroke="currentColor" viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -194,21 +194,21 @@ export default function CompetenciasClient({ competencias, puestos }: Props) {
 
             {/* Puestos asignados */}
             {expanded === comp.id && (
-              <div className="border-t border-gray-100 px-5 pb-5">
+              <div className="border-t border-gray-200 px-5 pb-5">
                 {comp.puestosCompetencia.length > 0 ? (
                   <div className="mt-4 space-y-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Puestos asignados</p>
+                    <p className="text-xs font-medium text-gray-500">Puestos asignados</p>
                     {comp.puestosCompetencia.map((pc) => (
-                      <div key={pc.puestoId} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                      <div key={pc.puestoId} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
                         <span className="text-sm text-gray-800">{pc.puesto.nombre}</span>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full">
+                          <span className="text-xs text-gray-600">
                             {NIVEL_LABEL[pc.nivelRequerido] ?? pc.nivelRequerido}
                           </span>
-                          <span className="text-xs text-gray-400">peso: {pc.peso}</span>
+                          <span className="text-xs text-gray-500">peso: {pc.peso}</span>
                           <button
                             onClick={() => quitarPuesto(pc.puestoId, comp.id)}
-                            className="text-red-400 hover:text-red-600 text-xs"
+                            className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50"
                           >
                             Quitar
                           </button>
@@ -217,41 +217,38 @@ export default function CompetenciasClient({ competencias, puestos }: Props) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-400 mt-4">Sin puestos asignados.</p>
+                  <p className="mt-4 text-sm text-gray-500">Esta competencia todavía no está asignada a ningún puesto.</p>
                 )}
 
                 {/* Asignar puesto */}
                 {asignando === comp.id ? (
-                  <div className="mt-4 bg-blue-50 rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-semibold text-blue-700">Asignar a puesto</p>
+                  <div className="mt-4 space-y-3 rounded-xl bg-gray-50 p-4">
+                    <p className="text-sm font-semibold text-gray-800">Asignar a puesto</p>
                     <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <label className="text-xs text-gray-600 block mb-1">Puesto</label>
+                      <Campo etiqueta="Puesto">
                         <select
                           value={puestoSel}
                           onChange={(e) => setPuestoSel(e.target.value)}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          className="input"
                         >
-                          <option value="">Seleccione...</option>
+                          <option value="">Seleccione…</option>
                           {puestos.map((p) => (
                             <option key={p.id} value={p.id}>{p.nombre}</option>
                           ))}
                         </select>
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-600 block mb-1">Nivel requerido</label>
+                      </Campo>
+                      <Campo etiqueta="Nivel requerido">
                         <select
                           value={nivelSel}
                           onChange={(e) => setNivelSel(e.target.value)}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          className="input"
                         >
                           {NIVELES.map((n) => (
                             <option key={n} value={n}>{NIVEL_LABEL[n]}</option>
                           ))}
                         </select>
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-600 block mb-1">Peso (1–10)</label>
+                      </Campo>
+                      <Campo etiqueta="Peso (1 a 10)">
                         <input
                           type="number"
                           min={0.1}
@@ -259,18 +256,18 @@ export default function CompetenciasClient({ competencias, puestos }: Props) {
                           step={0.5}
                           value={pesoSel}
                           onChange={(e) => setPesoSel(Number(e.target.value))}
-                          className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          className="input"
                         />
-                      </div>
+                      </Campo>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => setAsignando(null)} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
+                      <button onClick={() => setAsignando(null)} className="btn btn-ghost">
                         Cancelar
                       </button>
                       <button
                         onClick={() => asignarPuesto(comp.id)}
                         disabled={!puestoSel}
-                        className="px-3 py-1.5 text-sm bg-blue-700 text-white rounded-lg hover:bg-blue-800 disabled:bg-blue-300"
+                        className="btn btn-primary"
                       >
                         Asignar
                       </button>
@@ -279,7 +276,7 @@ export default function CompetenciasClient({ competencias, puestos }: Props) {
                 ) : (
                   <button
                     onClick={() => { setAsignando(comp.id); setPuestoSel(""); }}
-                    className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    className="btn btn-secondary btn-sm mt-3"
                   >
                     Asignar a un puesto
                   </button>

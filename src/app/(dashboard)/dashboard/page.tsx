@@ -1,4 +1,6 @@
 import Link from "next/link";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import FilaEnlace from "@/components/ui/FilaEnlace";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { puede, puedeAlguno } from "@/lib/auth/guard";
@@ -27,7 +29,7 @@ function saludoSegunHora(): string {
 }
 
 const IconChevron = () => (
-  <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+  <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
   </svg>
 );
@@ -117,8 +119,8 @@ export default async function DashboardPage() {
     },
     calculaPlanillas && {
       href: "/planillas/nueva",
-      titulo: "Calcular una planilla",
-      detalle: "Semanal, quincenal o mensual, con IHSS, RAP e ISR.",
+      titulo: "Generar una planilla",
+      detalle: "Queda en borrador para revisarla antes de confirmarla.",
     },
     veAsistencia && {
       href: "/asistencia",
@@ -130,7 +132,7 @@ export default async function DashboardPage() {
       titulo: "Generar reportes",
       detalle: "Planilla detallada, IHSS, RAP, ISR y provisiones.",
     },
-    {
+    !!usuario?.empleadoId && {
       href: "/mi-espacio",
       titulo: "Mi espacio",
       detalle: "Boletas de pago, solicitudes de permiso y mis datos.",
@@ -156,7 +158,7 @@ export default async function DashboardPage() {
               <Link
                 key={m.href + m.label}
                 href={m.href}
-                className="block px-5 py-4 transition-colors hover:bg-white sm:first:pl-0 lg:px-6 lg:first:pl-0"
+                className="block py-4 transition-colors hover:bg-white sm:px-5 sm:first:pl-0 lg:px-6"
               >
                 <p className="text-sm text-gray-500">{m.label}</p>
                 <p className="tnum mt-1 text-2xl font-semibold leading-none text-gray-900">{m.valor}</p>
@@ -167,7 +169,7 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {vePlanillas && (
           <section>
             <div className="flex items-baseline justify-between">
@@ -178,19 +180,19 @@ export default async function DashboardPage() {
             </div>
             <div className="panel mt-3 overflow-hidden">
               {ultimas.length === 0 ? (
-                <div className="px-6 py-10 text-center">
-                  <p className="text-sm font-medium text-gray-900">Todavía no hay planillas calculadas.</p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    La primera se calcula desde Nómina, en Planillas, a partir de los empleados activos.
-                  </p>
-                  {calculaPlanillas && (
-                    <Link href="/planillas/nueva" className="btn btn-primary mt-5">
-                      Calcular planilla
-                    </Link>
-                  )}
-                </div>
+                <EstadoVacio
+                  titulo="Todavía no hay planillas."
+                  detalle="Se generan desde Nómina, en Planillas, a partir de los empleados activos."
+                  accion={
+                    calculaPlanillas && (
+                      <Link href="/planillas/nueva" className="btn btn-primary">
+                        Nueva planilla
+                      </Link>
+                    )
+                  }
+                />
               ) : (
-                <table className="table-base">
+                <table className="table-base tabla-tarjetas">
                   <thead>
                     <tr>
                       <th>Planilla</th>
@@ -201,22 +203,22 @@ export default async function DashboardPage() {
                   </thead>
                   <tbody>
                     {ultimas.map((p) => (
-                      <tr key={p.id}>
-                        <td>
+                      <FilaEnlace key={p.id} href={`/planillas/${p.id}`}>
+                        <td data-titulo>
                           <Link href={`/planillas/${p.id}`} className="font-medium text-gray-900 hover:text-blue-700">
                             {etiquetaEstado(p.tipo)}
                           </Link>
                         </td>
-                        <td className="whitespace-nowrap">
+                        <td data-etiqueta="Período" className="whitespace-nowrap">
                           {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}
                         </td>
-                        <td className="num whitespace-nowrap font-medium text-gray-900">
+                        <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">
                           {formatCurrency(p.totalNeto)}
                         </td>
-                        <td>
+                        <td data-etiqueta="Estado">
                           <EstadoBadge valor={p.estado} />
                         </td>
-                      </tr>
+                      </FilaEnlace>
                     ))}
                   </tbody>
                 </table>

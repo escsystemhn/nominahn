@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import { formatCurrency } from "@/lib/utils";
 
 type Metodo = "ESTANDAR" | "PERSONALIZADO";
@@ -137,6 +138,7 @@ export default function MetodoIsrConfig() {
 }
 
 function Acumulados({ acumulados, onCambio }: { acumulados: Estado["acumulados"]; onCambio: () => void }) {
+  const { confirmar } = useAvisos();
   const [archivo, setArchivo] = useState<File | null>(null);
   const [vista, setVista] = useState<Vista | null>(null);
   const [anio, setAnio] = useState<number>(new Date().getFullYear());
@@ -175,7 +177,12 @@ function Acumulados({ acumulados, onCambio }: { acumulados: Estado["acumulados"]
   }
 
   async function borrar(a: number) {
-    if (!confirm(`¿Borrar los acumulados importados de ${a}? El cálculo personalizado dejará de contar esos meses.`)) return;
+    if (!(await confirmar({
+      titulo: `¿Borrar los acumulados importados de ${a}?`,
+      detalle: "El cálculo personalizado dejará de contar esos meses.",
+      accion: "Borrar",
+      peligro: true,
+    }))) return;
     const r = await fetch(`/api/configuracion/parametros/isr-acumulados?anio=${a}`, { method: "DELETE" });
     setAviso(r.ok ? { ok: true, texto: `Acumulados de ${a} borrados.` } : { ok: false, texto: await error(r) });
     if (r.ok) onCambio();
@@ -186,9 +193,9 @@ function Acumulados({ acumulados, onCambio }: { acumulados: Estado["acumulados"]
   return (
     <div className="space-y-3 border-t border-gray-200 pt-4">
       <div>
-        <h3 className="text-sm font-semibold text-gray-900">Meses anteriores pagados fuera de NominaHN</h3>
+        <h3 className="text-sm font-semibold text-gray-900">Meses anteriores pagados fuera del sistema</h3>
         <p className="text-xs text-gray-500">
-          El cálculo personalizado necesita lo pagado y lo retenido desde enero. Si la empresa empezó a usar NominaHN
+          El cálculo personalizado necesita lo pagado y lo retenido desde enero. Si la empresa empezó a usar este sistema
           a mitad de año, importe esos meses desde la hoja «Retención en la fuente» (.xlsx, hoja DATOS). Un mes
           importado reemplaza a las planillas de ese mes en el cálculo.
         </p>
@@ -233,7 +240,7 @@ function Acumulados({ acumulados, onCambio }: { acumulados: Estado["acumulados"]
           )}
           <div className="max-h-80 overflow-auto rounded-lg border border-gray-200">
             <table className="table-base text-xs">
-              <thead><tr><th>Fila</th><th>En el archivo</th><th>RTN</th><th>Empleado en NominaHN</th><th>Por</th><th className="num">Meses</th><th className="num">ISR retenido</th></tr></thead>
+              <thead><tr><th>Fila</th><th>En el archivo</th><th>RTN</th><th>Empleado en el sistema</th><th>Por</th><th className="num">Meses</th><th className="num">ISR retenido</th></tr></thead>
               <tbody>
                 {vista.filas.map((f) => (
                   <tr key={f.fila} className={f.empleado ? "" : "bg-red-50"}>

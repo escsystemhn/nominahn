@@ -227,7 +227,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
           </div>
           <div className="col-span-2 md:col-span-1">
             <label htmlFor="rep-planilla" className="mb-1 block text-xs font-medium text-gray-700">
-              Planilla <span className="font-normal text-gray-400">(reportes de planilla, IHSS histórica, DMR y archivo del banco)</span>
+              Planilla <span className="font-normal text-gray-500">(reportes de planilla, IHSS histórica, DMR y archivo del banco)</span>
             </label>
             <select id="rep-planilla" {...campo("planillaId")} className="input">
               <option value="">{planillas.length ? "Todas, según las fechas" : "No hay planillas vigentes"}</option>
@@ -267,7 +267,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2">
                 <h3 className="text-sm font-medium text-gray-900">{r.nombre}</h3>
-                {categoria === "Todos" && <span className="text-xs text-gray-400">{r.categoria}</span>}
+                {categoria === "Todos" && <span className="text-xs text-gray-500">{r.categoria}</span>}
               </div>
               <p className="mt-0.5 text-xs text-gray-500">{conDivisiones ? r.descripcion : r.descripcion.replace("sucursal, división y departamento", "sucursal y departamento")}</p>
               {r.id === "planilla-detallada" && conDivisiones && (

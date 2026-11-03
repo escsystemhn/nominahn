@@ -310,7 +310,7 @@ export function validar(
 
     const inicioISO = dia(rInicio.valor);
     const claveNatural = `${empleado.id}|${tipo.id}|${inicioISO}`;
-    const referencia = `${empleado.codigo} · ${empleado.nombre} · ${tipo.nombre}`;
+    const referencia = `${empleado.codigo}, ${empleado.nombre}, ${tipo.nombre}`;
 
     const duplicadaEnArchivo = vistas.get(claveNatural);
     if (duplicadaEnArchivo !== undefined) {

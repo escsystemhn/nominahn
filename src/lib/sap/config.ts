@@ -55,7 +55,7 @@ export async function cargarConfigSap(db: Db): Promise<ConfigSap | null> {
     try {
       password = descifrar(c.passwordCifrado);
     } catch {
-      throw new ConfigSapIncompleta("No se pudo leer la contraseña de SAP guardada (¿cambió CIFRADO_KEY?). Vuelva a escribirla y guarde.");
+      throw new ConfigSapIncompleta("No se pudo leer la contraseña de SAP guardada. Vuelva a escribirla en Configuración, SAP - Conexión, y guarde.");
     }
   }
   let passwordDb: string | null = null;
@@ -63,7 +63,7 @@ export async function cargarConfigSap(db: Db): Promise<ConfigSap | null> {
     try {
       passwordDb = descifrar(c.dbPasswordCifrado);
     } catch {
-      throw new ConfigSapIncompleta("No se pudo leer la contraseña de la base de datos de SAP (¿cambió CIFRADO_KEY?). Vuelva a escribirla y guarde.");
+      throw new ConfigSapIncompleta("No se pudo leer la contraseña de la base de datos de SAP. Vuelva a escribirla en Configuración, SAP - Conexión, y guarde.");
     }
   }
   return {

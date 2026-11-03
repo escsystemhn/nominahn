@@ -355,7 +355,7 @@ export const SECCIONES_MAPEO: SeccionMapeo[] = [
     titulo: "Aportes patronales",
     ayuda: "Lo que la empresa paga a las instituciones además del sueldo.",
     ejemplo: (a) => [
-      `Planilla aprobada → Débito ${a("patronalIhss")}, ${a("patronalIvm")}, ${a("patronalRap")}, ${a("patronalInfop")} y ${a("patronalReservaLab")} · Crédito su «por pagar»`,
+      `Planilla aprobada → Débito ${a("patronalIhss")}, ${a("patronalIvm")}, ${a("patronalRap")}, ${a("patronalInfop")} y ${a("patronalReservaLab")}, crédito su «por pagar»`,
     ],
     claves: [
       { clave: "patronalIhss", etiqueta: "Aporte patronal IHSS-EM", detalle: "5 % sobre el salario hasta el techo (Enfermedad y Maternidad)." },
@@ -371,7 +371,7 @@ export const SECCIONES_MAPEO: SeccionMapeo[] = [
     ayuda: "Lo retenido al empleado y lo aportado por la empresa, pendiente de enterar a cada institución.",
     ejemplo: (a) => [
       `Planilla aprobada → Crédito ${a("ihssPorPagar")} (parte del empleado más la patronal), ${a("rapPorPagar")}, ${a("isrPorPagar")}, ${a("impVecinalPorPagar")}…`,
-      `Al pagar al IHSS → Débito ${a("ihssPorPagar")} · Crédito Bancos`,
+      `Al pagar al IHSS → Débito ${a("ihssPorPagar")}, crédito Bancos`,
     ],
     claves: [
       { clave: "ihssPorPagar", etiqueta: "IHSS-EM por pagar", detalle: "Cuota del empleado más el aporte patronal del régimen EM." },
@@ -403,7 +403,7 @@ export const SECCIONES_MAPEO: SeccionMapeo[] = [
     titulo: "Provisiones de prestaciones",
     ayuda: "El décimo tercero, el décimo cuarto y las vacaciones que se van ganando cada período.",
     ejemplo: (a) => [
-      `Provisión del período → Débito ${a("gasto13vo")}, ${a("gasto14vo")} y ${a("gastoVacaciones")} · Crédito ${a("provision13Pagar")}, ${a("provision14Pagar")} y ${a("provisionVacPagar")}`,
+      `Provisión del período → Débito ${a("gasto13vo")}, ${a("gasto14vo")} y ${a("gastoVacaciones")}, crédito ${a("provision13Pagar")}, ${a("provision14Pagar")} y ${a("provisionVacPagar")}`,
       `Al pagar el décimo se usa lo provisionado`,
     ],
     claves: [
@@ -420,7 +420,7 @@ export const SECCIONES_MAPEO: SeccionMapeo[] = [
     titulo: "Neto a pagar",
     ayuda: "Lo que se le debe al empleado al cerrar la planilla, hasta que se paga.",
     ejemplo: (a) => [
-      `Planilla aprobada → Crédito ${a("sueldosPorPagar")} por el neto; al pagar → Débito ${a("sueldosPorPagar")} · Crédito Bancos`,
+      `Planilla aprobada → Crédito ${a("sueldosPorPagar")} por el neto; al pagar → Débito ${a("sueldosPorPagar")}, crédito Bancos`,
     ],
     claves: [
       { clave: "sueldosPorPagar", etiqueta: "Sueldos por pagar (neto)", detalle: "Neto a pagar a los empleados de la planilla." },

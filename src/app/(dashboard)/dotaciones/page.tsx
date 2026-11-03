@@ -15,7 +15,7 @@ export default async function DotacionesPage() {
     prisma.articuloDotacion.findMany({ orderBy: [{ activo: "desc" }, { nombre: "asc" }] }),
   ]);
 
-  const empleadosOpts = empleados.map((e) => ({ id: e.id, nombre: `${e.codigo} · ${nombreCompleto(e)}` }));
+  const empleadosOpts = empleados.map((e) => ({ id: e.id, nombre: `${e.codigo}, ${nombreCompleto(e)}` }));
 
   return (
     <DotacionesClient

@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { ETIQUETA_ROTACION, ETIQUETA_VISPERA } from "@/lib/horarios/reglas";
 import { sumarDias, lunesDe, periodoTexto, NOMBRE_DIA } from "@/lib/horarios/fechas";
 import type { ModoVispera, PoliticaRotacion } from "@/lib/horarios/tipos";
@@ -184,27 +185,35 @@ function Planes({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales:
         </section>
       )}
 
-      <section className="panel overflow-x-auto">
-        <table className="table-base">
-          <thead>
-            <tr><th>Plan</th><th>Período</th><th>Sucursales</th><th>Estado</th><th>Errores legales</th><th>Avisos</th><th>Huecos</th></tr>
-          </thead>
-          <tbody>
-            {planes === null && <tr><td colSpan={7} className="text-gray-500">Cargando…</td></tr>}
-            {planes?.length === 0 && <tr><td colSpan={7} className="text-gray-500">Todavía no hay planes. Defina la cobertura de cada sucursal y genere el primero.</td></tr>}
-            {planes?.map((p) => (
-              <tr key={p.id}>
-                <td><Link href={`/horarios/${p.id}`} className="font-medium text-blue-800 hover:underline">{p.nombre}</Link></td>
-                <td className="whitespace-nowrap">{periodoTexto(p.desde, p.hasta)}</td>
-                <td>{p.sucursales.join(", ")}</td>
-                <td><EstadoBadge valor={p.estado} /></td>
-                <td className={p.resumen?.errores ? "font-semibold text-red-700" : ""}>{p.resumen?.errores ?? "—"}</td>
-                <td>{p.resumen?.avisos ?? "—"}</td>
-                <td className={p.resumen?.faltantes ? "text-amber-700" : ""}>{p.resumen?.faltantes ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <section className="panel overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table-base tabla-tarjetas">
+            <thead>
+              <tr><th>Plan</th><th>Período</th><th>Sucursales</th><th>Estado</th><th className="num">Errores legales</th><th className="num">Avisos</th><th className="num">Huecos</th></tr>
+            </thead>
+            <tbody>
+              {planes === null && <tr><td colSpan={7} className="text-gray-500">Cargando…</td></tr>}
+              {planes?.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <EstadoVacio titulo="Todavía no hay planes." detalle="Defina la cobertura de cada sucursal y genere el primero." />
+                  </td>
+                </tr>
+              )}
+              {planes?.map((p) => (
+                <tr key={p.id}>
+                  <td data-titulo><Link href={`/horarios/${p.id}`} className="font-medium text-blue-800 hover:underline">{p.nombre}</Link></td>
+                  <td data-etiqueta="Período" className="whitespace-nowrap">{periodoTexto(p.desde, p.hasta)}</td>
+                  <td data-etiqueta="Sucursales">{p.sucursales.join(", ")}</td>
+                  <td data-etiqueta="Estado"><EstadoBadge valor={p.estado} /></td>
+                  <td data-etiqueta="Errores legales" className={`num ${p.resumen?.errores ? "font-semibold text-red-700" : ""}`}>{p.resumen?.errores ?? "—"}</td>
+                  <td data-etiqueta="Avisos" className="num">{p.resumen?.avisos ?? "—"}</td>
+                  <td data-etiqueta="Huecos" className={`num ${p.resumen?.faltantes ? "text-amber-700" : ""}`}>{p.resumen?.faltantes ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
@@ -290,7 +299,7 @@ function Cobertura({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursal
               {!h.cerrado && (
                 <div className="mt-2 flex items-center gap-2">
                   <input type="time" className="input" disabled={deshabilitado} value={h.apertura} aria-label={`Apertura ${NOMBRE_DIA[h.dia]}`} onChange={(e) => setHorario((hs) => hs.map((x, j) => (j === i ? { ...x, apertura: e.target.value } : x)))} />
-                  <span className="text-gray-400">a</span>
+                  <span className="text-gray-500">a</span>
                   <input type="time" className="input" disabled={deshabilitado} value={h.cierre} aria-label={`Cierre ${NOMBRE_DIA[h.dia]}`} onChange={(e) => setHorario((hs) => hs.map((x, j) => (j === i ? { ...x, cierre: e.target.value } : x)))} />
                 </div>
               )}
@@ -307,9 +316,9 @@ function Cobertura({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursal
         </p>
         <div className="mt-4 overflow-x-auto">
           <table className="table-base">
-            <thead><tr><th>Puesto</th><th>Días</th><th>Desde</th><th>Hasta</th><th>Mínimo</th><th>Etiqueta</th><th /></tr></thead>
+            <thead><tr><th>Puesto</th><th>Días</th><th>Desde</th><th>Hasta</th><th>Mínimo</th><th>Etiqueta</th><th><span className="sr-only">Acciones</span></th></tr></thead>
             <tbody>
-              {franjas.length === 0 && <tr><td colSpan={7} className="text-gray-500">Sin franjas. Sin ellas el generador no programa a nadie de esta sucursal.</td></tr>}
+              {franjas.length === 0 && <tr><td colSpan={7}><EstadoVacio titulo="Esta sucursal no tiene franjas de cobertura." detalle="Sin ellas el generador no programa a nadie de esta sucursal. Use Agregar franja." /></td></tr>}
               {franjas.map((f, i) => (
                 <tr key={i}>
                   <td>
@@ -474,24 +483,33 @@ function Personal({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursale
         </section>
       )}
 
-      <section className="panel overflow-x-auto">
-        <table className="table-base">
-          <thead><tr><th>Persona</th><th>Puesto</th><th>Disponibilidad</th><th /></tr></thead>
-          <tbody>
-            {empleados === null && <tr><td colSpan={4} className="text-gray-500">Cargando…</td></tr>}
-            {empleados?.map((e) => {
-              const notas = resumen(e.preferenciaHorario);
-              return (
-                <tr key={e.id}>
-                  <td><span className="font-medium text-gray-900">{nombre(e)}</span> <span className="text-xs text-gray-500">{e.codigo}</span></td>
-                  <td>{e.puesto?.nombre ?? <span className="text-amber-700">Sin puesto: no se programa</span>}</td>
-                  <td className="text-sm">{notas.length ? notas.join("; ") :<span className="text-gray-400">Sin restricciones</span>}</td>
-                  <td>{puedeEditar && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ id: e.id, nombre: nombre(e), d: e.preferenciaHorario ?? vacia })}>Editar</button>}</td>
+      <section className="panel overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table-base tabla-tarjetas">
+            <thead><tr><th>Persona</th><th>Puesto</th><th>Disponibilidad</th><th><span className="sr-only">Acciones</span></th></tr></thead>
+            <tbody>
+              {empleados === null && <tr><td colSpan={4} className="text-gray-500">Cargando…</td></tr>}
+              {empleados?.length === 0 && (
+                <tr>
+                  <td colSpan={4}>
+                    <EstadoVacio titulo="Esta sucursal no tiene personal registrado." detalle="Elija otra sucursal o registre empleados en ella." />
+                  </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              )}
+              {empleados?.map((e) => {
+                const notas = resumen(e.preferenciaHorario);
+                return (
+                  <tr key={e.id}>
+                    <td data-titulo><span className="font-medium text-gray-900">{nombre(e)}</span> <span className="text-xs text-gray-500">{e.codigo}</span></td>
+                    <td data-etiqueta="Puesto">{e.puesto?.nombre ?? <span className="text-amber-700">Sin puesto: no se programa</span>}</td>
+                    <td data-etiqueta="Disponibilidad" className="text-sm">{notas.length ? notas.join("; ") : <span className="text-gray-500">Sin restricciones</span>}</td>
+                    <td data-accion>{puedeEditar && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ id: e.id, nombre: nombre(e), d: e.preferenciaHorario ?? vacia })}>Editar</button>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

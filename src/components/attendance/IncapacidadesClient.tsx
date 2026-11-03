@@ -11,6 +11,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
+import { useAvisos } from "@/components/ui/Avisos";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   ETIQUETA_TIPO_INCAPACIDAD,
@@ -57,6 +60,7 @@ const mesActual = () => new Date().toLocaleDateString("en-CA", { timeZone: "Amer
 const formVacio = { empleadoId: "", tipo: "ENFERMEDAD_COMUN" as TipoIncapacidad, emisor: "IHSS", fechaInicio: "", fechaFin: "", numeroCertificado: "", prorrogaDeId: "", observacion: "" };
 
 export default function IncapacidadesClient({ empleados, puedeReglas }: { empleados: Empleado[]; puedeReglas: boolean }) {
+  const { pedirMotivo } = useAvisos();
   const [lista, setLista] = useState<Incapacidad[] | null>(null);
   const [reglas, setReglas] = useState<ReglasIncapacidad | null>(null);
   const [filtro, setFiltro] = useState({ empleadoId: "", mes: mesActual() });
@@ -154,9 +158,15 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
   }
 
   async function anular(i: Incapacidad) {
-    const motivo = prompt(`Motivo para anular la incapacidad de ${nombreDe(i.empleado)} del ${formatDate(i.fechaInicio)}:`);
-    if (!motivo?.trim()) return;
-    const res = await fetch(`/api/incapacidades/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anulada: true, motivo: motivo.trim() }) });
+    const motivo = await pedirMotivo({
+      titulo: "¿Anular esta incapacidad?",
+      detalle: `La de ${nombreDe(i.empleado)} del ${formatDate(i.fechaInicio)}. El motivo queda en el historial.`,
+      etiquetaMotivo: "Motivo de la anulación",
+      accion: "Anular incapacidad",
+      peligro: true,
+    });
+    if (motivo === null) return;
+    const res = await fetch(`/api/incapacidades/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anulada: true, motivo }) });
     const d = await res.json();
     setAviso(res.ok ? { ok: true, texto: "Incapacidad anulada." } : { ok: false, texto: d.error ?? "No se pudo anular" });
     await cargar();
@@ -255,39 +265,39 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
 
       <section className="panel overflow-hidden" aria-label="Incapacidades registradas">
         {lista === null ? (
-          <p className="p-6 text-sm text-gray-400">Cargando…</p>
+          <p className="p-6 text-sm text-gray-500">Cargando…</p>
         ) : lista.length === 0 ? (
-          <p className="p-6 text-sm text-gray-500">No hay incapacidades en ese período.</p>
+          <EstadoVacio titulo="No hay incapacidades en ese período." detalle="Cambie el mes o el empleado, o use Ver todas. Para anotar un certificado nuevo, use Registrar incapacidad." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="table-base text-sm">
+            <table className="table-base tabla-tarjetas">
               <thead>
                 <tr>
-                  <th className="px-4">Empleado</th>
-                  <th className="px-4">Tipo</th>
-                  <th className="px-4">Fechas</th>
-                  <th className="num px-4">Patrono</th>
-                  <th className="num px-4">IHSS</th>
-                  <th className="num px-4" title="Lo calcula y lo paga el IHSS con su propia base">Subsidio estimado</th>
-                  <th className="px-4">Certificado</th>
-                  <th className="px-4" />
+                  <th>Empleado</th>
+                  <th>Tipo</th>
+                  <th>Fechas</th>
+                  <th className="num">Patrono</th>
+                  <th className="num">IHSS</th>
+                  <th className="num" title="Lo calcula y lo paga el IHSS con su propia base">Subsidio estimado</th>
+                  <th>Certificado</th>
+                  <th><span className="sr-only">Acciones</span></th>
                 </tr>
               </thead>
               <tbody>
                 {lista.map((i) => (
-                  <tr key={i.id} className={i.anulada ? "text-gray-400" : ""}>
-                    <td className="px-4 py-2.5">{nombreDe(i.empleado)}<span className="block text-xs text-gray-500">{i.empleado.codigo}</span></td>
-                    <td className="px-4 py-2.5">{ETIQUETA_TIPO_INCAPACIDAD[i.tipo]}{i.prorrogaDeId && <span className="block text-xs text-gray-500">Prórroga</span>}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5">{formatDate(i.fechaInicio)} al {formatDate(i.fechaFin)}<span className="block text-xs text-gray-500">{i.dias} días</span></td>
-                    <td className="num px-4 py-2.5">{i.reparto.patrono}</td>
-                    <td className="num px-4 py-2.5">{i.reparto.ihss}</td>
-                    <td className="num px-4 py-2.5">{formatCurrency(i.subsidioEstimado)}</td>
-                    <td className="px-4 py-2.5">
-                      {i.numeroCertificado ?? <span className="text-gray-400">Sin número</span>}
+                  <tr key={i.id} className={i.anulada ? "text-gray-500" : ""}>
+                    <td data-titulo className="font-medium text-gray-900">{nombreDe(i.empleado)}<span className="block text-xs text-gray-500">{i.empleado.codigo}</span></td>
+                    <td data-etiqueta="Tipo">{ETIQUETA_TIPO_INCAPACIDAD[i.tipo]}{i.prorrogaDeId && <span className="block text-xs text-gray-500">Prórroga</span>}</td>
+                    <td data-etiqueta="Fechas" className="whitespace-nowrap">{formatDate(i.fechaInicio)} al {formatDate(i.fechaFin)}<span className="block text-xs text-gray-500">{i.dias} días</span></td>
+                    <td data-etiqueta="Patrono" className="num">{i.reparto.patrono}</td>
+                    <td data-etiqueta="IHSS" className="num">{i.reparto.ihss}</td>
+                    <td data-etiqueta="Subsidio estimado" className="num whitespace-nowrap">{formatCurrency(i.subsidioEstimado)}</td>
+                    <td data-etiqueta="Certificado">
+                      {i.numeroCertificado ?? <span className="text-gray-500">Sin número</span>}
                       {i.archivoUrl && <a className="ml-2 text-xs text-blue-700 hover:underline" href={i.archivoUrl} target="_blank" rel="noopener noreferrer">Ver</a>}
                     </td>
-                    <td className="px-4 py-2.5 text-right">
-                      {i.anulada ? <span className="text-xs text-red-700">Anulada</span> : <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => void anular(i)}>Anular</button>}
+                    <td data-accion className="text-right">
+                      {i.anulada ? <EstadoBadge valor="ANULADA" /> : <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => void anular(i)}>Anular</button>}
                     </td>
                   </tr>
                 ))}
@@ -334,15 +344,15 @@ function PanelReglas({ reglas, puedeEditar, onGuardado }: { reglas: ReglasIncapa
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="table-base text-sm">
-          <thead><tr><th className="px-3">Tipo</th><th className="num px-3">Días del patrono</th><th className="num px-3">% subsidio IHSS</th><th className="num px-3">% complemento patronal</th></tr></thead>
+        <table className="table-base">
+          <thead><tr><th>Tipo</th><th className="num">Días del patrono</th><th className="num">% subsidio IHSS</th><th className="num">% complemento patronal</th></tr></thead>
           <tbody>
             {TIPOS.map(([t, l]) => (
               <tr key={t}>
-                <td className="px-3 py-2">{l}</td>
-                <td className="px-3 py-2 text-right">{campo(t, "diasPatrono")}</td>
-                <td className="px-3 py-2 text-right">{campo(t, "porcentajeSubsidio")}</td>
-                <td className="px-3 py-2 text-right">{campo(t, "porcentajeComplemento")}</td>
+                <td>{l}</td>
+                <td className="text-right">{campo(t, "diasPatrono")}</td>
+                <td className="text-right">{campo(t, "porcentajeSubsidio")}</td>
+                <td className="text-right">{campo(t, "porcentajeComplemento")}</td>
               </tr>
             ))}
           </tbody>
@@ -351,7 +361,7 @@ function PanelReglas({ reglas, puedeEditar, onGuardado }: { reglas: ReglasIncapa
       {puedeEditar && (
         <div className="flex items-center justify-end gap-3">
           {msg && <span className={`text-sm ${msg.ok ? "text-green-800" : "text-red-700"}`}>{msg.texto}</span>}
-          <button type="button" className="btn btn-primary" onClick={() => void guardar()}>Guardar reglas</button>
+          <button type="button" className="btn btn-secondary" onClick={() => void guardar()}>Guardar reglas</button>
         </div>
       )}
     </section>

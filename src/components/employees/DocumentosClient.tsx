@@ -9,7 +9,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatDateTime } from "@/lib/utils";
 import { etiquetaVariable, type VariableDoc } from "@/lib/documentos/plantillas";
 import TextoDocumento from "./TextoDocumento";
@@ -229,13 +232,13 @@ function Emitir({
             {ocupado && vista ? "Emitiendo…" : "Emitir y descargar"}
           </button>
         </div>
-        <p className="text-[11px] text-gray-500">Revise la vista previa antes de emitir: lo emitido queda con folio en el historial.</p>
+        <p className="text-xs text-gray-500">Revise la vista previa antes de emitir: lo emitido queda con folio en el historial.</p>
       </section>
 
       <section aria-label="Vista previa">
         {!vista ? (
-          <div className="flex h-full min-h-48 items-center justify-center rounded-md border border-dashed border-gray-300 p-6 text-sm text-gray-500">
-            Elija empleado y documento, y pulse «Vista previa».
+          <div className="panel flex h-full min-h-48 items-center justify-center">
+            <EstadoVacio titulo="Todavía no hay vista previa." detalle="Elija empleado y documento, y pulse «Vista previa»." />
           </div>
         ) : (
           <div className="space-y-3">
@@ -260,6 +263,7 @@ function Emitir({
 // ─── Historial ────────────────────────────────────────────────────────────────
 
 function Historial({ onAviso }: { onAviso: (a: { ok: boolean; texto: string } | null) => void }) {
+  const { confirmar } = useAvisos();
   const [emitidos, setEmitidos] = useState<Emitido[] | null>(null);
 
   const cargar = useCallback(async () => {
@@ -273,45 +277,50 @@ function Historial({ onAviso }: { onAviso: (a: { ok: boolean; texto: string } | 
   }, [cargar]);
 
   async function anular(e: Emitido) {
-    if (!confirm(`¿Anular el documento ${e.folio}? Conserva su folio y saldrá con la marca «ANULADO».`)) return;
+    if (!(await confirmar({
+      titulo: `¿Anular el documento ${e.folio}?`,
+      detalle: "Conserva su folio y saldrá con la marca «ANULADO».",
+      accion: "Anular",
+      peligro: true,
+    }))) return;
     const res = await fetch(`/api/documentos/emitidos/${e.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anulado: true }) });
     const d = await res.json();
     onAviso(res.ok ? { ok: true, texto: `Documento ${e.folio} anulado.` } : { ok: false, texto: d.error ?? "No se pudo anular" });
     await cargar();
   }
 
-  if (emitidos === null) return <p className="text-sm text-gray-400">Cargando…</p>;
+  if (emitidos === null) return <p className="text-sm text-gray-500">Cargando…</p>;
   return (
     <section className="panel overflow-hidden" aria-label="Documentos emitidos">
       {emitidos.length === 0 ? (
-        <p className="p-6 text-sm text-gray-500">Todavía no se ha emitido ningún documento.</p>
+        <EstadoVacio titulo="Todavía no se ha emitido ningún documento." detalle="Emita el primero desde la pestaña «Emitir»; quedará aquí con su folio." />
       ) : (
         <div className="overflow-x-auto">
-          <table className="table-base text-sm">
+          <table className="table-base tabla-tarjetas">
             <thead>
               <tr>
-                <th className="px-4">Folio</th>
-                <th className="px-4">Fecha</th>
-                <th className="px-4">Empleado</th>
-                <th className="px-4">Documento</th>
-                <th className="px-4">Dirigido a</th>
-                <th className="px-4">Origen</th>
-                <th className="px-4 text-right">Acciones</th>
+                <th>Folio</th>
+                <th>Fecha</th>
+                <th>Empleado</th>
+                <th>Documento</th>
+                <th>Dirigido a</th>
+                <th>Origen</th>
+                <th><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
               {emitidos.map((e) => (
-                <tr key={e.id} className={e.anulado ? "text-gray-400" : ""}>
-                  <td className="px-4 py-2.5 font-mono">{e.folio}{e.anulado && <span className="ml-2 text-xs text-red-700">anulado</span>}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5">{formatDateTime(e.createdAt)}</td>
-                  <td className="px-4 py-2.5">{nombreEmp(e.empleado)}<span className="block text-xs text-gray-500">{e.empleado.codigo}</span></td>
-                  <td className="px-4 py-2.5">{e.plantilla.nombre}</td>
-                  <td className="px-4 py-2.5">{e.destinatario ?? "A quien interese"}</td>
-                  <td className="px-4 py-2.5 text-xs">{e.porAutoservicio ? "Mi espacio" : e.emitidoPor ?? "RRHH"}</td>
-                  <td className="px-4 py-2.5">
+                <tr key={e.id} className={e.anulado ? "text-gray-500" : ""}>
+                  <td data-titulo className="font-mono">{e.folio}{e.anulado && <EstadoBadge valor="ANULADA" etiqueta="Anulado" className="ml-2" />}</td>
+                  <td data-etiqueta="Fecha" className="whitespace-nowrap">{formatDateTime(e.createdAt)}</td>
+                  <td data-etiqueta="Empleado">{nombreEmp(e.empleado)}<span className="block text-xs text-gray-500">{e.empleado.codigo}</span></td>
+                  <td data-etiqueta="Documento">{e.plantilla.nombre}</td>
+                  <td data-etiqueta="Dirigido a">{e.destinatario ?? "A quien interese"}</td>
+                  <td data-etiqueta="Origen" className="text-xs">{e.porAutoservicio ? "Mi espacio" : e.emitidoPor ?? "RRHH"}</td>
+                  <td data-accion>
                     <div className="flex justify-end gap-2">
                       <a className="btn btn-ghost btn-sm" href={`/api/documentos/emitidos/${e.id}/pdf?modo=ver`} target="_blank" rel="noopener noreferrer">PDF</a>
-                      {!e.anulado && <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => void anular(e)}>Anular</button>}
+                      {!e.anulado && <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => void anular(e)}>Anular</button>}
                     </div>
                   </td>
                 </tr>
@@ -340,6 +349,7 @@ function Plantillas({
   onCambio: () => Promise<void>;
   onAviso: (a: { ok: boolean; texto: string } | null) => void;
 }) {
+  const { confirmar } = useAvisos();
   const [selId, setSelId] = useState<string | "nueva">(plantillas[0]?.id ?? "nueva");
   const sel = plantillas.find((p) => p.id === selId) ?? null;
   const [edicion, setEdicion] = useState(sel ? { ...sel } : { ...plantillaNueva(), id: "", codigo: "", esSistema: false, updatedAt: "" });
@@ -416,7 +426,7 @@ function Plantillas({
   }
 
   async function borrar() {
-    if (!sel || !confirm(`¿Borrar la plantilla «${sel.nombre}»?`)) return;
+    if (!sel || !(await confirmar({ titulo: `¿Borrar la plantilla «${sel.nombre}»?`, accion: "Borrar", peligro: true }))) return;
     const res = await fetch(`/api/documentos/plantillas/${sel.id}`, { method: "DELETE" });
     const d = await res.json();
     onAviso(res.ok ? { ok: true, texto: "Plantilla borrada." } : { ok: false, texto: d.error ?? "No se pudo borrar" });
@@ -446,7 +456,7 @@ function Plantillas({
                   className={`w-full rounded-md px-3 py-2 text-left text-sm ${selId === p.id ? "bg-blue-50 font-medium text-blue-900" : "text-gray-700 hover:bg-gray-50"}`}
                 >
                   {p.nombre}
-                  <span className="block text-[11px] text-gray-500">
+                  <span className="block text-xs text-gray-500">
                     {[p.autoservicio ? "En Mi espacio" : null, p.activo ? null : "Desactivada", p.esSistema ? "Del sistema" : null].filter(Boolean).join(". ") || "Propia"}
                   </span>
                 </button>
@@ -475,7 +485,7 @@ function Plantillas({
               <select id="pl-tipo" className="input" value={edicion.tipo} disabled={edicion.esSistema} onChange={(e) => setEdicion((x) => ({ ...x, tipo: e.target.value as Plantilla["tipo"] }))}>
                 {TIPOS.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
               </select>
-              <p className="mt-1 text-[11px] text-gray-500">El contrato lleva firma del patrono y del trabajador; los demás, sólo del patrono.</p>
+              <p className="mt-1 text-xs text-gray-500">El contrato lleva firma del patrono y del trabajador; los demás, sólo del patrono.</p>
             </div>
             <div className="flex flex-col justify-center gap-2 text-sm text-gray-700">
               <label className="flex items-center gap-2"><input type="checkbox" checked={edicion.autoservicio} onChange={(e) => setEdicion((x) => ({ ...x, autoservicio: e.target.checked }))} />El empleado puede emitirla en Mi espacio</label>
@@ -486,13 +496,13 @@ function Plantillas({
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="pl-contenido">Texto</label>
             <textarea id="pl-contenido" ref={areaRef} className="input min-h-72 font-[inherit] leading-relaxed" value={edicion.contenido} onChange={(e) => setEdicion((x) => ({ ...x, contenido: e.target.value }))} />
-            <p className="mt-1 text-[11px] text-gray-500">Separe los párrafos con una línea en blanco. Escriba **así** para negrita. Pulse una variable para insertarla donde está el cursor.</p>
+            <p className="mt-1 text-xs text-gray-500">Separe los párrafos con una línea en blanco. Escriba **así** para negrita. Pulse una variable para insertarla donde está el cursor.</p>
           </div>
 
           <div className="space-y-2">
             {variables.map((g) => (
               <div key={g.grupo}>
-                <p className="text-[11px] font-medium text-gray-500">{g.grupo}</p>
+                <p className="text-xs font-medium text-gray-500">{g.grupo}</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {g.variables.map((v) => (
                     <button key={v.clave} type="button" onClick={() => insertar(v.clave)} title={`{{${v.clave}}}`} className="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-700 hover:border-blue-300 hover:bg-blue-50">
@@ -515,7 +525,7 @@ function Plantillas({
               <button type="button" className="btn btn-secondary" onClick={() => void probar()} disabled={!empPrueba || !edicion.contenido.trim()}>Vista previa</button>
             </div>
             <div className="flex gap-2">
-              {sel && !sel.esSistema && <button type="button" className="btn btn-ghost text-red-700" onClick={() => void borrar()}>Borrar</button>}
+              {sel && !sel.esSistema && <button type="button" className="btn border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => void borrar()}>Borrar</button>}
               <button type="button" className="btn btn-primary" onClick={() => void guardar()} disabled={guardando}>{guardando ? "Guardando…" : "Guardar plantilla"}</button>
             </div>
           </div>

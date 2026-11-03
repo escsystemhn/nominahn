@@ -2,39 +2,44 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useAvisos } from "@/components/ui/Avisos";
+import { Field, PestanasFicha, ResumenErrores, erroresPorPestana, fieldClass, primerError, type PestanaFicha } from "./CamposFicha";
+
+const OBLIGATORIO = "Este dato es obligatorio.";
+const ELEGIR = "Elija una opción.";
 
 const schema = z.object({
-  primerNombre: z.string().min(1, "Requerido"),
+  primerNombre: z.string().min(1, OBLIGATORIO),
   segundoNombre: z.string().optional(),
-  primerApellido: z.string().min(1, "Requerido"),
+  primerApellido: z.string().min(1, OBLIGATORIO),
   segundoApellido: z.string().optional(),
-  fechaNacimiento: z.string().min(1, "Requerido"),
-  genero: z.string().min(1, "Requerido"),
+  fechaNacimiento: z.string().min(1, OBLIGATORIO),
+  genero: z.string().min(1, OBLIGATORIO),
   estadoCivil: z.string().optional(),
   identidad: z.string().optional(),
   rtn: z.string().optional(),
   ihssNro: z.string().optional(),
   rapNro: z.string().optional(),
   telefonoPersonal: z.string().optional(),
-  emailPersonal: z.union([z.literal(""), z.string().trim().email("Correo inválido")]).optional(),
-  emailCorporativo: z.union([z.literal(""), z.string().trim().email("Correo inválido")]).optional(),
+  emailPersonal: z.union([z.literal(""), z.string().trim().email("Escriba un correo válido.")]).optional(),
+  emailCorporativo: z.union([z.literal(""), z.string().trim().email("Escriba un correo válido.")]).optional(),
   telefonoEmergencia: z.string().optional(),
   contactoEmergencia: z.string().optional(),
   direccion: z.string().optional(),
-  fechaIngreso: z.string().min(1, "Requerido"),
-  tipoContrato: z.enum(["INDEFINIDO", "TEMPORAL", "PRUEBA", "SERVICIO"]),
-  salarioBase: z.number().positive("Debe ser mayor a 0"),
-  tipoPlanilla: z.enum(["SEMANAL", "QUINCENAL", "MENSUAL"]),
+  fechaIngreso: z.string().min(1, OBLIGATORIO),
+  tipoContrato: z.enum(["INDEFINIDO", "TEMPORAL", "PRUEBA", "SERVICIO"], { error: ELEGIR }),
+  salarioBase: z.number({ error: "Indique el salario." }).positive("El salario debe ser mayor que cero."),
+  tipoPlanilla: z.enum(["SEMANAL", "QUINCENAL", "MENSUAL"], { error: ELEGIR }),
   cuentaBancaria: z.string().optional(),
   banco: z.string().optional(),
-  sucursalId: z.string().min(1, "Requerido"),
-  departamentoId: z.string().min(1, "Requerido"),
+  sucursalId: z.string().min(1, OBLIGATORIO),
+  departamentoId: z.string().min(1, OBLIGATORIO),
   puestoId: z.string().optional(),
   // Vacío = IHSS por porcentaje. Se envía como texto; el servidor lo valida.
-  ihssMontoFijo: z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Monto inválido")]).optional(),
+  ihssMontoFijo: z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 1500.00.")]).optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -47,33 +52,11 @@ interface Props {
   puestos: Array<{ id: string; nombre: string; departamentoId: string }>;
 }
 
-const fieldClass =
-  "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
-const labelClass = "block text-sm font-medium text-gray-700 mb-1";
-const errorClass = "text-xs text-red-600 mt-0.5";
-
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className={labelClass}>{label}</label>
-      {children}
-      {error && <p className={errorClass}>{error}</p>}
-    </div>
-  );
-}
-
 export default function NuevoEmpleadoForm({ sucursales, divisiones, departamentos, puestos }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"personal" | "laboral">("personal");
+  const [tab, setTab] = useState<PestanaFicha>("personal");
+  const { avisar } = useAvisos();
   // La división no se guarda en el empleado (sale de su departamento): sólo
   // acota la lista de departamentos.
   const [divisionId, setDivisionId] = useState("");
@@ -83,8 +66,18 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
     handleSubmit,
     control,
     setValue,
+    setFocus,
     formState: { errors },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
+  const porPestana = erroresPorPestana(errors);
+
+  // El primer error puede estar en la otra pestaña, que no está dibujada: se abre y luego se enfoca.
+  function alFallar(e: FieldErrors<FormData>) {
+    const primero = primerError(e);
+    if (!primero) return;
+    setTab(primero.pestana);
+    setTimeout(() => setFocus(primero.campo as keyof FormData), 0);
+  }
 
   // `useWatch` en vez de `watch()`: este último devuelve una función que el React
   // Compiler no puede memoizar, y por eso descartaba la optimización de todo el
@@ -112,96 +105,81 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
         const campos = emp?.detalles ? Object.entries(emp.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([emp?.error ?? "Error al crear el empleado", ...campos].join("\n"));
       }
+      avisar.exito("Empleado registrado.");
       router.push(`/empleados/${emp.id}`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Error al crear el empleado. Intente nuevamente.");
+      avisar.error(e instanceof Error ? e.message : "No se pudo registrar el empleado.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {(["personal", "laboral"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium capitalize transition-colors -mb-px border-b-2 ${
-              tab === t
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {t === "personal" ? "Datos Personales" : "Datos Laborales"}
-          </button>
-        ))}
-      </div>
+    <form method="post" onSubmit={handleSubmit(onSubmit, alFallar)} className="space-y-5">
+      <PestanasFicha tab={tab} onCambiar={setTab} errores={porPestana} />
+      <ResumenErrores errores={porPestana} />
 
       {/* Personal */}
       {tab === "personal" && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Primer Nombre *" error={errors.primerNombre?.message}>
+            <Field label="Primer nombre *" error={errors.primerNombre?.message}>
               <input {...register("primerNombre")} className={fieldClass} />
             </Field>
-            <Field label="Segundo Nombre" error={errors.segundoNombre?.message}>
+            <Field label="Segundo nombre" error={errors.segundoNombre?.message}>
               <input {...register("segundoNombre")} className={fieldClass} />
             </Field>
-            <Field label="Primer Apellido *" error={errors.primerApellido?.message}>
+            <Field label="Primer apellido *" error={errors.primerApellido?.message}>
               <input {...register("primerApellido")} className={fieldClass} />
             </Field>
-            <Field label="Segundo Apellido" error={errors.segundoApellido?.message}>
+            <Field label="Segundo apellido" error={errors.segundoApellido?.message}>
               <input {...register("segundoApellido")} className={fieldClass} />
             </Field>
-            <Field label="Fecha de Nacimiento *" error={errors.fechaNacimiento?.message}>
+            <Field label="Fecha de nacimiento *" error={errors.fechaNacimiento?.message}>
               <input {...register("fechaNacimiento")} type="date" className={fieldClass} />
             </Field>
             <Field label="Género *" error={errors.genero?.message}>
               <select {...register("genero")} className={fieldClass}>
-                <option value="">Seleccione...</option>
+                <option value="">Seleccione…</option>
                 <option value="M">Masculino</option>
                 <option value="F">Femenino</option>
               </select>
             </Field>
-            <Field label="Estado Civil" error={errors.estadoCivil?.message}>
+            <Field label="Estado civil" error={errors.estadoCivil?.message}>
               <select {...register("estadoCivil")} className={fieldClass}>
-                <option value="">Seleccione...</option>
+                <option value="">Seleccione…</option>
                 <option value="SOLTERO">Soltero/a</option>
                 <option value="CASADO">Casado/a</option>
-                <option value="UNION_LIBRE">Unión Libre</option>
+                <option value="UNION_LIBRE">Unión libre</option>
                 <option value="DIVORCIADO">Divorciado/a</option>
                 <option value="VIUDO">Viudo/a</option>
               </select>
             </Field>
-            <Field label="No. Identidad" error={errors.identidad?.message}>
+            <Field label="Número de identidad" error={errors.identidad?.message}>
               <input {...register("identidad")} className={fieldClass} placeholder="0801-1990-XXXXX" />
             </Field>
             <Field label="RTN" error={errors.rtn?.message}>
               <input {...register("rtn")} className={fieldClass} placeholder="XXXX-XXXX-XXXXXX" />
             </Field>
-            <Field label="No. IHSS" error={errors.ihssNro?.message}>
+            <Field label="Número de IHSS" error={errors.ihssNro?.message}>
               <input {...register("ihssNro")} className={fieldClass} />
             </Field>
-            <Field label="No. RAP" error={errors.rapNro?.message}>
+            <Field label="Número de RAP" error={errors.rapNro?.message}>
               <input {...register("rapNro")} className={fieldClass} />
             </Field>
-            <Field label="Teléfono Personal" error={errors.telefonoPersonal?.message}>
+            <Field label="Teléfono personal" error={errors.telefonoPersonal?.message}>
               <input {...register("telefonoPersonal")} className={fieldClass} placeholder="+504 XXXX-XXXX" />
             </Field>
-            <Field label="Correo Electrónico Personal" error={errors.emailPersonal?.message}>
+            <Field label="Correo personal" error={errors.emailPersonal?.message} hint="Aquí se envían sus comprobantes de pago.">
               <input {...register("emailPersonal")} type="email" className={fieldClass} placeholder="nombre@gmail.com" />
-              <p className="text-xs text-gray-500 mt-1">Aquí se envían sus comprobantes de pago.</p>
             </Field>
-            <Field label="Correo Corporativo" error={errors.emailCorporativo?.message}>
+            <Field label="Correo corporativo" error={errors.emailCorporativo?.message}>
               <input {...register("emailCorporativo")} type="email" className={fieldClass} placeholder="nombre@empresa.hn" />
             </Field>
-            <Field label="Contacto de Emergencia" error={errors.contactoEmergencia?.message}>
+            <Field label="Contacto de emergencia" error={errors.contactoEmergencia?.message}>
               <input {...register("contactoEmergencia")} className={fieldClass} />
             </Field>
-            <Field label="Teléfono Emergencia" error={errors.telefonoEmergencia?.message}>
+            <Field label="Teléfono de emergencia" error={errors.telefonoEmergencia?.message}>
               <input {...register("telefonoEmergencia")} className={fieldClass} />
             </Field>
           </div>
@@ -212,9 +190,9 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             <button
               type="button"
               onClick={() => setTab("laboral")}
-              className="px-5 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800"
+              className="btn btn-secondary"
             >
-              Siguiente →
+              Siguiente
             </button>
           </div>
         </div>
@@ -224,28 +202,28 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
       {tab === "laboral" && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Fecha de Ingreso *" error={errors.fechaIngreso?.message}>
+            <Field label="Fecha de ingreso *" error={errors.fechaIngreso?.message}>
               <input {...register("fechaIngreso")} type="date" className={fieldClass} />
             </Field>
-            <Field label="Tipo de Contrato *" error={errors.tipoContrato?.message}>
+            <Field label="Tipo de contrato *" error={errors.tipoContrato?.message}>
               <select {...register("tipoContrato")} className={fieldClass}>
                 <option value="INDEFINIDO">Indefinido</option>
                 <option value="TEMPORAL">Temporal</option>
-                <option value="PRUEBA">Período de Prueba</option>
+                <option value="PRUEBA">Período de prueba</option>
                 <option value="SERVICIO">Servicios</option>
               </select>
             </Field>
-            <Field label="Salario Base (L.) *" error={errors.salarioBase?.message}>
+            <Field label="Salario base (L) *" error={errors.salarioBase?.message}>
               <input {...register("salarioBase", { valueAsNumber: true })} type="number" step="0.01" className={fieldClass} />
             </Field>
-            <Field label="IHSS Fijo Mensual (L.)" error={errors.ihssMontoFijo?.message}>
+            <Field
+              label="IHSS fijo mensual (L)"
+              error={errors.ihssMontoFijo?.message}
+              hint="Monto mensual que se le descuenta de IHSS. En planilla quincenal se descuenta la mitad. El aporte patronal sigue calculándose por porcentaje."
+            >
               <input {...register("ihssMontoFijo")} type="number" step="0.01" min="0" className={fieldClass} placeholder="Vacío = cálculo por porcentaje" />
-              <p className="text-xs text-gray-500 mt-1">
-                Monto mensual que se le descuenta de IHSS. En planilla quincenal se descuenta la mitad.
-                El aporte patronal sigue calculándose por porcentaje.
-              </p>
             </Field>
-            <Field label="Tipo de Planilla *" error={errors.tipoPlanilla?.message}>
+            <Field label="Tipo de planilla *" error={errors.tipoPlanilla?.message}>
               <select {...register("tipoPlanilla")} className={fieldClass}>
                 <option value="MENSUAL">Mensual</option>
                 <option value="QUINCENAL">Quincenal</option>
@@ -258,7 +236,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
                 {...register("sucursalId", { onChange: () => { setDivisionId(""); setValue("departamentoId", ""); setValue("puestoId", ""); } })}
                 className={fieldClass}
               >
-                <option value="">Seleccione...</option>
+                <option value="">Seleccione…</option>
                 {sucursales.map((s) => (
                   <option key={s.id} value={s.id}>{s.nombre}</option>
                 ))}
@@ -279,7 +257,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             )}
             <Field label="Departamento *" error={errors.departamentoId?.message}>
               <select {...register("departamentoId", { onChange: () => setValue("puestoId", "") })} className={fieldClass}>
-                <option value="">Seleccione...</option>
+                <option value="">Seleccione…</option>
                 {deptsFiltrados.map((d) => (
                   <option key={d.id} value={d.id}>
                     {!divisionId && nombreDivision(d.divisionId) ? `${d.nombre} (${nombreDivision(d.divisionId)})` : d.nombre}
@@ -287,7 +265,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
                 ))}
               </select>
               {sucursalId && deptsFiltrados.length === 0 && (
-                <p className="mt-1 text-xs text-amber-700">No hay departamentos aquí. Créelos en Configuración → Estructura organizacional.</p>
+                <p className="mt-1 text-xs text-amber-700">No hay departamentos aquí. Créelos en Configuración, Estructura organizacional.</p>
               )}
             </Field>
             <Field label="Puesto" error={errors.puestoId?.message}>
@@ -300,7 +278,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             </Field>
             <Field label="Banco" error={errors.banco?.message}>
               <select {...register("banco")} className={fieldClass}>
-                <option value="">Seleccione...</option>
+                <option value="">Seleccione…</option>
                 <option value="BANCATLAN">Bancatlán</option>
                 <option value="BAC">BAC Honduras</option>
                 <option value="FICOHSA">Ficohsa</option>
@@ -311,7 +289,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
                 <option value="OTRO">Otro</option>
               </select>
             </Field>
-            <Field label="No. Cuenta Bancaria" error={errors.cuentaBancaria?.message}>
+            <Field label="Número de cuenta bancaria" error={errors.cuentaBancaria?.message}>
               <input {...register("cuentaBancaria")} className={fieldClass} />
             </Field>
           </div>
@@ -319,16 +297,16 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             <button
               type="button"
               onClick={() => setTab("personal")}
-              className="px-5 py-2 border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50"
+              className="btn btn-secondary"
             >
-              ← Anterior
+              Anterior
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:bg-blue-400"
+              className="btn btn-primary"
             >
-              {loading ? "Guardando..." : "Guardar Empleado"}
+              {loading ? "Guardando…" : "Guardar empleado"}
             </button>
           </div>
         </div>

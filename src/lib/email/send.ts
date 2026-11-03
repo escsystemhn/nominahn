@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { descifrar } from "@/lib/seguridad/cifrado";
+import { PRODUCTO } from "@/lib/marca";
 
 /**
  * Servidor de correo con el que se envía.
@@ -215,7 +216,7 @@ ${d.borrador ? '<p style="border:2px solid #B91C1C;color:#B91C1C;font-weight:bol
 <div class="firma">Recibí conforme &mdash; firma del trabajador</div>
 
 <p class="pie">
-  Documento generado por NominaHN. Ante cualquier discrepancia, diríjase al
+  Documento generado por ${PRODUCTO}. Ante cualquier discrepancia, diríjase al
   departamento de Recursos Humanos dentro de los siguientes 30 días.
 </p>
 </body>

@@ -4,18 +4,34 @@ import { prisma } from "@/lib/prisma";
 import { nombreCompleto } from "@/lib/utils";
 import { calcularVacacionesDevengadas } from "@/lib/payroll/calculos-hn";
 import MiEspacioClient from "@/components/employees/MiEspacioClient";
+import PageHeader from "@/components/ui/PageHeader";
 
 export default async function MiEspacioPage() {
   const session = await auth();
   const empleadoId = session?.user?.empleadoId as string | null;
+  const puedeAprobar = puede(session?.user, "asistencia.aprobar_permisos");
 
   if (!empleadoId) {
+    // Aprobar no depende de tener empleado: RRHH suele trabajar con una cuenta sin ficha.
+    if (puedeAprobar) {
+      return (
+        <MiEspacioClient
+          soloAprobaciones
+          nombre=""
+          puesto=""
+          diasDevengados={0}
+          diasDisponibles={0}
+          diasTomados={0}
+          puedeAprobar
+        />
+      );
+    }
     return (
-      <div className="max-w-lg">
-        <h1 className="text-xl font-bold text-gray-900">Mi espacio</h1>
-        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-          Su usuario no está vinculado a un expediente de empleado, por lo que no hay
-          información de autoservicio disponible. Contacte a Recursos Humanos.
+      <div className="space-y-6">
+        <PageHeader title="Mi espacio" />
+        <div className="max-w-lg rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Esta cuenta no está vinculada a un empleado, así que aquí no hay boletas ni solicitudes
+          que mostrar. Un administrador puede vincularla en Usuarios.
         </div>
       </div>
     );
@@ -28,8 +44,6 @@ export default async function MiEspacioPage() {
     }),
     prisma.saldoVacaciones.findUnique({ where: { empleadoId } }),
   ]);
-
-  const puedeAprobar = puede(session?.user, "asistencia.aprobar_permisos");
 
   // Saldo de vacaciones en vivo: devengado (Art. 346) menos días ya tomados.
   const diasDevengados = empleado ? calcularVacacionesDevengadas(empleado.fechaIngreso) : 0;

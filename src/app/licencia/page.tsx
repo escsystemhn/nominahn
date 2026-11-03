@@ -41,7 +41,7 @@ export default async function LicenciaPage() {
           {estado.modo === "evaluacion" && (
             <div className="text-sm text-gray-700">
               <p className="text-base font-semibold text-gray-900">
-                Versión de evaluación · día {estado.evaluacion.dia} de {DIAS_EVALUACION}
+                Versión de evaluación: día {estado.evaluacion.dia} de {DIAS_EVALUACION}
               </p>
               <p className="mt-1">
                 {estado.evaluacion.mostrarAviso
@@ -105,8 +105,8 @@ export default async function LicenciaPage() {
 
         <section className="mt-4 text-sm text-gray-600">
           <p>
-            Para adquirir una licencia: <strong className="text-gray-800">ESC System Consultorías</strong> ·
-            +504 9891-3809 (teléfono y WhatsApp) ·{" "}
+            Para adquirir una licencia: <strong className="text-gray-800">ESC System Consultorías</strong>,
+            +504 9891-3809 (teléfono y WhatsApp),{" "}
             <a href="mailto:info@esc-systemhn.com" className="underline underline-offset-2">
               info@esc-systemhn.com
             </a>

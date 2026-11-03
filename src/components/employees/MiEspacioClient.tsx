@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import FranjaCifras from "@/components/ui/FranjaCifras";
+import { Campo } from "@/components/ui/ModalForm";
 import MisPrestamos from "@/components/portal/MisPrestamos";
 import MisConstancias from "@/components/portal/MisConstancias";
 import SaludFamilia from "@/components/employees/SaludFamilia";
@@ -13,6 +19,8 @@ interface Props {
   diasDisponibles: number;
   diasTomados: number;
   puedeAprobar: boolean;
+  /** Cuenta sin empleado vinculado que aprueba permisos: no tiene boletas ni saldo que mostrar. */
+  soloAprobaciones?: boolean;
 }
 
 interface MisDatos {
@@ -54,12 +62,6 @@ const TIPOS = [
   { v: "OTRO", l: "Otro" },
 ];
 
-const badge: Record<string, string> = {
-  PENDIENTE: "bg-amber-100 text-amber-800",
-  APROBADO: "bg-green-100 text-green-800",
-  RECHAZADO: "bg-red-100 text-red-700",
-};
-
 type Tab = "solicitudes" | "boletas" | "prestamos" | "constancias" | "datos" | "salud" | "aprobaciones";
 
 const CAMPOS_DATOS: { k: keyof MisDatos; l: string }[] = [
@@ -80,7 +82,11 @@ interface DatosEspacio {
 
 // Petición pura (no toca estado de React), reutilizable desde el efecto de carga
 // inicial y desde el refresco manual.
-async function obtenerEspacio(puedeAprobar: boolean): Promise<DatosEspacio> {
+async function obtenerEspacio(puedeAprobar: boolean, soloAprobaciones: boolean): Promise<DatosEspacio> {
+  if (soloAprobaciones) {
+    const r = await fetch("/api/permisos?scope=aprobaciones");
+    return { permisos: [], boletas: [], datos: null, aprobaciones: r.ok ? await r.json() : [] };
+  }
   const reqs: Promise<Response>[] = [fetch("/api/permisos"), fetch("/api/mis-boletas"), fetch("/api/mis-datos")];
   if (puedeAprobar) reqs.push(fetch("/api/permisos?scope=aprobaciones"));
   const [rPer, rBol, rDat, rApr] = await Promise.all(reqs);
@@ -92,8 +98,9 @@ async function obtenerEspacio(puedeAprobar: boolean): Promise<DatosEspacio> {
   };
 }
 
-export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDisponibles, diasTomados, puedeAprobar }: Props) {
-  const [tab, setTab] = useState<Tab>("solicitudes");
+export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDisponibles, diasTomados, puedeAprobar, soloAprobaciones = false }: Props) {
+  const { avisar } = useAvisos();
+  const [tab, setTab] = useState<Tab>(soloAprobaciones ? "aprobaciones" : "solicitudes");
   const [permisos, setPermisos] = useState<Permiso[]>([]);
   const [aprobaciones, setAprobaciones] = useState<Permiso[]>([]);
   const [boletas, setBoletas] = useState<Boleta[]>([]);
@@ -121,23 +128,23 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      aplicar(await obtenerEspacio(puedeAprobar));
+      aplicar(await obtenerEspacio(puedeAprobar, soloAprobaciones));
     } finally {
       setLoading(false);
     }
-  }, [puedeAprobar, aplicar]);
+  }, [puedeAprobar, soloAprobaciones, aplicar]);
 
   // Carga inicial. `vivo` descarta la respuesta si el componente ya se desmontó.
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const d = await obtenerEspacio(puedeAprobar);
+      const d = await obtenerEspacio(puedeAprobar, soloAprobaciones);
       if (!vivo) return;
       aplicar(d);
       setLoading(false);
     })();
     return () => { vivo = false; };
-  }, [puedeAprobar, aplicar]);
+  }, [puedeAprobar, soloAprobaciones, aplicar]);
 
   async function guardarDatos(e: React.FormEvent) {
     e.preventDefault();
@@ -182,7 +189,8 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado }),
     });
-    if (!res.ok) { alert((await res.json()).error ?? "No se pudo resolver."); return; }
+    if (!res.ok) { avisar.error((await res.json()).error ?? "No se pudo resolver la solicitud."); return; }
+    avisar.exito(estado === "APROBADO" ? "Solicitud aprobada." : "Solicitud rechazada.");
     await cargar();
   }
 
@@ -197,105 +205,94 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
   ];
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Mi espacio</h1>
-        <p className="text-sm text-gray-500">{nombre}{puesto ? ` · ${puesto}` : ""}</p>
-      </div>
+    <div className="space-y-6">
+      {soloAprobaciones ? (
+        <PageHeader title="Aprobaciones" description="Permisos y vacaciones que esperan respuesta." />
+      ) : (
+      <>
+      <PageHeader title="Mi espacio" description={`${nombre}${puesto ? `, ${puesto}` : ""}`}>
+        <div className="-mb-5 flex gap-1 overflow-x-auto">
+          {tabs.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium ${
+                tab === key ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </PageHeader>
 
       {/* Resumen vacaciones */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Días disponibles</p>
-          <p className="text-2xl font-bold mt-1 text-green-700">{diasDisponibles.toFixed(1)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Devengados (total)</p>
-          <p className="text-2xl font-bold mt-1 text-gray-900">{diasDevengados.toFixed(1)}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <p className="text-xs text-gray-500">Tomados</p>
-          <p className="text-2xl font-bold mt-1 text-gray-900">{diasTomados.toFixed(1)}</p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-gray-200">
-        {tabs.map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`whitespace-nowrap px-4 py-2 text-sm font-medium -mb-px border-b-2 ${
-              tab === key ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <FranjaCifras
+        etiqueta="Resumen de vacaciones"
+        cifras={[
+          { label: "Días disponibles", valor: diasDisponibles.toFixed(1), destacada: true },
+          { label: "Devengados (total)", valor: diasDevengados.toFixed(1) },
+          { label: "Tomados", valor: diasTomados.toFixed(1) },
+        ]}
+      />
+      </>
+      )}
 
       {tab === "solicitudes" && (
-        <div className="grid md:grid-cols-2 gap-5">
+        <div className="grid gap-5 md:grid-cols-2">
           {/* Formulario */}
-          <form onSubmit={enviarSolicitud} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-3 h-fit">
+          <form onSubmit={enviarSolicitud} className="panel h-fit space-y-3 p-5">
             <h2 className="font-semibold text-gray-900">Nueva solicitud</h2>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Tipo</label>
+            <Campo etiqueta="Tipo">
               <select
                 value={form.tipo}
                 onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="input"
               >
                 {TIPOS.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
               </select>
-            </div>
+            </Campo>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Desde</label>
+              <Campo etiqueta="Desde">
                 <input type="date" value={form.fechaInicio}
                   onChange={(e) => setForm({ ...form, fechaInicio: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Hasta</label>
+                  className="input" />
+              </Campo>
+              <Campo etiqueta="Hasta">
                 <input type="date" value={form.fechaFin}
                   onChange={(e) => setForm({ ...form, fechaFin: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              </div>
+                  className="input" />
+              </Campo>
             </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Motivo (opcional)</label>
+            <Campo etiqueta="Motivo (opcional)">
               <textarea value={form.motivo} rows={2}
                 onChange={(e) => setForm({ ...form, motivo: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-            </div>
-            {error && <p className="text-xs text-red-600">{error}</p>}
-            <button type="submit" disabled={enviando}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                className="input" />
+            </Campo>
+            {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+            <button type="submit" disabled={enviando} className="btn btn-primary">
               {enviando ? "Enviando…" : "Enviar solicitud"}
             </button>
           </form>
 
           {/* Mis solicitudes */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">Mis solicitudes</div>
+          <div className="panel overflow-hidden">
+            <div className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">Mis solicitudes</div>
             {loading ? (
-              <p className="p-5 text-sm text-gray-400">Cargando…</p>
+              <p className="p-5 text-sm text-gray-500">Cargando…</p>
             ) : permisos.length === 0 ? (
-              <p className="p-5 text-sm text-gray-400">Aún no ha registrado solicitudes.</p>
+              <EstadoVacio titulo="Aún no ha registrado solicitudes." detalle="Llene el formulario de la izquierda para pedir vacaciones o un permiso." />
             ) : (
-              <ul className="divide-y divide-gray-50">
+              <ul className="divide-y divide-gray-100">
                 {permisos.map((p) => (
-                  <li key={p.id} className="px-5 py-3 flex items-center justify-between">
+                  <li key={p.id} className="flex items-center justify-between gap-3 px-5 py-3">
                     <div>
                       <p className="text-sm font-medium text-gray-900">{TIPOS.find((t) => t.v === p.tipo)?.l ?? p.tipo}</p>
                       <p className="text-xs text-gray-500">
-                        {formatDate(p.fechaInicio)} – {formatDate(p.fechaFin)} · {p.diasSolicitados} día(s)
+                        {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}, {p.diasSolicitados} día(s)
                       </p>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${badge[p.estado] ?? "bg-gray-100 text-gray-600"}`}>
-                      {p.estado}
-                    </span>
+                    <EstadoBadge valor={p.estado} />
                   </li>
                 ))}
               </ul>
@@ -305,41 +302,47 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
       )}
 
       {tab === "boletas" && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="panel overflow-hidden">
           {loading ? (
-            <p className="p-5 text-sm text-gray-400">Cargando…</p>
-          ) : boletas.length === 0 ? (
-            <p className="p-5 text-sm text-gray-400">No hay boletas de pago disponibles todavía.</p>
+            <p className="p-5 text-sm text-gray-500">Cargando…</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b text-gray-600 text-xs">
-                  <th className="text-left px-4 py-3 font-medium">Período</th>
-                  <th className="text-left px-4 py-3 font-medium">Tipo</th>
-                  <th className="text-right px-4 py-3 font-medium">Bruto</th>
-                  <th className="text-right px-4 py-3 font-medium">Deducciones</th>
-                  <th className="text-right px-4 py-3 font-medium">Neto</th>
-                  <th className="text-center px-4 py-3 font-medium">Boleta</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {boletas.map((b) => (
-                  <tr key={b.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2.5">{formatDate(b.planilla.fechaInicio)} – {formatDate(b.planilla.fechaFin)}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{b.planilla.tipo}</td>
-                    <td className="px-4 py-2.5 text-right">{formatCurrency(Number(b.totalBruto))}</td>
-                    <td className="px-4 py-2.5 text-right text-red-600">{formatCurrency(Number(b.totalDeducciones))}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-green-700">{formatCurrency(Number(b.salarioNeto))}</td>
-                    <td className="px-4 py-2.5 text-center">
-                      <a href={`/api/mis-boletas/${b.id}?modo=ver`} target="_blank" rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline text-xs font-medium mr-3">Ver</a>
-                      <a href={`/api/mis-boletas/${b.id}`}
-                        className="text-gray-500 hover:underline text-xs">Descargar</a>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="table-base tabla-tarjetas">
+                <thead>
+                  <tr>
+                    <th>Período</th>
+                    <th>Tipo</th>
+                    <th className="num">Bruto</th>
+                    <th className="num">Deducciones</th>
+                    <th className="num">Neto</th>
+                    <th>Boleta</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {boletas.length === 0 ? (
+                    <tr>
+                      <td colSpan={6}>
+                        <EstadoVacio titulo="Todavía no hay boletas de pago." detalle="Cuando se pague una planilla, su boleta aparecerá aquí." />
+                      </td>
+                    </tr>
+                  ) : boletas.map((b) => (
+                    <tr key={b.id}>
+                      <td data-titulo className="whitespace-nowrap font-medium text-gray-900">{formatDate(b.planilla.fechaInicio)} al {formatDate(b.planilla.fechaFin)}</td>
+                      <td data-etiqueta="Tipo">{etiquetaEstado(b.planilla.tipo)}</td>
+                      <td data-etiqueta="Bruto" className="num whitespace-nowrap">{formatCurrency(Number(b.totalBruto))}</td>
+                      <td data-etiqueta="Deducciones" className="num whitespace-nowrap text-gray-500">{formatCurrency(Number(b.totalDeducciones))}</td>
+                      <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(b.salarioNeto))}</td>
+                      <td data-accion className="whitespace-nowrap">
+                        <a href={`/api/mis-boletas/${b.id}?modo=ver`} target="_blank" rel="noopener noreferrer"
+                          className="mr-3 text-sm font-medium text-blue-700 hover:underline">Ver</a>
+                        <a href={`/api/mis-boletas/${b.id}`}
+                          className="text-sm text-gray-600 hover:underline">Descargar</a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -351,33 +354,33 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
       {tab === "salud" && <SaludFamilia endpoint="/api/mi-espacio/salud-familia" descripcionPropia />}
 
       {tab === "datos" && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 max-w-2xl">
-          <h2 className="font-semibold text-gray-900 mb-1">Mis datos personales</h2>
-          <p className="text-xs text-gray-500 mb-4">
+        <div className="panel max-w-2xl p-5">
+          <h2 className="mb-1 font-semibold text-gray-900">Mis datos personales</h2>
+          <p className="mb-4 text-sm text-gray-500">
             Puede actualizar sus datos de contacto. Para cambios de salario, puesto o
             identidad contacte a Recursos Humanos.
           </p>
           {loading || !datos ? (
-            <p className="text-sm text-gray-400">Cargando…</p>
+            <p className="text-sm text-gray-500">Cargando…</p>
           ) : (
-            <form onSubmit={guardarDatos} className="grid sm:grid-cols-2 gap-4">
+            <form onSubmit={guardarDatos} className="grid gap-4 sm:grid-cols-2">
               {CAMPOS_DATOS.map(({ k, l }) => (
                 <div key={k} className={k === "direccion" ? "sm:col-span-2" : ""}>
-                  <label className="block text-xs text-gray-600 mb-1">{l}</label>
-                  <input
-                    type="text"
-                    value={datos[k] ?? ""}
-                    onChange={(e) => setDatos({ ...datos, [k]: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
+                  <Campo etiqueta={l}>
+                    <input
+                      type="text"
+                      value={datos[k] ?? ""}
+                      onChange={(e) => setDatos({ ...datos, [k]: e.target.value })}
+                      className="input"
+                    />
+                  </Campo>
                 </div>
               ))}
-              <div className="sm:col-span-2 flex items-center gap-3">
-                <button type="submit" disabled={guardandoDatos}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              <div className="flex items-center gap-3 sm:col-span-2">
+                <button type="submit" disabled={guardandoDatos} className="btn btn-primary">
                   {guardandoDatos ? "Guardando…" : "Guardar cambios"}
                 </button>
-                {datosMsg && <span className="text-xs text-gray-600">{datosMsg}</span>}
+                {datosMsg && <span className="text-sm text-gray-600">{datosMsg}</span>}
               </div>
             </form>
           )}
@@ -385,31 +388,31 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
       )}
 
       {tab === "aprobaciones" && puedeAprobar && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">Solicitudes pendientes de aprobación</div>
+        <div className="panel overflow-hidden">
+          <div className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">Solicitudes pendientes de aprobación</div>
           {loading ? (
-            <p className="p-5 text-sm text-gray-400">Cargando…</p>
+            <p className="p-5 text-sm text-gray-500">Cargando…</p>
           ) : aprobaciones.length === 0 ? (
-            <p className="p-5 text-sm text-gray-400">No hay solicitudes pendientes.</p>
+            <EstadoVacio titulo="No hay solicitudes pendientes." detalle="Cuando alguien pida un permiso o vacaciones, aparecerá aquí para su respuesta." />
           ) : (
-            <ul className="divide-y divide-gray-50">
+            <ul className="divide-y divide-gray-100">
               {aprobaciones.map((p) => (
-                <li key={p.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       {p.empleado ? `${p.empleado.primerNombre} ${p.empleado.primerApellido}` : "Empleado"}
-                      <span className="text-gray-400 font-normal"> · {p.empleado?.codigo}</span>
+                      <span className="font-normal text-gray-500">, {p.empleado?.codigo}</span>
                     </p>
                     <p className="text-xs text-gray-500">
-                      {TIPOS.find((t) => t.v === p.tipo)?.l ?? p.tipo} · {formatDate(p.fechaInicio)} – {formatDate(p.fechaFin)} · {p.diasSolicitados} día(s)
+                      {TIPOS.find((t) => t.v === p.tipo)?.l ?? p.tipo}, {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}, {p.diasSolicitados} día(s)
                     </p>
-                    {p.motivo && <p className="text-xs text-gray-400 mt-0.5">“{p.motivo}”</p>}
+                    {p.motivo && <p className="mt-0.5 text-xs text-gray-500">“{p.motivo}”</p>}
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex shrink-0 gap-2">
                     <button onClick={() => resolver(p.id, "APROBADO")}
-                      className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700">Aprobar</button>
+                      className="btn btn-secondary btn-sm">Aprobar</button>
                     <button onClick={() => resolver(p.id, "RECHAZADO")}
-                      className="px-3 py-1.5 border border-red-300 text-red-700 text-xs font-medium rounded-lg hover:bg-red-50">Rechazar</button>
+                      className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50">Rechazar</button>
                   </div>
                 </li>
               ))}

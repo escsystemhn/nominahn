@@ -76,7 +76,7 @@ export default function SaludFamilia({ endpoint, descripcionPropia = false }: { 
     }
   }
 
-  if (!permisos) return <p className="text-sm text-gray-400">Cargando…</p>;
+  if (!permisos) return <p className="text-sm text-gray-500">Cargando…</p>;
   const sumaBen = beneficiarios.filter((b) => b.nombre.trim()).map((b) => Number(b.porcentaje) || 0);
   const valBen = validarPorcentajes(sumaBen);
   const editarBen = permisos.editarBeneficiarios ?? permisos.editarFamilia;
@@ -133,7 +133,7 @@ export default function SaludFamilia({ endpoint, descripcionPropia = false }: { 
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-700 sm:col-span-6">
                   <label className="flex items-center gap-2"><input type="checkbox" checked={f.esDependiente} disabled={!permisos.editarFamilia} onChange={(e) => setFamiliares((l) => l.map((x, j) => j === i ? { ...x, esDependiente: e.target.checked } : x))} />Dependiente</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={f.esContactoEmergencia} disabled={!permisos.editarFamilia} onChange={(e) => setFamiliares((l) => l.map((x, j) => j === i ? { ...x, esContactoEmergencia: e.target.checked } : x))} />Contacto de emergencia</label>
-                  {permisos.editarFamilia && <button type="button" className="ml-auto text-xs text-red-700 hover:underline" onClick={() => setFamiliares((l) => l.filter((_, j) => j !== i))}>Quitar</button>}
+                  {permisos.editarFamilia && <button type="button" className="btn btn-sm ml-auto border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => setFamiliares((l) => l.filter((_, j) => j !== i))}>Quitar</button>}
                 </div>
               </div>
             ))}
@@ -141,7 +141,7 @@ export default function SaludFamilia({ endpoint, descripcionPropia = false }: { 
           {permisos.editarFamilia && (
             <div className="flex items-center justify-between gap-3">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFamiliares((l) => [...l, famVacio()])}>Agregar familiar</button>
-              <div className="flex items-center gap-3">{msg("familia")}<button type="button" className="btn btn-primary" onClick={() => void guardar("familia")} disabled={guardando === "familia"}>{guardando === "familia" ? "Guardando…" : "Guardar familiares"}</button></div>
+              <div className="flex items-center gap-3">{msg("familia")}<button type="button" className="btn btn-secondary" onClick={() => void guardar("familia")} disabled={guardando === "familia"}>{guardando === "familia" ? "Guardando…" : "Guardar familiares"}</button></div>
             </div>
           )}
         </section>
@@ -167,13 +167,13 @@ export default function SaludFamilia({ endpoint, descripcionPropia = false }: { 
                   </select>
                   <input aria-label="Identidad del beneficiario" className="input" placeholder="Identidad" value={b.identidad} onChange={(e) => setBeneficiarios((l) => l.map((x, j) => j === i ? { ...x, identidad: e.target.value } : x))} />
                   <input aria-label="Porcentaje" type="number" min={0.01} max={100} step="0.01" className="input" placeholder="%" value={b.porcentaje} onChange={(e) => setBeneficiarios((l) => l.map((x, j) => j === i ? { ...x, porcentaje: e.target.value } : x))} />
-                  <button type="button" className="text-xs text-red-700 hover:underline" onClick={() => setBeneficiarios((l) => l.filter((_, j) => j !== i))}>Quitar</button>
+                  <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => setBeneficiarios((l) => l.filter((_, j) => j !== i))}>Quitar</button>
                 </div>
               ))}
               {!valBen.ok && beneficiarios.some((b) => b.nombre.trim()) && <p className="text-xs text-red-700">{valBen.error}</p>}
               <div className="flex items-center justify-between gap-3">
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setBeneficiarios((l) => [...l, benVacio()])}>Agregar beneficiario</button>
-                <div className="flex items-center gap-3">{msg("beneficiarios")}<button type="button" className="btn btn-primary" onClick={() => void guardar("beneficiarios")} disabled={guardando === "beneficiarios" || !valBen.ok}>{guardando === "beneficiarios" ? "Guardando…" : "Guardar beneficiarios"}</button></div>
+                <div className="flex items-center gap-3">{msg("beneficiarios")}<button type="button" className="btn btn-secondary" onClick={() => void guardar("beneficiarios")} disabled={guardando === "beneficiarios" || !valBen.ok}>{guardando === "beneficiarios" ? "Guardando…" : "Guardar beneficiarios"}</button></div>
               </div>
             </div>
           ) : (

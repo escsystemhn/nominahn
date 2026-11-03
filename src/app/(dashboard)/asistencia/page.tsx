@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { conAlcance, filtroPorEmpleado, filtroSucursales } from "@/lib/auth/alcance";
 import { formatDate, hoyHN, fechaCalendario } from "@/lib/utils";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import AsistenciaClient from "@/components/attendance/AsistenciaClient";
 import BarraDatos from "@/components/importacion/BarraDatos";
 import PageHeader from "@/components/ui/PageHeader";
+import FranjaCifras from "@/components/ui/FranjaCifras";
 
 export const metadata = { title: "Asistencia" };
 
@@ -25,9 +27,7 @@ export default async function AsistenciaPage({
     prisma.marcaje.findMany({
       where: {
         fecha,
-        ...(sp.sucursalId
-          ? { empleado: { sucursalId: sp.sucursalId } }
-          : {}),
+        AND: [sp.sucursalId ? { empleado: { sucursalId: sp.sucursalId } } : {}, filtroPorEmpleado(usuario)],
       },
       include: {
         empleado: {
@@ -60,14 +60,11 @@ export default async function AsistenciaPage({
       }))
     ),
     prisma.empleado.findMany({
-      where: {
-        estado: "ACTIVO",
-        ...(sp.sucursalId ? { sucursalId: sp.sucursalId } : {}),
-      },
+      where: conAlcance({ estado: "ACTIVO", ...(sp.sucursalId ? { sucursalId: sp.sucursalId } : {}) }, usuario),
       select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true },
       orderBy: { primerApellido: "asc" },
     }),
-    prisma.sucursal.findMany({ select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
+    prisma.sucursal.findMany({ where: filtroSucursales(usuario), select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
   ]);
 
   const presentes = marcajes.filter((m) => !m.esAusencia).length;
@@ -92,22 +89,14 @@ export default async function AsistenciaPage({
         }
       />
 
-      {/* Resumen del día: una franja con divisores, sin semáforo de colores. */}
-      <section aria-label="Resumen del día">
-        <div className="grid grid-cols-3 divide-x divide-gray-200 border-b border-gray-200">
-          {[
-            { label: "Presentes", value: presentes, detalle: "con marcaje registrado" },
-            { label: "Ausentes", value: ausentes, detalle: "sin marcaje ni permiso" },
-            { label: "Horas extra", value: horasExtraTotal.toFixed(1), detalle: "en total, todas las jornadas" },
-          ].map((s) => (
-            <div key={s.label} className="px-5 py-4 first:pl-0 lg:px-6 lg:first:pl-0">
-              <p className="text-sm text-gray-500">{s.label}</p>
-              <p className="tnum mt-1 text-2xl font-semibold leading-none text-gray-900">{s.value}</p>
-              <p className="mt-1.5 text-xs text-gray-500">{s.detalle}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <FranjaCifras
+        etiqueta="Resumen del día"
+        cifras={[
+          { label: "Presentes", valor: presentes, detalle: "con marcaje registrado" },
+          { label: "Ausentes", valor: ausentes, detalle: "sin marcaje ni permiso" },
+          { label: "Horas extra", valor: horasExtraTotal.toFixed(1), detalle: "en total, todas las jornadas" },
+        ]}
+      />
 
       <AsistenciaClient
         marcajes={marcajes}

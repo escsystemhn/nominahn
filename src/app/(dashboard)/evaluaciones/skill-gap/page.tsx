@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { etiquetaPuesto } from "@/lib/organizacion/estructura";
 import SkillGapClient from "./SkillGapClient";
 
-export const metadata = { title: "Análisis de Brechas | NominaHN" };
+export const metadata = { title: "Análisis de brechas" };
 
 export default async function SkillGapPage({
   searchParams,

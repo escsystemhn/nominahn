@@ -19,11 +19,19 @@ export interface OpcionesEstructura {
 export default function FiltroEstructura({
   conDivisiones, sucursales, divisiones, departamentos, inicial,
 }: OpcionesEstructura & { inicial: { sucursalId?: string; divisionId?: string; departamentoId?: string } }) {
-  const [v, setV] = useState({
+  const desdeUrl = {
     sucursalId: inicial.sucursalId ?? "",
     divisionId: conDivisiones ? inicial.divisionId ?? "" : "",
     departamentoId: inicial.departamentoId ?? "",
-  });
+  };
+  const [v, setV] = useState(desdeUrl);
+  // Sin volver a montar la pantalla, «Quitar filtros» sólo llega por aquí.
+  const claveUrl = JSON.stringify(desdeUrl);
+  const [claveVista, setClaveVista] = useState(claveUrl);
+  if (claveUrl !== claveVista) {
+    setClaveVista(claveUrl);
+    setV(desdeUrl);
+  }
   const nombreSucursal = (id: string) => sucursales.find((s) => s.id === id)?.nombre ?? "";
   const divs = divisiones.filter((d) => !v.sucursalId || d.sucursalId === v.sucursalId);
   const deps = departamentos.filter((d) => (!v.sucursalId || d.sucursalId === v.sucursalId) && (!v.divisionId || d.divisionId === v.divisionId));

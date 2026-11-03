@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
+import { useAvisos } from "@/components/ui/Avisos";
+import { PRODUCTO } from "@/lib/marca";
 
 interface Competencia {
   id: string;
@@ -42,6 +44,7 @@ const NIVEL_LABEL: Record<string, string> = {
 
 export default function EvaluarPage() {
   const { token } = useParams<{ token: string }>();
+  const { avisar } = useAvisos();
 
   const [data, setData] = useState<EvalData | null>(null);
   const [error, setError] = useState("");
@@ -81,7 +84,7 @@ export default function EvaluarPage() {
     // Validar que todas las competencias tienen calificación
     for (const c of data.competenciasRequeridas) {
       if (!scores[c.id] || scores[c.id] === 0) {
-        alert(`Por favor califica la competencia: ${c.nombre}`);
+        avisar.error(`Por favor califica la competencia: ${c.nombre}`);
         return;
       }
     }
@@ -117,7 +120,7 @@ export default function EvaluarPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500 animate-pulse">Cargando evaluación...</div>
+        <div className="text-gray-500 animate-pulse">Cargando evaluación…</div>
       </div>
     );
   }
@@ -127,7 +130,7 @@ export default function EvaluarPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
@@ -143,7 +146,7 @@ export default function EvaluarPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md text-center">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8 text-red-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
@@ -171,7 +174,7 @@ export default function EvaluarPage() {
               className="w-10 h-10 rounded-lg shrink-0"
             />
             <div>
-              <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide">NominaHN · Evaluaciones</p>
+              <p className="text-xs text-blue-600 font-semibold">Evaluaciones de {PRODUCTO}</p>
               <h1 className="text-lg font-bold text-gray-900">{ROL_LABEL[participante.rol] ?? participante.rol}</h1>
             </div>
           </div>
@@ -181,7 +184,7 @@ export default function EvaluarPage() {
               <span className="text-gray-500">Evaluado:</span>{" "}
               <span className="font-medium">{evaluacion.empleado.primerNombre} {evaluacion.empleado.primerApellido}</span>
               {evaluacion.empleado.puesto && (
-                <span className="text-gray-400 ml-1">— {evaluacion.empleado.puesto.nombre}</span>
+                <span className="text-gray-500 ml-1">— {evaluacion.empleado.puesto.nombre}</span>
               )}
             </p>
             <p>
@@ -221,7 +224,7 @@ export default function EvaluarPage() {
                       </div>
                       <div className="text-right min-w-[48px]">
                         <span className="text-2xl font-bold text-blue-700">{scores[comp.id] ?? 0}</span>
-                        <p className="text-xs text-gray-400">/ 100</p>
+                        <p className="text-xs text-gray-500">/ 100</p>
                       </div>
                     </div>
 
@@ -235,7 +238,7 @@ export default function EvaluarPage() {
                       onChange={(e) => setScores((prev) => ({ ...prev, [comp.id]: Number(e.target.value) }))}
                       className="w-full accent-blue-600 mb-2"
                     />
-                    <div className="flex justify-between text-xs text-gray-400 mb-3">
+                    <div className="flex justify-between text-xs text-gray-500 mb-3">
                       <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
                     </div>
 
@@ -258,7 +261,7 @@ export default function EvaluarPage() {
 
             <div className="flex items-center gap-4 mb-3">
               <span className="text-3xl font-bold text-blue-700">{calGeneral}</span>
-              <span className="text-gray-400">/ 100</span>
+              <span className="text-gray-500">/ 100</span>
             </div>
             <input
               type="range"

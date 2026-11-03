@@ -171,7 +171,8 @@ export async function requerirSesion(
 
 /**
  * Redirige en vez de responder con un código: un usuario que llega a una URL que
- * no le corresponde va a su propio espacio, no a una pantalla de error.
+ * no le corresponde va a su propio espacio, no a una pantalla de error. Una cuenta
+ * sin empleado vinculado no tiene ese espacio: va al inicio.
  */
 export async function requerirPermisoPagina(
   permiso: Permiso | readonly Permiso[]
@@ -183,7 +184,7 @@ export async function requerirPermisoPagina(
   if (tienePasswordTemporal(usuario)) redirect("/mi-cuenta");
 
   const pedidos = Array.isArray(permiso) ? permiso : [permiso as Permiso];
-  if (!tieneAlguno(usuario.permisos, pedidos)) redirect("/mi-espacio");
+  if (!tieneAlguno(usuario.permisos, pedidos)) redirect(usuario.empleadoId ? "/mi-espacio" : "/dashboard");
 
   return usuario;
 }

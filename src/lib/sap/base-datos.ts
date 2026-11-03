@@ -73,7 +73,7 @@ export function configDriver(cfg: ConfigBaseDatosSap, baseDatos: string): sql.co
       encrypt: cfg.cifrar,
       trustServerCertificate: cfg.confiarCertificado,
       enableArithAbort: true,
-      appName: "NominaHN",
+      appName: "Gestion360 Nomina",
       // Declara la intención: en un grupo de disponibilidad va a una réplica de lectura.
       readOnlyIntent: true,
     },

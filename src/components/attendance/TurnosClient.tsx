@@ -10,7 +10,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import PageHeader from "@/components/ui/PageHeader";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatDate } from "@/lib/utils";
 import {
   validarTurno,
@@ -63,6 +65,7 @@ const nombreEmp = (e: EmpleadoTurno) => [e.primerNombre, e.segundoNombre, e.prim
 const hoy = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" });
 
 export default function TurnosClient({ puedeEditar, departamentos, sucursales }: { puedeEditar: boolean; departamentos: { id: string; nombre: string }[]; sucursales: { id: string; nombre: string }[] }) {
+  const { confirmar } = useAvisos();
   const [turnos, setTurnos] = useState<Turno[] | null>(null);
   const [empleados, setEmpleados] = useState<EmpleadoTurno[]>([]);
   const [porDefecto, setPorDefecto] = useState<{ nombre: string } | null>(null);
@@ -105,7 +108,7 @@ export default function TurnosClient({ puedeEditar, departamentos, sucursales }:
   }
 
   async function borrar(t: Turno) {
-    if (!confirm(`¿Borrar el turno ${t.nombre}?`)) return;
+    if (!(await confirmar({ titulo: `¿Borrar el turno ${t.nombre}?`, accion: "Borrar", peligro: true }))) return;
     const res = await fetch(`/api/turnos/${t.id}`, { method: "DELETE" });
     const d = await res.json();
     setAviso(res.ok ? { ok: true, texto: "Turno borrado." } : { ok: false, texto: d.error ?? "No se pudo borrar" });
@@ -192,32 +195,32 @@ export default function TurnosClient({ puedeEditar, departamentos, sucursales }:
 
       <section className="panel overflow-hidden" aria-label="Turnos">
         {turnos === null ? (
-          <p className="p-6 text-sm text-gray-400">Cargando…</p>
+          <p className="p-6 text-sm text-gray-500">Cargando…</p>
         ) : turnos.length === 0 ? (
-          <p className="p-6 text-sm text-gray-500">No hay turnos definidos: todos usan el diurno de 8 horas, de 08:00 a 17:00 con una hora de almuerzo. {puedeEditar ? "Cree turnos si hay horarios distintos o jornadas nocturnas." : ""}</p>
+          <EstadoVacio titulo="No hay turnos definidos." detalle={`Todos usan el diurno de 8 horas, de 08:00 a 17:00 con una hora de almuerzo.${puedeEditar ? " Cree turnos si hay horarios distintos o jornadas nocturnas." : ""}`} />
         ) : (
           <div className="overflow-x-auto">
-            <table className="table-base text-sm">
+            <table className="table-base tabla-tarjetas">
               <thead>
-                <tr><th className="px-4">Turno</th><th className="px-4">Horario</th><th className="num px-4">Ordinarias</th><th className="num px-4">Almuerzo</th><th className="num px-4">Tolerancia</th><th className="num px-4">Empleados hoy</th><th className="px-4" /></tr>
+                <tr><th>Turno</th><th>Horario</th><th className="num">Ordinarias</th><th className="num">Almuerzo</th><th className="num">Tolerancia</th><th className="num">Empleados hoy</th><th><span className="sr-only">Acciones</span></th></tr>
               </thead>
               <tbody>
                 {turnos.map((t) => (
-                  <tr key={t.id} className={t.activo ? "" : "text-gray-400"}>
-                    <td className="px-4 py-2.5">
+                  <tr key={t.id} className={t.activo ? "" : "text-gray-500"}>
+                    <td data-titulo>
                       <span className="font-medium text-gray-900">{t.nombre}</span> <span className="font-mono text-xs text-gray-500">{t.codigo}</span>
                       <span className="block text-xs text-gray-500">Jornada {ETIQUETA_JORNADA[t.tipoJornada]}{t.esPorDefecto ? ", por omisión" : ""}{t.activo ? "" : ", inactivo"}</span>
                     </td>
-                    <td className="px-4 py-2.5">{describirTurno(t).horario}</td>
-                    <td className="num px-4 py-2.5">{t.jornadaHoras} h</td>
-                    <td className="num px-4 py-2.5">{t.almuerzoMinutos} min</td>
-                    <td className="num px-4 py-2.5">{t.toleranciaMinutos} min</td>
-                    <td className="num px-4 py-2.5">{t.empleadosHoy}</td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td data-etiqueta="Horario" className="whitespace-nowrap">{describirTurno(t).horario}</td>
+                    <td data-etiqueta="Ordinarias" className="num whitespace-nowrap">{t.jornadaHoras} h</td>
+                    <td data-etiqueta="Almuerzo" className="num whitespace-nowrap">{t.almuerzoMinutos} min</td>
+                    <td data-etiqueta="Tolerancia" className="num whitespace-nowrap">{t.toleranciaMinutos} min</td>
+                    <td data-etiqueta="Empleados hoy" className="num">{t.empleadosHoy}</td>
+                    <td data-accion className="text-right">
                       {puedeEditar && (
                         <div className="flex justify-end gap-2">
                           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ ...t })}>Editar</button>
-                          {t.empleadosHoy === 0 && <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => void borrar(t)}>Borrar</button>}
+                          {t.empleadosHoy === 0 && <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => void borrar(t)}>Borrar</button>}
                         </div>
                       )}
                     </td>
@@ -265,20 +268,20 @@ export default function TurnosClient({ puedeEditar, departamentos, sucursales }:
         )}
         <input className="input max-w-sm" placeholder="Buscar por nombre, código o departamento" value={buscar} onChange={(e) => setBuscar(e.target.value)} aria-label="Buscar empleado" />
         <div className="max-h-[28rem] overflow-auto">
-          <table className="table-base text-sm">
+          <table className="table-base">
             <thead>
               <tr>
-                {puedeEditar && <th className="w-8 px-3"><input type="checkbox" aria-label="Marcar todos" checked={filtrados.length > 0 && filtrados.every((e) => seleccion.has(e.id))} onChange={(e) => setSeleccion(e.target.checked ? new Set(filtrados.map((x) => x.id)) : new Set())} /></th>}
-                <th className="px-3">Empleado</th><th className="px-3">Departamento</th><th className="px-3">Turno hoy</th>
+                {puedeEditar && <th className="w-8"><input type="checkbox" aria-label="Marcar todos" checked={filtrados.length > 0 && filtrados.every((e) => seleccion.has(e.id))} onChange={(e) => setSeleccion(e.target.checked ? new Set(filtrados.map((x) => x.id)) : new Set())} /></th>}
+                <th>Empleado</th><th>Departamento</th><th>Turno hoy</th>
               </tr>
             </thead>
             <tbody>
               {filtrados.map((e) => (
                 <tr key={e.id}>
-                  {puedeEditar && <td className="px-3"><input type="checkbox" aria-label={`Marcar a ${nombreEmp(e)}`} checked={seleccion.has(e.id)} onChange={(ev) => setSeleccion((s) => { const n = new Set(s); if (ev.target.checked) n.add(e.id); else n.delete(e.id); return n; })} /></td>}
-                  <td className="px-3 py-2">{nombreEmp(e)}<span className="block text-xs text-gray-500">{e.codigo}</span></td>
-                  <td className="px-3 py-2">{e.departamento.nombre}<span className="block text-xs text-gray-500">{e.sucursal.nombre}</span></td>
-                  <td className="px-3 py-2">
+                  {puedeEditar && <td><input type="checkbox" aria-label={`Marcar a ${nombreEmp(e)}`} checked={seleccion.has(e.id)} onChange={(ev) => setSeleccion((s) => { const n = new Set(s); if (ev.target.checked) n.add(e.id); else n.delete(e.id); return n; })} /></td>}
+                  <td>{nombreEmp(e)}<span className="block text-xs text-gray-500">{e.codigo}</span></td>
+                  <td>{e.departamento.nombre}<span className="block text-xs text-gray-500">{e.sucursal.nombre}</span></td>
+                  <td>
                     {e.turno ? `${e.turno.nombre}` : e.origen === "POR_DEFECTO" ? `${porDefecto?.nombre ?? ""} (por omisión)` : "Diurno 8 h (sin turno)"}
                     {e.desde && <span className="block text-xs text-gray-500">desde el {formatDate(e.desde)}</span>}
                   </td>

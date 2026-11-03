@@ -12,7 +12,9 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useAvisos } from "@/components/ui/Avisos";
 import PageHeader from "@/components/ui/PageHeader";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import {
   TIPOS,
   ETIQUETA_TIPO,
@@ -63,6 +65,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
   // Con SAP mandando, nadie edita aquí: ni siquiera quien tiene el permiso.
   const puedeEditar = puedeEditarProp && !origenSap;
   const router = useRouter();
+  const { confirmar } = useAvisos();
   const [busqueda, setBusqueda] = useState("");
   const [cerrados, setCerrados] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<{ modo: "nueva" | "editar"; id?: string; esSistema?: boolean } | null>(null);
@@ -157,7 +160,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
   }
 
   async function eliminar(c: CuentaCatalogo) {
-    if (!confirm(`¿Eliminar la cuenta ${c.codigo} ${c.nombre}?`)) return;
+    if (!(await confirmar({ titulo: `¿Eliminar la cuenta ${c.codigo} ${c.nombre}?`, accion: "Eliminar", peligro: true }))) return;
     setAviso(null);
     const res = await fetch(`/api/plan-cuentas/${c.id}`, { method: "DELETE" });
     const d = await res.json().catch(() => ({}));
@@ -181,7 +184,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
           <td className="whitespace-nowrap" style={{ paddingLeft: `${16 + n.nivel * 20}px` }}>
             <div className="flex items-center gap-1.5">
               {tieneHijos ? (
-                <button type="button" onClick={() => alternar(n.codigo)} className="text-gray-400 hover:text-gray-700" aria-label={abierta ? "Contraer" : "Expandir"}>
+                <button type="button" onClick={() => alternar(n.codigo)} className="text-gray-500 hover:text-gray-700" aria-label={abierta ? "Contraer" : "Expandir"}>
                   <IconoFlecha abierta={abierta} />
                 </button>
               ) : (
@@ -192,27 +195,27 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
           </td>
           <td className={cn(!n.esDetalle && "font-medium text-gray-900")}>
             {n.nombre}
-            {n.esSistema && <span className="ml-2 text-[11px] text-gray-400">sistema</span>}
+            {n.esSistema && <span className="ml-2 text-xs text-gray-500">sistema</span>}
           </td>
           <td className="whitespace-nowrap">{ETIQUETA_TIPO[n.tipo]}</td>
           <td className="whitespace-nowrap text-gray-500">
             {ETIQUETA_NATURALEZA[n.naturaleza]}
-            {NATURALEZA_NORMAL[n.tipo] !== n.naturaleza && <span className="ml-1 text-[11px] text-gray-400">contracuenta</span>}
+            {NATURALEZA_NORMAL[n.tipo] !== n.naturaleza && <span className="ml-1 text-xs text-gray-500">contracuenta</span>}
           </td>
           <td className="whitespace-nowrap text-gray-500">{n.esDetalle ? "Detalle" : "Grupo"}</td>
           <td className="whitespace-nowrap text-right">
             {puedeEditar && (
-              <div className="flex justify-end gap-3 text-xs font-medium">
+              <div className="flex justify-end gap-1">
                 {!n.esDetalle && (
-                  <button type="button" onClick={() => abrirNueva(n)} className="text-blue-600 hover:underline">
+                  <button type="button" onClick={() => abrirNueva(n)} className="btn btn-ghost btn-sm">
                     Subcuenta
                   </button>
                 )}
-                <button type="button" onClick={() => abrirEditar(n)} className="text-blue-600 hover:underline">
+                <button type="button" onClick={() => abrirEditar(n)} className="btn btn-ghost btn-sm">
                   Editar
                 </button>
                 {!n.esSistema && (
-                  <button type="button" onClick={() => eliminar(n)} className="text-red-700 hover:underline">
+                  <button type="button" onClick={() => eliminar(n)} className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50">
                     Eliminar
                   </button>
                 )}
@@ -280,9 +283,11 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
             <tbody>
               {cuentas.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center">
-                    <p className="text-sm font-medium text-gray-900">El catálogo está vacío.</p>
-                    <p className="mt-1 text-sm text-gray-500">Ejecute el seed para cargar el catálogo de ejemplo o cree la primera cuenta.</p>
+                  <td colSpan={6}>
+                    <EstadoVacio
+                      titulo="El catálogo está vacío."
+                      detalle={puedeEditar ? "Cree la primera cuenta con «Nueva cuenta»." : "Cuando se cree la primera cuenta, aparecerá aquí."}
+                    />
                   </td>
                 </tr>
               ) : (
@@ -295,7 +300,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-blue-950/50 p-4" role="dialog" aria-modal="true">
-          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl">
+          <div className="panel flex max-h-[92vh] w-full max-w-2xl flex-col shadow-xl">
             <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">{modal.modo === "nueva" ? "Nueva cuenta contable" : "Editar cuenta contable"}</h2>
@@ -328,7 +333,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
                       )}
                     >
                       <div className={cn("text-sm font-semibold", form.tipo === t.v ? "text-blue-800" : "text-gray-800")}>{t.l}</div>
-                      <div className="mt-0.5 font-mono text-xs text-gray-400">{t.prefijo}</div>
+                      <div className="mt-0.5 font-mono text-xs text-gray-500">{t.prefijo}</div>
                     </button>
                   ))}
                 </div>
@@ -338,8 +343,8 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
               <section className="space-y-4">
                 <h3 className="text-sm font-semibold text-gray-900">Datos de la cuenta</h3>
                 <div>
-                  <label htmlFor="cc-padre" className="mb-1 block text-sm font-medium text-gray-700">
-                    Cuenta madre <span className="font-normal text-gray-400">(opcional)</span>
+                  <label htmlFor="cc-padre" className="mb-1 block text-sm font-medium text-gray-800">
+                    Cuenta madre <span className="font-normal text-gray-500">(opcional)</span>
                   </label>
                   <select
                     id="cc-padre"
@@ -360,7 +365,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
                 </div>
                 <div className="grid gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
                   <div>
-                    <label htmlFor="cc-codigo" className="mb-1 block text-sm font-medium text-gray-700">
+                    <label htmlFor="cc-codigo" className="mb-1 block text-sm font-medium text-gray-800">
                       Código
                     </label>
                     <input
@@ -373,15 +378,15 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
                     />
                   </div>
                   <div>
-                    <label htmlFor="cc-nombre" className="mb-1 block text-sm font-medium text-gray-700">
+                    <label htmlFor="cc-nombre" className="mb-1 block text-sm font-medium text-gray-800">
                       Nombre
                     </label>
                     <input id="cc-nombre" value={form.nombre} onChange={(e) => set("nombre", e.target.value)} placeholder="Nombre de la cuenta" className="input" />
                   </div>
                 </div>
                 <div>
-                  <label htmlFor="cc-desc" className="mb-1 block text-sm font-medium text-gray-700">
-                    Descripción <span className="font-normal text-gray-400">(opcional)</span>
+                  <label htmlFor="cc-desc" className="mb-1 block text-sm font-medium text-gray-800">
+                    Descripción <span className="font-normal text-gray-500">(opcional)</span>
                   </label>
                   <textarea id="cc-desc" rows={2} value={form.descripcion} onChange={(e) => set("descripcion", e.target.value)} placeholder="Para qué se usa esta cuenta" className="input h-auto resize-none py-2" />
                 </div>
@@ -390,7 +395,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
               <section className="space-y-4">
                 <h3 className="text-sm font-semibold text-gray-900">Parámetros contables</h3>
                 <div>
-                  <p className="mb-2 text-sm font-medium text-gray-700">Naturaleza</p>
+                  <p className="mb-2 text-sm font-medium text-gray-800">Naturaleza</p>
                   <div className="grid grid-cols-2 gap-3">
                     {(["DEUDORA", "ACREEDORA"] as const).map((n) => (
                       <label
@@ -440,7 +445,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
                 Cancelar
               </button>
               <button type="button" onClick={guardar} disabled={guardando} className="btn btn-primary">
-                {guardando ? "Guardando" : modal.modo === "nueva" ? "Crear cuenta" : "Guardar cambios"}
+                {guardando ? "Guardando…" : modal.modo === "nueva" ? "Crear cuenta" : "Guardar cambios"}
               </button>
             </div>
           </div>

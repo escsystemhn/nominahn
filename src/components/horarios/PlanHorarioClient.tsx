@@ -9,8 +9,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAvisos } from "@/components/ui/Avisos";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import FranjaCifras from "@/components/ui/FranjaCifras";
 import { horaDeMinutos, ETIQUETA_EXTRA, type ClaseExtra } from "@/lib/horarios/ley";
 import { rango, fechaCorta, diaIso, periodoTexto, enumerar } from "@/lib/horarios/fechas";
 import type { Alerta, DiaCalculado, EmpleadoPlan, Faltante, ResumenEmpleado } from "@/lib/horarios/tipos";
@@ -51,6 +54,7 @@ interface Edicion {
 
 export default function PlanHorarioClient({ id, puedeEditar }: { id: string; puedeEditar: boolean }) {
   const router = useRouter();
+  const { confirmar } = useAvisos();
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState("");
   const [pestana, setPestana] = useState<Pestana>("matriz");
@@ -102,11 +106,11 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
 
   async function accion(a: "publicar" | "archivar" | "borrador") {
     const textos = {
-      publicar: "Al publicar, este horario pasa a ser el turno de cada día para el reloj y la planilla. ¿Publicar?",
-      archivar: "¿Archivar el plan? Deja de regir para el reloj y la planilla.",
-      borrador: "¿Volver el plan a borrador para editarlo? Mientras tanto deja de regir.",
+      publicar: { titulo: "¿Publicar el horario?", detalle: "Al publicar, este horario pasa a ser el turno de cada día para el reloj y la planilla.", accion: "Publicar" },
+      archivar: { titulo: "¿Archivar el plan?", detalle: "Deja de regir para el reloj y la planilla.", accion: "Archivar" },
+      borrador: { titulo: "¿Volver el plan a borrador para editarlo?", detalle: "Mientras tanto deja de regir.", accion: "Volver a borrador", peligro: true },
     };
-    if (!confirm(textos[a])) return;
+    if (!(await confirmar(textos[a]))) return;
     const r = await fetch(`/api/horarios/planes/${id}/estado`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: a }) });
     const d = await r.json().catch(() => ({}));
     setAviso(r.ok ? { ok: true, texto: a === "publicar" ? "Plan publicado." : a === "archivar" ? "Plan archivado." : "El plan volvió a borrador." } : { ok: false, texto: d.error ?? "No se pudo", detalle: d.detalle });
@@ -114,7 +118,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
   }
 
   async function eliminar() {
-    if (!confirm("¿Eliminar este plan? No se puede deshacer.")) return;
+    if (!(await confirmar({ titulo: "¿Eliminar este plan?", detalle: "No se puede deshacer.", accion: "Eliminar", peligro: true }))) return;
     const r = await fetch(`/api/horarios/planes/${id}`, { method: "DELETE" });
     if (r.ok) router.push("/horarios");
     else setAviso({ ok: false, texto: (await r.json().catch(() => ({}))).error ?? "No se pudo eliminar" });
@@ -162,7 +166,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
   const alertasFiltradas = validacion.alertas.filter((a) => (!filtroNivel || a.nivel === filtroNivel) && (!filtroTipo || a.tipo === filtroTipo));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
         title={plan.nombre}
         description={<>
@@ -179,7 +183,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
           {puedeEditar && plan.estado === "BORRADOR" && <button type="button" className="btn btn-primary" disabled={errLegales.length > 0} title={errLegales.length ? "Corrija los errores legales antes de publicar" : undefined} onClick={() => accion("publicar")}>Publicar</button>}
           {puedeEditar && plan.estado !== "BORRADOR" && <button type="button" className="btn btn-secondary" onClick={() => accion("borrador")}>Volver a borrador</button>}
           {puedeEditar && plan.estado !== "ARCHIVADO" && <button type="button" className="btn btn-ghost" onClick={() => accion("archivar")}>Archivar</button>}
-          {puedeEditar && plan.estado !== "PUBLICADO" && <button type="button" className="btn btn-ghost text-red-700" onClick={eliminar}>Eliminar</button>}
+          {puedeEditar && plan.estado !== "PUBLICADO" && <button type="button" className="btn border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={eliminar}>Eliminar</button>}
         </>}
       >
         <div role="tablist" className="flex flex-wrap gap-1 border-b border-gray-200">
@@ -192,21 +196,16 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
         </div>
       </PageHeader>
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-gray-200 bg-gray-200 sm:grid-cols-5">
-        {[
-          { t: "Errores legales", v: errLegales.length, c: errLegales.length ? "text-red-700" : "text-emerald-700", n: errLegales.length ? "Impiden publicar" : "Cumple el Código del Trabajo" },
-          { t: "Avisos", v: validacion.alertas.filter((a) => a.nivel === "AVISO").length, c: "text-gray-900", n: "Revise antes de publicar" },
-          { t: "Huecos de cobertura", v: validacion.faltantes.length, c: validacion.faltantes.length ? "text-amber-700" : "text-gray-900", n: "Franjas bajo el mínimo" },
-          { t: "Horas extra", v: Math.round(extraTotal * 100) / 100, c: extraTotal ? "text-amber-700" : "text-gray-900", n: extraTotal ? "Marcadas y clasificadas" : "Ninguna programada" },
-          { t: "Traslados", v: traslados, c: "text-gray-900", n: "Días en otra sucursal" },
-        ].map((k) => (
-          <div key={k.t} className="bg-white px-4 py-3">
-            <p className="text-xs text-gray-500">{k.t}</p>
-            <p className={`text-2xl font-semibold ${k.c}`}>{k.v}</p>
-            <p className="text-xs text-gray-500">{k.n}</p>
-          </div>
-        ))}
-      </div>
+      <FranjaCifras
+        etiqueta="Resumen del plan"
+        cifras={[
+          { label: "Errores legales", valor: errLegales.length, detalle: errLegales.length ? "Impiden publicar" : "Cumple el Código del Trabajo" },
+          { label: "Avisos", valor: validacion.alertas.filter((a) => a.nivel === "AVISO").length, detalle: "Revise antes de publicar" },
+          { label: "Huecos de cobertura", valor: validacion.faltantes.length, detalle: "Franjas bajo el mínimo" },
+          { label: "Horas extra", valor: Math.round(extraTotal * 100) / 100, detalle: extraTotal ? "Marcadas y clasificadas" : "Ninguna programada" },
+          { label: "Traslados", valor: traslados, detalle: "Días en otra sucursal" },
+        ]}
+      />
 
       {aviso && (
         <div role={aviso.ok ? "status" : "alert"} className={`rounded-md border px-3 py-2 text-sm ${aviso.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-800"}`}>
@@ -232,7 +231,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
             return (
               <section key={s.id} className="panel overflow-hidden">
                 <h2 className="border-b border-gray-200 px-4 py-3 text-base font-semibold text-gray-900">{s.nombre}</h2>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto" tabIndex={0} role="region" aria-label={`Horario de ${s.nombre}`}>
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr>
@@ -257,15 +256,15 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
             function filasPuesto(puesto: string) {
               return (
                 <Fragment key={puesto}>
-                  <tr><td colSpan={fechas.length + 2} className="bg-white px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">{puesto}</td></tr>
+                  <tr><td colSpan={fechas.length + 2} className="bg-white px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">{puesto}</td></tr>
                   {gente.filter((e) => e.puestoNombre === puesto).map((e) => {
                     const r = validacion.resumen.find((x) => x.empleadoId === e.id);
                     return (
                       <tr key={e.id} className="border-t border-gray-100">
                         <td className="sticky left-0 z-10 bg-white px-3 py-1.5">
                           <span className="font-medium text-gray-900">{e.nombre}</span>
-                          {e.edad < 18 && <span className="ml-1 text-[10px] text-pink-700" title="Menor de edad">{e.edad} años</span>}
-                          {e.exento && <span className="ml-1 text-[10px] text-gray-500" title="Cargo de dirección o confianza (Art. 325)">Art. 325</span>}
+                          {e.edad < 18 && <span className="ml-1 text-xs text-pink-700" title="Menor de edad">{e.edad} años</span>}
+                          {e.exento && <span className="ml-1 text-xs text-gray-500" title="Cargo de dirección o confianza (Art. 325)">Art. 325</span>}
                         </td>
                         {fechas.map((f) => {
                           const d = indice.dias.get(`${e.id}|${f}`);
@@ -284,7 +283,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
                               >
                                 <span className="whitespace-nowrap font-medium">{celda(d)}</span>
                                 {d?.estado === "TURNO" && (
-                                  <span className="text-[10px] opacity-75">
+                                  <span className="text-xs opacity-75">
                                     {d.tipo ? LETRA[d.tipo] : ""}{d.esTraslado ? ` → ${nombreSuc(d.sucursalId)}` : ""}{d.extraTotalMin ? ` +${(d.extraTotalMin / 60).toFixed(1)} h` : ""}
                                   </span>
                                 )}
@@ -307,35 +306,37 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
       )}
 
       {pestana === "resumen" && (
-        <section className="panel overflow-x-auto">
-          <table className="table-base">
-            <thead>
-              <tr><th>Persona</th><th>Puesto</th><th className="num">Días</th><th className="num">Horas ord.</th><th className="num">Horas extra</th><th>Por semana (ord. / tope)</th><th className="num">Máx. seguidos</th><th className="num">Descansos</th><th className="num">Fines de semana</th><th className="num">Aperturas</th><th className="num">Cierres</th><th className="num">Traslados</th></tr>
-            </thead>
-            <tbody>
-              {datos.empleados.map((e) => {
-                const r = validacion.resumen.find((x) => x.empleadoId === e.id);
-                if (!r) return null;
-                const clases = (Object.keys(r.extraPorClaseH) as ClaseExtra[]).filter((k) => r.extraPorClaseH[k] > 0).map((k) => `${r.extraPorClaseH[k]} h ${ETIQUETA_EXTRA[k]}`).join("; ");
-                return (
-                  <tr key={e.id}>
-                    <td className="font-medium text-gray-900">{e.nombre}</td>
-                    <td>{e.puestoNombre}</td>
-                    <td className="num">{r.diasTrabajados}</td>
-                    <td className="num">{r.ordinariasH}</td>
-                    <td className={`num ${r.extraH ? "font-semibold text-amber-700" : ""}`} title={clases}>{r.extraH}</td>
-                    <td className="text-xs text-gray-600">{r.semanas.map((s) => `${s.ordinariasH}/${s.topeH}`).join(", ")}</td>
-                    <td className={`num ${r.maxConsecutivos > 6 ? "font-semibold text-red-700" : ""}`}>{r.maxConsecutivos}</td>
-                    <td className="num">{r.descansos}</td>
-                    <td className={`num ${r.descansosFinDeSemana === 0 ? "text-amber-700" : ""}`}>{r.descansosFinDeSemana}</td>
-                    <td className="num">{r.aperturas}</td>
-                    <td className="num">{r.cierres}</td>
-                    <td className="num">{r.traslados}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <section className="panel overflow-hidden">
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Resumen del plan">
+            <table className="table-base tabla-tarjetas">
+              <thead>
+                <tr><th>Persona</th><th>Puesto</th><th className="num">Días</th><th className="num">Horas ord.</th><th className="num">Horas extra</th><th>Por semana (ord. / tope)</th><th className="num">Máx. seguidos</th><th className="num">Descansos</th><th className="num">Fines de semana</th><th className="num">Aperturas</th><th className="num">Cierres</th><th className="num">Traslados</th></tr>
+              </thead>
+              <tbody>
+                {datos.empleados.map((e) => {
+                  const r = validacion.resumen.find((x) => x.empleadoId === e.id);
+                  if (!r) return null;
+                  const clases = (Object.keys(r.extraPorClaseH) as ClaseExtra[]).filter((k) => r.extraPorClaseH[k] > 0).map((k) => `${r.extraPorClaseH[k]} h ${ETIQUETA_EXTRA[k]}`).join("; ");
+                  return (
+                    <tr key={e.id}>
+                      <td data-titulo className="font-medium text-gray-900">{e.nombre}</td>
+                      <td data-etiqueta="Puesto">{e.puestoNombre}</td>
+                      <td data-etiqueta="Días" className="num">{r.diasTrabajados}</td>
+                      <td data-etiqueta="Horas ord." className="num">{r.ordinariasH}</td>
+                      <td data-etiqueta="Horas extra" className={`num ${r.extraH ? "font-semibold text-amber-700" : ""}`} title={clases}>{r.extraH}</td>
+                      <td data-etiqueta="Por semana" className="text-xs text-gray-600">{r.semanas.map((s) => `${s.ordinariasH}/${s.topeH}`).join(", ")}</td>
+                      <td data-etiqueta="Máx. seguidos" className={`num ${r.maxConsecutivos > 6 ? "font-semibold text-red-700" : ""}`}>{r.maxConsecutivos}</td>
+                      <td data-etiqueta="Descansos" className="num">{r.descansos}</td>
+                      <td data-etiqueta="Fines de semana" className={`num ${r.descansosFinDeSemana === 0 ? "text-amber-700" : ""}`}>{r.descansosFinDeSemana}</td>
+                      <td data-etiqueta="Aperturas" className="num">{r.aperturas}</td>
+                      <td data-etiqueta="Cierres" className="num">{r.cierres}</td>
+                      <td data-etiqueta="Traslados" className="num">{r.traslados}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -349,13 +350,11 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
               <option value="">Legales y operativas</option><option value="LEGAL">Legales</option><option value="OPERATIVA">Operativas</option>
             </select>
           </div>
-          {alertasFiltradas.length === 0 && <p className="text-sm text-gray-500">Sin alertas con esos filtros.</p>}
+          {alertasFiltradas.length === 0 && <EstadoVacio titulo="Sin alertas con esos filtros." detalle="Cambie el nivel o el tipo para ver las demás." />}
           <ul className="divide-y divide-gray-100">
             {alertasFiltradas.map((a, i) => (
               <li key={i} className="flex gap-3 py-2 text-sm">
-                <span className={`mt-0.5 shrink-0 rounded px-1.5 text-[11px] font-semibold ${a.nivel === "ERROR" ? "bg-red-100 text-red-800" : a.nivel === "AVISO" ? "bg-amber-100 text-amber-900" : "bg-gray-100 text-gray-600"}`}>
-                  {a.nivel === "ERROR" ? "Error" : a.nivel === "AVISO" ? "Aviso" : "Info"}
-                </span>
+                <EstadoBadge className="mt-0.5 shrink-0" valor={a.nivel} etiqueta={a.nivel === "ERROR" ? "Error" : a.nivel === "AVISO" ? "Aviso" : "Información"} tono={a.nivel === "ERROR" ? "error" : a.nivel === "AVISO" ? "aviso" : "neutro"} />
                 <span className="text-gray-800">{a.mensaje}{a.articulo && <span className="ml-1 text-xs text-gray-500">({a.articulo})</span>}</span>
               </li>
             ))}
@@ -371,19 +370,31 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
               {datos.notas.map((n, i) => <p key={i} className={n.nivel === "ERROR" ? "text-red-800" : n.nivel === "AVISO" ? "text-amber-900" : "text-gray-700"}>{n.mensaje}</p>)}
             </section>
           )}
-          <section className="panel overflow-x-auto">
-            <table className="table-base">
-              <thead><tr><th>Sucursal</th><th>Puesto</th><th>Fecha</th><th>Franja</th><th className="num">Requeridos</th><th className="num">Programados</th></tr></thead>
-              <tbody>
-                {validacion.faltantes.length === 0 && <tr><td colSpan={6} className="text-emerald-700">Todas las franjas tienen el personal mínimo.</td></tr>}
-                {validacion.faltantes.map((f, i) => (
-                  <tr key={i}>
-                    <td>{nombreSuc(f.sucursalId)}</td><td>{datos.puestos[f.puestoId] ?? ""}</td><td>{fechaCorta(f.fecha)}</td>
-                    <td>{horaDeMinutos(f.desde)}–{horaDeMinutos(f.hasta)}</td><td className="num">{f.requeridos}</td><td className="num text-amber-700">{f.programados}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <section className="panel overflow-hidden">
+            <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Cobertura por franja">
+              <table className="table-base tabla-tarjetas">
+                <thead><tr><th>Sucursal</th><th>Puesto</th><th>Fecha</th><th>Franja</th><th className="num">Requeridos</th><th className="num">Programados</th></tr></thead>
+                <tbody>
+                  {validacion.faltantes.length === 0 && (
+                    <tr>
+                      <td colSpan={6}>
+                        <EstadoVacio titulo="Todas las franjas tienen el personal mínimo." detalle="No hay huecos de cobertura en este plan." />
+                      </td>
+                    </tr>
+                  )}
+                  {validacion.faltantes.map((f, i) => (
+                    <tr key={i}>
+                      <td data-titulo>{nombreSuc(f.sucursalId)}</td>
+                      <td data-etiqueta="Puesto">{datos.puestos[f.puestoId] ?? ""}</td>
+                      <td data-etiqueta="Fecha">{fechaCorta(f.fecha)}</td>
+                      <td data-etiqueta="Franja" className="whitespace-nowrap">{horaDeMinutos(f.desde)}–{horaDeMinutos(f.hasta)}</td>
+                      <td data-etiqueta="Requeridos" className="num">{f.requeridos}</td>
+                      <td data-etiqueta="Programados" className="num text-amber-700">{f.programados}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       )}

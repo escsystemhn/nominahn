@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -20,8 +21,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
 
   // El empleado debe existir: sin esto, un id inválido crea una deducción huérfana.
-  const empleado = await prisma.empleado.findUnique({ where: { id }, select: { id: true } });
-  if (!empleado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, id))) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
 
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;

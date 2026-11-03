@@ -139,6 +139,6 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     empleado: empleado.codigo,
-    supervisor: supervisor ? `${supervisor.codigo} · ${supervisor.primerNombre} ${supervisor.primerApellido}` : null,
+    supervisor: supervisor ? `${supervisor.codigo}, ${supervisor.primerNombre} ${supervisor.primerApellido}` : null,
   });
 }

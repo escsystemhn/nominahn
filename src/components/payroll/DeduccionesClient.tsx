@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, nombreCompleto } from "@/lib/utils";
 import BarraDatos from "@/components/importacion/BarraDatos";
+import { useAvisos } from "@/components/ui/Avisos";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 interface TipoDeduccion {
   id: string;
@@ -41,17 +45,20 @@ interface Props {
   /** Permisos ya resueltos en el servidor: aquí sólo deciden qué se dibuja. */
   puedeExportar: boolean;
   puedeImportar: boolean;
+  /** Solicitudes de préstamo por atender: van bajo el título, no encima. */
+  solicitudes?: React.ReactNode;
 }
 
-const tiposBadge: Record<string, string> = {
-  LEGAL: "bg-blue-100 text-blue-700",
-  PRESTAMO: "bg-amber-100 text-amber-700",
-  ADELANTO: "bg-orange-100 text-orange-700",
-  COOPERATIVA: "bg-purple-100 text-purple-700",
-  AFP: "bg-indigo-100 text-indigo-700",
-  IMPUESTO: "bg-red-100 text-red-700",
-  VOLUNTARIA: "bg-gray-100 text-gray-700",
-  OTRO: "bg-gray-100 text-gray-700",
+/** El tipo de deducción en palabras, no el nombre del enum. */
+const TIPO_TEXTO: Record<string, string> = {
+  LEGAL: "Legal",
+  PRESTAMO: "Préstamo",
+  ADELANTO: "Adelanto",
+  COOPERATIVA: "Cooperativa",
+  AFP: "AFP",
+  IMPUESTO: "Impuesto",
+  VOLUNTARIA: "Voluntaria",
+  OTRO: "Otro",
 };
 
 type FormaCobro = "UNA_VEZ" | "CUOTAS" | "SIEMPRE";
@@ -68,8 +75,10 @@ export default function DeduccionesClient({
   empleados,
   puedeExportar,
   puedeImportar,
+  solicitudes,
 }: Props) {
   const router = useRouter();
+  const { avisar } = useAvisos();
   const [tab, setTab] = useState<"tipos" | "empleados">("tipos");
   const [loading, setLoading] = useState(false);
   const [modalTipo, setModalTipo] = useState(false);
@@ -116,9 +125,10 @@ export default function DeduccionesClient({
       });
       if (!res.ok) throw new Error();
       setModalTipo(false);
+      avisar.exito("Tipo de deducción creado.");
       router.refresh();
     } catch {
-      alert("No se pudo crear el tipo de deducción. Intente nuevamente.");
+      avisar.error("No se pudo crear el tipo de deducción. Revise los datos e intente de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -143,38 +153,41 @@ export default function DeduccionesClient({
         throw new Error(d.error);
       }
       setModalEmp(false);
+      avisar.exito("Deducción asignada.");
       router.refresh();
     } catch (e) {
-      alert((e instanceof Error && e.message) || "No se pudo asignar la deducción. Intente nuevamente.");
+      avisar.error((e instanceof Error && e.message) || "No se pudo asignar la deducción.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Deducciones</h1>
-          <p className="text-sm text-gray-500">Gestión de tipos de deducción y asignación a empleados</p>
-        </div>
-        <div className="flex gap-2">
-          <BarraDatos
-            recurso="deducciones"
-            puedeExportar={puedeExportar}
-            puedeImportar={puedeImportar}
-            incluyePII
-            tituloImportacion="Importar deducciones de empleados"
-            ayudaImportacion="Cada fila asigna una deducción a un empleado, identificada por el código del empleado, el código del tipo de deducción y la fecha de inicio. Reimportar el mismo archivo actualiza esas mismas deducciones en vez de duplicar el descuento. Las deducciones legales (IHSS, RAP, INFOP) las calcula la planilla y no se asignan por aquí."
-          />
-          <button onClick={() => setModalEmp(true)} className="px-4 py-2 border border-blue-600 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-50">
-            Asignar a empleado
-          </button>
-          <button onClick={() => setModalTipo(true)} className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800">
-            Nuevo tipo
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Deducciones"
+        description="Tipos de deducción y su asignación a cada empleado."
+        actions={
+          <>
+            <BarraDatos
+              recurso="deducciones"
+              puedeExportar={puedeExportar}
+              puedeImportar={puedeImportar}
+              incluyePII
+              tituloImportacion="Importar deducciones de empleados"
+              ayudaImportacion="Cada fila asigna una deducción a un empleado, identificada por el código del empleado, el código del tipo de deducción y la fecha de inicio. Reimportar el mismo archivo actualiza esas mismas deducciones en vez de duplicar el descuento. Las deducciones legales (IHSS, RAP, INFOP) las calcula la planilla y no se asignan por aquí."
+            />
+            <button onClick={() => setModalEmp(true)} className="btn btn-secondary">
+              Asignar a empleado
+            </button>
+            <button onClick={() => setModalTipo(true)} className="btn btn-primary">
+              Nuevo tipo
+            </button>
+          </>
+        }
+      />
+
+      {solicitudes}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
@@ -182,135 +195,141 @@ export default function DeduccionesClient({
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+            className={`whitespace-nowrap px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
-            {t === "tipos" ? "Tipos de Deducción" : "Asignaciones por Empleado"}
+            {t === "tipos" ? "Tipos de deducción" : "Asignaciones por empleado"}
           </button>
         ))}
       </div>
 
       {tab === "tipos" && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Nombre</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Código</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Valor</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Legal</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {tipos.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{t.nombre}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{t.codigo}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${tiposBadge[t.tipo] ?? ""}`}>{t.tipo}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {t.porcentaje ? `${(Number(t.porcentaje) * 100).toFixed(2)}%` : t.montoFijo ? formatCurrency(Number(t.montoFijo)) : "Variable"}
-                  </td>
-                  <td className="px-4 py-3">{t.esLegal ? "✓" : "—"}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-1.5 py-0.5 rounded text-xs ${t.activo ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                      {t.activo ? "Activo" : "Inactivo"}
-                    </span>
-                  </td>
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table-base tabla-tarjetas">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Código</th>
+                  <th>Tipo</th>
+                  <th>Valor</th>
+                  <th>Legal</th>
+                  <th>Estado</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tipos.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <EstadoVacio titulo="Todavía no hay tipos de deducción." detalle="Cree el primero con el botón Nuevo tipo." />
+                    </td>
+                  </tr>
+                ) : tipos.map((t) => (
+                  <tr key={t.id}>
+                    <td data-titulo className="font-medium text-gray-900">{t.nombre}</td>
+                    <td data-etiqueta="Código" className="font-mono text-xs">{t.codigo}</td>
+                    <td data-etiqueta="Tipo" className="text-gray-600">{TIPO_TEXTO[t.tipo] ?? t.tipo}</td>
+                    <td data-etiqueta="Valor">
+                      {t.porcentaje ? `${(Number(t.porcentaje) * 100).toFixed(2)}%` : t.montoFijo ? formatCurrency(Number(t.montoFijo)) : "Variable"}
+                    </td>
+                    <td data-etiqueta="Legal">{t.esLegal ? "Sí" : "No"}</td>
+                    <td data-etiqueta="Estado">
+                      <EstadoBadge valor={t.activo ? "ACTIVO" : "INACTIVO"} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {tab === "empleados" && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Empleado</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Deducción</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Monto</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Por planilla</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Cuotas</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Observación</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {deduccionesEmpleados.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-6 text-gray-400">Sin deducciones asignadas</td></tr>
-              ) : deduccionesEmpleados.map((d) => (
-                <tr key={d.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{d.empleado.primerNombre} {d.empleado.primerApellido}</div>
-                    <div className="text-xs text-gray-400">{d.empleado.sucursal.nombre}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${tiposBadge[d.tipoDeduccion.tipo] ?? ""}`}>
-                      {d.tipoDeduccion.nombre}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium">{formatCurrency(Number(d.monto))}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(d.cuotaPeriodo)}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500">
-                    {d.cuotasMeses ? `${d.cuotasPagadas}/${d.cuotasMeses}` : d.saldo === null ? "Cada planilla" : "Una vez"}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500">{d.observacion ?? "—"}</td>
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table-base tabla-tarjetas">
+              <thead>
+                <tr>
+                  <th>Empleado</th>
+                  <th>Deducción</th>
+                  <th className="num">Monto</th>
+                  <th className="num">Por planilla</th>
+                  <th>Cuotas</th>
+                  <th>Observación</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {deduccionesEmpleados.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <EstadoVacio titulo="Ningún empleado tiene deducciones asignadas." detalle="Use el botón Asignar a empleado para descontar un préstamo, un adelanto u otro monto." />
+                    </td>
+                  </tr>
+                ) : deduccionesEmpleados.map((d) => (
+                  <tr key={d.id}>
+                    <td data-titulo>
+                      <div className="font-medium text-gray-900">{d.empleado.primerNombre} {d.empleado.primerApellido}</div>
+                      <div className="text-xs text-gray-500">{d.empleado.sucursal.nombre}</div>
+                    </td>
+                    <td data-etiqueta="Deducción">{d.tipoDeduccion.nombre}</td>
+                    <td data-etiqueta="Monto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(d.monto))}</td>
+                    <td data-etiqueta="Por planilla" className="num whitespace-nowrap">{formatCurrency(d.cuotaPeriodo)}</td>
+                    <td data-etiqueta="Cuotas" className="text-xs text-gray-500">
+                      {d.cuotasMeses ? `${d.cuotasPagadas}/${d.cuotasMeses}` : d.saldo === null ? "Cada planilla" : "Una vez"}
+                    </td>
+                    <td data-etiqueta="Observación" className="text-xs text-gray-500">{d.observacion ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Modal nuevo tipo */}
       {modalTipo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
+          <div className="panel w-full max-w-md space-y-4 p-6 shadow-2xl">
             <h3 className="font-semibold text-gray-900">Nuevo tipo de deducción</h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Nombre</label>
-                <input value={formTipo.nombre} onChange={(e) => setFormTipo((f) => ({ ...f, nombre: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <label htmlFor="ded-1" className="mb-1 block text-sm font-medium text-gray-800">Nombre</label>
+                <input id="ded-1" value={formTipo.nombre} onChange={(e) => setFormTipo((f) => ({ ...f, nombre: e.target.value }))} className="input" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Código</label>
-                <input value={formTipo.codigo} onChange={(e) => setFormTipo((f) => ({ ...f, codigo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="EJ: COOP1" />
+                <label htmlFor="ded-2" className="mb-1 block text-sm font-medium text-gray-800">Código</label>
+                <input id="ded-2" value={formTipo.codigo} onChange={(e) => setFormTipo((f) => ({ ...f, codigo: e.target.value }))} className="input" placeholder="EJ: COOP1" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Tipo</label>
-                <select value={formTipo.tipo} onChange={(e) => setFormTipo((f) => ({ ...f, tipo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <label htmlFor="ded-3" className="mb-1 block text-sm font-medium text-gray-800">Tipo</label>
+                <select id="ded-3" value={formTipo.tipo} onChange={(e) => setFormTipo((f) => ({ ...f, tipo: e.target.value }))} className="input">
                   {["LEGAL","VOLUNTARIA","PRESTAMO","ADELANTO","COOPERATIVA","IMPUESTO","AFP","OTRO"].map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                    <option key={t} value={t}>{TIPO_TEXTO[t]}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">% (si aplica)</label>
-                <input type="number" step="0.01" value={formTipo.porcentaje} onChange={(e) => setFormTipo((f) => ({ ...f, porcentaje: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: 2.5" />
+                <label htmlFor="ded-4" className="mb-1 block text-sm font-medium text-gray-800">% (si aplica)</label>
+                <input id="ded-4" type="number" step="0.01" value={formTipo.porcentaje} onChange={(e) => setFormTipo((f) => ({ ...f, porcentaje: e.target.value }))} className="input" placeholder="Ej: 2.5" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Monto Fijo (si aplica)</label>
-                <input type="number" step="0.01" value={formTipo.montoFijo} onChange={(e) => setFormTipo((f) => ({ ...f, montoFijo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <label htmlFor="ded-5" className="mb-1 block text-sm font-medium text-gray-800">Monto fijo (si aplica)</label>
+                <input id="ded-5" type="number" step="0.01" value={formTipo.montoFijo} onChange={(e) => setFormTipo((f) => ({ ...f, montoFijo: e.target.value }))} className="input" />
               </div>
-              <div className="flex items-center gap-2 mt-4">
+              <div className="flex items-center gap-2 pt-6">
                 <input type="checkbox" id="esLegal" checked={formTipo.esLegal} onChange={(e) => setFormTipo((f) => ({ ...f, esLegal: e.target.checked }))} />
-                <label htmlFor="esLegal" className="text-sm text-gray-700">Es deducción legal</label>
+                <label htmlFor="esLegal" className="text-sm text-gray-800">Es deducción legal</label>
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Descripción</label>
-              <input value={formTipo.descripcion} onChange={(e) => setFormTipo((f) => ({ ...f, descripcion: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              <label htmlFor="ded-6" className="mb-1 block text-sm font-medium text-gray-800">Descripción</label>
+              <input id="ded-6" value={formTipo.descripcion} onChange={(e) => setFormTipo((f) => ({ ...f, descripcion: e.target.value }))} className="input" />
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setModalTipo(false)} className="flex-1 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button onClick={crearTipo} disabled={loading} className="flex-1 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
-                {loading ? "Guardando..." : "Crear"}
+              <button onClick={() => setModalTipo(false)} className="btn btn-secondary flex-1">Cancelar</button>
+              <button onClick={crearTipo} disabled={loading} className="btn btn-primary flex-1">
+                {loading ? "Guardando…" : "Crear"}
               </button>
             </div>
           </div>
@@ -320,29 +339,29 @@ export default function DeduccionesClient({
       {/* Modal asignar empleado */}
       {modalEmp && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
+          <div className="panel w-full max-w-md space-y-4 p-6 shadow-2xl">
             <h3 className="font-semibold text-gray-900">Asignar deducción a empleado</h3>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Empleado</label>
-              <select value={formEmp.empleadoId} onChange={(e) => setFormEmp((f) => ({ ...f, empleadoId: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                <option value="">Seleccione...</option>
+              <label htmlFor="ded-7" className="mb-1 block text-sm font-medium text-gray-800">Empleado</label>
+              <select id="ded-7" value={formEmp.empleadoId} onChange={(e) => setFormEmp((f) => ({ ...f, empleadoId: e.target.value }))} className="input">
+                <option value="">Seleccione…</option>
                 {empleados.map((emp) => (
                   <option key={emp.id} value={emp.id}>{nombreCompleto(emp)} ({emp.codigo})</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Tipo de Deducción</label>
-              <select value={formEmp.tipoDeduccionId} onChange={(e) => setFormEmp((f) => ({ ...f, tipoDeduccionId: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                <option value="">Seleccione...</option>
+              <label htmlFor="ded-8" className="mb-1 block text-sm font-medium text-gray-800">Tipo de deducción</label>
+              <select id="ded-8" value={formEmp.tipoDeduccionId} onChange={(e) => setFormEmp((f) => ({ ...f, tipoDeduccionId: e.target.value }))} className="input">
+                <option value="">Seleccione…</option>
                 {tipos.map((t) => (
                   <option key={t.id} value={t.id}>{t.nombre} ({t.codigo})</option>
                 ))}
               </select>
             </div>
             <div>
-              <label htmlFor="forma-cobro" className="block text-xs font-medium text-gray-700 mb-1">Forma de cobro</label>
-              <select id="forma-cobro" value={formEmp.forma} onChange={(e) => setFormEmp((f) => ({ ...f, forma: e.target.value as FormaCobro }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <label htmlFor="forma-cobro" className="mb-1 block text-sm font-medium text-gray-800">Forma de cobro</label>
+              <select id="forma-cobro" value={formEmp.forma} onChange={(e) => setFormEmp((f) => ({ ...f, forma: e.target.value as FormaCobro }))} className="input">
                 <option value="UNA_VEZ">Una sola vez</option>
                 <option value="CUOTAS">En cuotas</option>
                 <option value="SIEMPRE">Cada planilla, sin fin</option>
@@ -350,34 +369,34 @@ export default function DeduccionesClient({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="monto-asignar" className="block text-xs font-medium text-gray-700 mb-1">{ETIQUETA_MONTO[formEmp.forma]}</label>
-                <input id="monto-asignar" type="number" min="0" step="0.01" value={formEmp.monto} onChange={(e) => setFormEmp((f) => ({ ...f, monto: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <label htmlFor="monto-asignar" className="mb-1 block text-sm font-medium text-gray-800">{ETIQUETA_MONTO[formEmp.forma]}</label>
+                <input id="monto-asignar" type="number" min="0" step="0.01" value={formEmp.monto} onChange={(e) => setFormEmp((f) => ({ ...f, monto: e.target.value }))} className="input" />
               </div>
               {formEmp.forma === "CUOTAS" && (
                 <div>
-                  <label htmlFor="cuotas-asignar" className="block text-xs font-medium text-gray-700 mb-1">Número de cuotas</label>
-                  <input id="cuotas-asignar" type="number" min="1" step="1" value={formEmp.cuotasMeses} onChange={(e) => setFormEmp((f) => ({ ...f, cuotasMeses: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <label htmlFor="cuotas-asignar" className="mb-1 block text-sm font-medium text-gray-800">Número de cuotas</label>
+                  <input id="cuotas-asignar" type="number" min="1" step="1" value={formEmp.cuotasMeses} onChange={(e) => setFormEmp((f) => ({ ...f, cuotasMeses: e.target.value }))} className="input" />
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Fecha Inicio</label>
-                <input type="date" value={formEmp.fechaInicio} onChange={(e) => setFormEmp((f) => ({ ...f, fechaInicio: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <label htmlFor="ded-9" className="mb-1 block text-sm font-medium text-gray-800">Fecha de inicio</label>
+                <input id="ded-9" type="date" value={formEmp.fechaInicio} onChange={(e) => setFormEmp((f) => ({ ...f, fechaInicio: e.target.value }))} className="input" />
               </div>
             </div>
             {formEmp.forma === "CUOTAS" && puedeAsignar && (
-              <p className="text-xs text-gray-500">Se descontarán {formatCurrency(montoAsignar / cuotasAsignar)} en cada una de las {cuotasAsignar} planillas.</p>
+              <p className="text-sm text-gray-500">Se descontarán {formatCurrency(montoAsignar / cuotasAsignar)} en cada una de las {cuotasAsignar} planillas.</p>
             )}
             {formEmp.forma === "SIEMPRE" && (
-              <p className="text-xs text-gray-500">Se descontará este monto en cada planilla, hasta que alguien desactive la deducción.</p>
+              <p className="text-sm text-gray-500">Se descontará este monto en cada planilla, hasta que alguien desactive la deducción.</p>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Observación</label>
-              <input value={formEmp.observacion} onChange={(e) => setFormEmp((f) => ({ ...f, observacion: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              <label htmlFor="ded-10" className="mb-1 block text-sm font-medium text-gray-800">Observación</label>
+              <input id="ded-10" value={formEmp.observacion} onChange={(e) => setFormEmp((f) => ({ ...f, observacion: e.target.value }))} className="input" />
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setModalEmp(false)} className="flex-1 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button onClick={asignarEmpleado} disabled={loading || !puedeAsignar} className="flex-1 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
-                {loading ? "Guardando..." : "Asignar"}
+              <button onClick={() => setModalEmp(false)} className="btn btn-secondary flex-1">Cancelar</button>
+              <button onClick={asignarEmpleado} disabled={loading || !puedeAsignar} className="btn btn-primary flex-1">
+                {loading ? "Guardando…" : "Asignar"}
               </button>
             </div>
           </div>

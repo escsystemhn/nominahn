@@ -5,7 +5,7 @@ import CompetenciasClient from "./CompetenciasClient";
 
 const CONTEXTO_PUESTO = { nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } } as const;
 
-export const metadata = { title: "Competencias | NominaHN" };
+export const metadata = { title: "Competencias" };
 
 export default async function CompetenciasPage() {
   await requerirPermisoPagina("talento.competencias");

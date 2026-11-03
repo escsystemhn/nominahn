@@ -6,6 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { tieneAlguno, type Permiso } from "@/lib/auth/permisos";
+import { DESARROLLADOR, PRODUCTO, SITIO_DESARROLLADOR } from "@/lib/marca";
+import { VERSION } from "@/lib/inicio-sesion";
 
 interface NavItem {
   href: string;
@@ -303,7 +305,23 @@ const navItems: NavEntry[] = [
   },
 ];
 
-export default function Sidebar({ permisos }: { permisos: readonly string[] }) {
+export default function Sidebar({
+  permisos,
+  conEmpleado,
+  abierto,
+  refCerrar,
+  onCerrar,
+  onNavegar,
+}: {
+  permisos: readonly string[];
+  /** Sin empleado vinculado, Mi espacio no tiene nada que mostrar. */
+  conEmpleado: boolean;
+  /** En pantalla angosta el menú se desliza; desde 1024 px siempre está. */
+  abierto: boolean;
+  refCerrar: React.RefObject<HTMLButtonElement | null>;
+  onCerrar: () => void;
+  onNavegar: () => void;
+}) {
   const pathname = usePathname();
   const guardadas = useSyncExternalStore(
     suscribirSecciones,
@@ -324,7 +342,9 @@ export default function Sidebar({ permisos }: { permisos: readonly string[] }) {
     escribirSecciones({ ...abiertas, [id]: !abierta });
 
   // Sin permisos declarados, el enlace es para toda cuenta con sesión.
-  const permitido = (item: NavItem) => !item.permisos || tieneAlguno(permisos, item.permisos);
+  const permitido = (item: NavItem) =>
+    (item.href !== "/mi-espacio" || conEmpleado || tieneAlguno(permisos, ["asistencia.aprobar_permisos"])) &&
+    (!item.permisos || tieneAlguno(permisos, item.permisos));
 
   // Una sección se muestra solo si el rol puede ver al menos uno de sus módulos.
   const visible = navItems.reduce<NavEntry[]>((acc, entry) => {
@@ -355,23 +375,45 @@ export default function Sidebar({ permisos }: { permisos: readonly string[] }) {
           ));
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col bg-blue-900 text-white">
-      {/* Marca: el logo de ESC System encabeza la aplicación. Variante de texto
-          blanco porque el fondo es la tinta de la marca. */}
-      <div className="px-5 pb-5 pt-6">
-        <Link href="/dashboard" className="inline-block rounded-md focus-visible:outline-offset-4" title="Inicio">
-          <Image
-            src="/logo-escsystem-blanco.png"
-            alt="ESC System Consultorías"
-            width={512}
-            height={189}
-            priority
-            className="h-12 w-auto"
-          />
+    <aside
+      className={cn(
+        "fixed inset-y-0 left-0 z-40 flex h-dvh w-64 shrink-0 flex-col bg-blue-900 text-white shadow-xl lg:static lg:z-auto lg:h-full lg:w-60 lg:translate-x-0 lg:shadow-none",
+        // Cerrado debe quedar fuera del recorrido con el teclado, no sólo fuera de la vista.
+        // Al abrir, visibility cambia de inmediato para poder recibir el foco; al cerrar, espera a que termine de salir.
+        abierto
+          ? "translate-x-0 [transition:transform_200ms]"
+          : "-translate-x-full max-lg:invisible [transition:transform_200ms,visibility_0s_200ms]"
+      )}
+    >
+      {/* Marca: el símbolo va sobre blanco porque sus azules no se leen sobre la tinta. */}
+      <div className="flex items-center justify-between gap-2 px-5 pb-5 pt-5">
+        <Link href="/dashboard" onClick={onNavegar} className="flex items-center gap-3 rounded-md focus-visible:outline-offset-4" title="Inicio">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+            <Image src="/gestion360-icono.png" alt="" width={256} height={256} priority className="h-10 w-10" />
+          </span>
+          <span className="leading-tight">
+            <span className="block text-base font-semibold text-white">Gestión360</span>
+            <span className="block text-xs text-white/70">Nómina</span>
+          </span>
         </Link>
+        <button
+          ref={refCerrar}
+          type="button"
+          onClick={onCerrar}
+          aria-label="Cerrar menú"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
+        >
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeWidth={1.75} d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
       </div>
 
-      <nav aria-label="Menú principal" className="flex-1 space-y-px overflow-y-auto px-3 pb-4">
+      <nav
+        aria-label="Menú principal"
+        onClick={(e) => { if ((e.target as HTMLElement).closest("a")) onNavegar(); }}
+        className="flex-1 space-y-px overflow-y-auto px-3 pb-4"
+      >
         {visible.map((entry) => {
           if (esSeccion(entry)) {
             const conActivo = entry.items.some((item) => esActivo(item.href));
@@ -385,7 +427,7 @@ export default function Sidebar({ permisos }: { permisos: readonly string[] }) {
                   aria-expanded={abierta}
                   aria-controls={panelId}
                   className={cn(
-                    "flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors",
+                    "flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors lg:h-9",
                     conActivo && !abierta
                       ? "bg-white/10 text-white"
                       : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -408,7 +450,7 @@ export default function Sidebar({ permisos }: { permisos: readonly string[] }) {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "relative flex h-8 items-center rounded-md px-3 text-sm transition-colors",
+                          "relative flex h-11 items-center rounded-md px-3 text-sm transition-colors lg:h-8",
                           active
                             ? "bg-white/10 font-medium text-white before:absolute before:-left-[9px] before:top-1.5 before:h-5 before:w-0.5 before:rounded-full before:bg-blue-500"
                             : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -430,29 +472,30 @@ export default function Sidebar({ permisos }: { permisos: readonly string[] }) {
               href={entry.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+                "relative flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors lg:h-9",
                 active
                   ? "bg-white/10 text-white before:absolute before:-left-3 before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-blue-500"
                   : "text-white/70 hover:bg-white/5 hover:text-white"
               )}
             >
               <span className={cn(active ? "text-blue-400" : "text-white/60")}>{entry.icon}</span>
-              {entry.label}
+              {/* Sin empleado vinculado, lo único que hay ahí son las aprobaciones. */}
+              {entry.href === "/mi-espacio" && !conEmpleado ? "Aprobaciones" : entry.label}
             </Link>
           );
         })}
       </nav>
 
-      {/* Pie: producto y versión; la consultora ya encabeza la barra. */}
+      {/* Pie: producto, versión y quién lo desarrolla. */}
       <div className="border-t border-white/10 px-5 py-4 text-xs leading-5">
-        <p className="font-medium text-white/80">NominaHN 1.0</p>
+        <p className="font-medium text-white/80">{PRODUCTO} {VERSION}</p>
         <a
-          href="https://esc-systemhn.com"
+          href={SITIO_DESARROLLADOR}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-white/45 transition-colors hover:text-white/80"
+          className="text-white/60 transition-colors hover:text-white"
         >
-          esc-systemhn.com
+          Desarrollado por {DESARROLLADOR}
         </a>
       </div>
     </aside>

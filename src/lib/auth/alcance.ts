@@ -126,6 +126,31 @@ export function alcanzaEmpleado(
   }
 }
 
+/**
+ * ¿Puede colocar a alguien en esta ubicación? Sirve para dar de alta o trasladar: sin
+ * esto, quien sólo alcanza una sucursal podría crear o mover gente a cualquier otra.
+ */
+export function alcanzaUbicacion(usuario: UsuarioConAlcance, ubicacion: { sucursalId: string; departamentoId: string }): boolean {
+  return alcanzaEmpleado(usuario, { id: "", ...ubicacion });
+}
+
+/** Las sucursales que el usuario puede ver en un filtro o elegir en un formulario. */
+export function filtroSucursales(usuario: UsuarioConAlcance): Prisma.SucursalWhereInput {
+  const ninguna: Prisma.SucursalWhereInput = { id: { in: [] } };
+  switch (usuario.alcance ?? "TODO") {
+    case "TODO":
+      return {};
+    case "SUCURSAL":
+      return { id: { in: usuario.sucursalesIds ?? [] } };
+    case "DEPARTAMENTO":
+      return usuario.departamentoId ? { departamentos: { some: { id: usuario.departamentoId } } } : ninguna;
+    case "PROPIO":
+      return usuario.empleadoId ? { empleados: { some: { id: usuario.empleadoId } } } : ninguna;
+    default:
+      return ninguna;
+  }
+}
+
 /** Etiquetas para la interfaz de perfiles. */
 export const ETIQUETAS_ALCANCE: Record<AlcanceDatos, { titulo: string; detalle: string }> = {
   TODO: {

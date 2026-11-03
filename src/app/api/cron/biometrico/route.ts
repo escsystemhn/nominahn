@@ -1,7 +1,7 @@
 /**
  * Sincronización programada de todos los dispositivos activos.
  *
- * Va por CRON y no por push del equipo porque NominaHN corre en la MISMA LAN del
+ * Va por CRON y no por push del equipo porque Gestión360 Nómina corre en la MISMA LAN del
  * cliente: el servidor alcanza los relojes por IP, así que no hace falta exponer
  * ningún endpoint a internet ni abrir puertos entrantes. El servidor pregunta.
  *

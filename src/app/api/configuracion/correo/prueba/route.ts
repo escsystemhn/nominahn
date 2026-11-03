@@ -11,6 +11,7 @@ import { z } from "zod";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { parsearBody } from "@/lib/http/validar";
 import { configSmtpVigente, crearTransporte } from "@/lib/email/send";
+import { PRODUCTO } from "@/lib/marca";
 
 const schema = z.object({
   destino: z.string().trim().email("correo inválido"),
@@ -49,9 +50,9 @@ export async function POST(req: NextRequest) {
     await t.sendMail({
       from: cfg.remitente,
       to: parsed.data.destino,
-      subject: "Prueba de correo — NominaHN",
+      subject: `Prueba de correo: ${PRODUCTO}`,
       html:
-        "<p>Este es un correo de prueba enviado desde <b>NominaHN</b>.</p>" +
+        `<p>Este es un correo de prueba enviado desde <b>${PRODUCTO}</b>.</p>` +
         "<p>Si lo está leyendo, el servidor de correo saliente está bien configurado " +
         "y los comprobantes de pago se podrán enviar.</p>",
     });

@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatCurrency } from "@/lib/utils";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import { Campo } from "@/components/ui/ModalForm";
 
 interface Vacante {
   id: string;
@@ -35,18 +39,18 @@ interface Props {
 }
 
 const ETAPAS = ["RECIBIDO", "PRESELECCION", "ENTREVISTA", "OFERTA", "CONTRATADO", "RECHAZADO"];
-const etapaBadge: Record<string, string> = {
-  RECIBIDO: "bg-gray-100 text-gray-700",
-  PRESELECCION: "bg-blue-100 text-blue-800",
-  ENTREVISTA: "bg-indigo-100 text-indigo-800",
-  OFERTA: "bg-amber-100 text-amber-800",
-  CONTRATADO: "bg-green-100 text-green-800",
-  RECHAZADO: "bg-red-100 text-red-700",
+const etapaBadge: Record<string, { etiqueta: string; tono: Tono }> = {
+  RECIBIDO: { etiqueta: "Recibido", tono: "neutro" },
+  PRESELECCION: { etiqueta: "Preselección", tono: "marca" },
+  ENTREVISTA: { etiqueta: "Entrevista", tono: "marca" },
+  OFERTA: { etiqueta: "Oferta", tono: "aviso" },
+  CONTRATADO: { etiqueta: "Contratado", tono: "ok" },
+  RECHAZADO: { etiqueta: "Rechazado", tono: "error" },
 };
-const estadoBadge: Record<string, string> = {
-  ABIERTA: "bg-green-100 text-green-800",
-  PAUSADA: "bg-amber-100 text-amber-800",
-  CERRADA: "bg-gray-100 text-gray-500",
+const estadoBadge: Record<string, { etiqueta: string; tono: Tono }> = {
+  ABIERTA: { etiqueta: "Abierta", tono: "ok" },
+  PAUSADA: { etiqueta: "Pausada", tono: "aviso" },
+  CERRADA: { etiqueta: "Cerrada", tono: "neutro" },
 };
 
 // Peticiones puras (no tocan estado de React), reutilizables desde los efectos y
@@ -156,164 +160,165 @@ export default function ReclutamientoClient({ departamentos, puedeGestionar }: P
   }
 
   const vacanteSel = vacantes.find((v) => v.id === sel);
-  const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm";
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Reclutamiento y selección</h1>
-          <p className="text-sm text-gray-500">Vacantes y seguimiento de candidatos</p>
-        </div>
-        {puedeGestionar && (
-          <button onClick={() => setCreando((v) => !v)} className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
-            {creando ? "Cancelar" : "Nueva vacante"}
-          </button>
-        )}
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Reclutamiento y selección"
+        description="Vacantes y seguimiento de candidatos."
+        actions={
+          puedeGestionar && (
+            <button onClick={() => setCreando((v) => !v)} className={creando ? "btn btn-secondary" : "btn btn-primary"}>
+              {creando ? "Cancelar" : "Nueva vacante"}
+            </button>
+          )
+        }
+      />
 
-      {msg && <p className="text-sm text-red-600">{msg}</p>}
+      {msg && <p className="text-sm text-red-700" role="alert">{msg}</p>}
 
       {creando && puedeGestionar && (
-        <form onSubmit={crearVacante} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Título del puesto</label>
-            <input className={inputCls} value={fVac.titulo} onChange={(e) => setFVac({ ...fVac, titulo: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Departamento</label>
-            <select className={inputCls} value={fVac.departamentoId} onChange={(e) => setFVac({ ...fVac, departamentoId: e.target.value })}>
+        <form onSubmit={crearVacante} className="panel grid gap-4 p-5 md:grid-cols-2">
+          <Campo etiqueta="Título del puesto">
+            <input className="input" value={fVac.titulo} onChange={(e) => setFVac({ ...fVac, titulo: e.target.value })} />
+          </Campo>
+          <Campo etiqueta="Departamento">
+            <select className="input" value={fVac.departamentoId} onChange={(e) => setFVac({ ...fVac, departamentoId: e.target.value })}>
               <option value="">—</option>
               {departamentos.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Tipo de contrato</label>
-            <select className={inputCls} value={fVac.tipoContrato} onChange={(e) => setFVac({ ...fVac, tipoContrato: e.target.value })}>
+          </Campo>
+          <Campo etiqueta="Tipo de contrato">
+            <select className="input" value={fVac.tipoContrato} onChange={(e) => setFVac({ ...fVac, tipoContrato: e.target.value })}>
               <option value="INDEFINIDO">Indefinido</option>
               <option value="TEMPORAL">Temporal</option>
               <option value="PRUEBA">Prueba</option>
               <option value="SERVICIO">Servicio</option>
             </select>
-          </div>
+          </Campo>
           <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Plazas</label>
-              <input type="number" min={1} className={inputCls} value={fVac.plazas} onChange={(e) => setFVac({ ...fVac, plazas: Number(e.target.value) })} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Salario mín.</label>
-              <input type="number" className={inputCls} value={fVac.salarioMin} onChange={(e) => setFVac({ ...fVac, salarioMin: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Salario máx.</label>
-              <input type="number" className={inputCls} value={fVac.salarioMax} onChange={(e) => setFVac({ ...fVac, salarioMax: e.target.value })} />
-            </div>
+            <Campo etiqueta="Plazas">
+              <input type="number" min={1} className="input" value={fVac.plazas} onChange={(e) => setFVac({ ...fVac, plazas: Number(e.target.value) })} />
+            </Campo>
+            <Campo etiqueta="Salario mínimo">
+              <input type="number" className="input" value={fVac.salarioMin} onChange={(e) => setFVac({ ...fVac, salarioMin: e.target.value })} />
+            </Campo>
+            <Campo etiqueta="Salario máximo">
+              <input type="number" className="input" value={fVac.salarioMax} onChange={(e) => setFVac({ ...fVac, salarioMax: e.target.value })} />
+            </Campo>
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs text-gray-600 mb-1">Descripción</label>
-            <textarea rows={2} className={inputCls} value={fVac.descripcion} onChange={(e) => setFVac({ ...fVac, descripcion: e.target.value })} />
+            <Campo etiqueta="Descripción">
+              <textarea rows={2} className="input" value={fVac.descripcion} onChange={(e) => setFVac({ ...fVac, descripcion: e.target.value })} />
+            </Campo>
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs text-gray-600 mb-1">Requisitos</label>
-            <textarea rows={2} className={inputCls} value={fVac.requisitos} onChange={(e) => setFVac({ ...fVac, requisitos: e.target.value })} />
+            <Campo etiqueta="Requisitos">
+              <textarea rows={2} className="input" value={fVac.requisitos} onChange={(e) => setFVac({ ...fVac, requisitos: e.target.value })} />
+            </Campo>
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700">
             <input type="checkbox" checked={fVac.esInterna} onChange={(e) => setFVac({ ...fVac, esInterna: e.target.checked, publicada: e.target.checked ? false : fVac.publicada })} />
             Convocatoria interna
           </label>
-          <label className={`flex items-center gap-2 text-sm ${fVac.esInterna ? "text-gray-400" : "text-gray-700"}`}>
+          <label className={`flex items-center gap-2 text-sm ${fVac.esInterna ? "text-gray-500" : "text-gray-700"}`}>
             <input type="checkbox" checked={fVac.publicada} disabled={fVac.esInterna} onChange={(e) => setFVac({ ...fVac, publicada: e.target.checked })} />
             Publicar en el portal de empleo
           </label>
           <div className="md:col-span-2">
-            <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">Publicar vacante</button>
+            <button type="submit" className="btn btn-primary">Publicar vacante</button>
           </div>
         </form>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-5">
+      <div className="grid gap-5 lg:grid-cols-2">
         {/* Lista de vacantes */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">Vacantes</div>
-          {loading ? <p className="p-5 text-sm text-gray-400">Cargando…</p> : vacantes.length === 0 ? (
-            <p className="p-5 text-sm text-gray-400">No hay vacantes.</p>
+        <div className="panel overflow-hidden">
+          <div className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">Vacantes</div>
+          {loading ? <p className="p-5 text-sm text-gray-500">Cargando…</p> : vacantes.length === 0 ? (
+            <EstadoVacio
+              titulo="Todavía no hay vacantes."
+              detalle={puedeGestionar ? "Abra la primera con el botón «Nueva vacante»." : "Cuando Recursos Humanos abra una, aparecerá aquí."}
+            />
           ) : (
-            <ul className="divide-y divide-gray-50">
-              {vacantes.map((v) => (
-                <li key={v.id} className={`px-5 py-3 cursor-pointer hover:bg-gray-50 ${sel === v.id ? "bg-blue-50" : ""}`} onClick={() => setSel(v.id)}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{v.titulo}</p>
-                      <p className="text-xs text-gray-500">
-                        {v.departamento?.nombre ?? "—"} · {v.plazas} plaza(s) · {v._count.candidatos} candidato(s){v.esInterna ? " · Interna" : ""}{v.publicada && !v.esInterna ? " · En el portal" : ""}
-                        {v.salarioMin ? ` · ${formatCurrency(Number(v.salarioMin))}` : ""}{v.salarioMax ? `–${formatCurrency(Number(v.salarioMax))}` : ""}
-                      </p>
+            <ul className="divide-y divide-gray-100">
+              {vacantes.map((v) => {
+                const est = estadoBadge[v.estado];
+                return (
+                  <li key={v.id} className={`cursor-pointer px-5 py-3 hover:bg-gray-50 ${sel === v.id ? "bg-blue-50" : ""}`} onClick={() => setSel(v.id)}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{v.titulo}</p>
+                        <p className="text-xs text-gray-500">
+                          {v.departamento?.nombre ?? "—"}, {v.plazas} plaza(s), {v._count.candidatos} candidato(s){v.esInterna ? ", interna" : ""}{v.publicada && !v.esInterna ? ", en el portal" : ""}
+                          {v.salarioMin ? `, ${formatCurrency(Number(v.salarioMin))}` : ""}{v.salarioMax ? ` a ${formatCurrency(Number(v.salarioMax))}` : ""}
+                        </p>
+                      </div>
+                      {est ? <EstadoBadge valor={v.estado} etiqueta={est.etiqueta} tono={est.tono} /> : <EstadoBadge valor={v.estado} />}
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${estadoBadge[v.estado]}`}>{v.estado}</span>
-                  </div>
-                  {puedeGestionar && (
-                    <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                      {v.estado !== "ABIERTA" && <button onClick={() => cambiarEstadoVacante(v.id, "ABIERTA")} className="text-xs text-green-700 hover:underline">Abrir</button>}
-                      {v.estado === "ABIERTA" && <button onClick={() => cambiarEstadoVacante(v.id, "PAUSADA")} className="text-xs text-amber-700 hover:underline">Pausar</button>}
-                      {v.estado !== "CERRADA" && <button onClick={() => cambiarEstadoVacante(v.id, "CERRADA")} className="text-xs text-red-700 hover:underline">Cerrar</button>}
-                      {!v.esInterna && (
-                        v.publicada
-                          ? <button onClick={() => publicarVacante(v.id, false)} className="text-xs text-gray-600 hover:underline">Retirar del portal</button>
-                          : <button onClick={() => publicarVacante(v.id, true)} className="text-xs text-blue-700 hover:underline">Publicar en el portal</button>
-                      )}
-                      {v.publicada && !v.esInterna && v.estado === "ABIERTA" && (
-                        <a href={`/empleos/${v.id}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 hover:underline">Ver anuncio</a>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
+                    {puedeGestionar && (
+                      <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+                        {v.estado !== "ABIERTA" && <button onClick={() => cambiarEstadoVacante(v.id, "ABIERTA")} className="btn btn-ghost btn-sm">Abrir</button>}
+                        {v.estado === "ABIERTA" && <button onClick={() => cambiarEstadoVacante(v.id, "PAUSADA")} className="btn btn-ghost btn-sm">Pausar</button>}
+                        {v.estado !== "CERRADA" && <button onClick={() => cambiarEstadoVacante(v.id, "CERRADA")} className="btn btn-ghost btn-sm">Cerrar</button>}
+                        {!v.esInterna && (
+                          v.publicada
+                            ? <button onClick={() => publicarVacante(v.id, false)} className="btn btn-ghost btn-sm">Retirar del portal</button>
+                            : <button onClick={() => publicarVacante(v.id, true)} className="btn btn-ghost btn-sm">Publicar en el portal</button>
+                        )}
+                        {v.publicada && !v.esInterna && v.estado === "ABIERTA" && (
+                          <a href={`/empleos/${v.id}`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">Ver anuncio</a>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
 
         {/* Pipeline de candidatos */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">
-            {vacanteSel ? `Candidatos · ${vacanteSel.titulo}` : "Seleccione una vacante"}
+        <div className="panel overflow-hidden">
+          <div className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">
+            {vacanteSel ? `Candidatos: ${vacanteSel.titulo}` : "Seleccione una vacante"}
           </div>
           {!sel ? (
-            <p className="p-5 text-sm text-gray-400">Elija una vacante para ver y gestionar sus candidatos.</p>
+            <EstadoVacio titulo="Ninguna vacante elegida." detalle="Elija una vacante de la lista para ver y gestionar sus candidatos." />
           ) : (
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
               {puedeGestionar && (
-                <form onSubmit={agregarCandidato} className="grid grid-cols-2 gap-2 pb-3 border-b border-gray-100">
-                  <input className={inputCls} placeholder="Nombre" value={fCand.nombre} onChange={(e) => setFCand({ ...fCand, nombre: e.target.value })} />
-                  <input className={inputCls} placeholder="Email" value={fCand.email} onChange={(e) => setFCand({ ...fCand, email: e.target.value })} />
-                  <input className={inputCls} placeholder="Teléfono" value={fCand.telefono} onChange={(e) => setFCand({ ...fCand, telefono: e.target.value })} />
-                  <input className={inputCls} placeholder="Fuente (LinkedIn, referido…)" value={fCand.fuente} onChange={(e) => setFCand({ ...fCand, fuente: e.target.value })} />
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">CV (PDF/DOC/imagen, máx. 5 MB)</label>
-                    <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} className="text-xs" />
-                  </div>
-                  <button type="submit" disabled={subiendo} className="col-span-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">{subiendo ? "Guardando…" : "Agregar candidato"}</button>
+                <form onSubmit={agregarCandidato} className="grid grid-cols-2 gap-2 border-b border-gray-100 pb-3">
+                  <input className="input" aria-label="Nombre" placeholder="Nombre" value={fCand.nombre} onChange={(e) => setFCand({ ...fCand, nombre: e.target.value })} />
+                  <input className="input" aria-label="Correo electrónico" placeholder="Correo electrónico" value={fCand.email} onChange={(e) => setFCand({ ...fCand, email: e.target.value })} />
+                  <input className="input" aria-label="Teléfono" placeholder="Teléfono" value={fCand.telefono} onChange={(e) => setFCand({ ...fCand, telefono: e.target.value })} />
+                  <input className="input" aria-label="Fuente" placeholder="Fuente (LinkedIn, referido…)" value={fCand.fuente} onChange={(e) => setFCand({ ...fCand, fuente: e.target.value })} />
+                  <label className="col-span-2 block text-xs text-gray-500">
+                    CV (PDF, DOC o imagen, máximo 5 MB)
+                    <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} className="mt-1 block text-xs" />
+                  </label>
+                  <button type="submit" disabled={subiendo} className="btn btn-secondary col-span-2">{subiendo ? "Guardando…" : "Agregar candidato"}</button>
                 </form>
               )}
               {candidatos.length === 0 ? (
-                <p className="text-sm text-gray-400">Sin candidatos.</p>
+                <p className="text-sm text-gray-500">Esta vacante todavía no tiene candidatos.</p>
               ) : (
                 <ul className="space-y-2">
                   {candidatos.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2">
+                    <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="truncate text-sm font-medium text-gray-900">
                           {c.nombre}
-                          {c.cvUrl && <a href={c.cvUrl} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-blue-600 hover:underline font-normal">CV</a>}
+                          {c.cvUrl && <a href={c.cvUrl} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs font-normal text-blue-700 hover:underline">CV</a>}
                         </p>
-                        <p className="text-xs text-gray-500 truncate">{[c.email, c.telefono, c.fuente].filter(Boolean).join(" · ") || "—"}</p>
+                        <p className="truncate text-xs text-gray-500">{[c.email, c.telefono, c.fuente].filter(Boolean).join(", ") || "—"}</p>
                       </div>
                       {puedeGestionar ? (
-                        <select value={c.etapa} onChange={(e) => moverEtapa(c.id, e.target.value)} className={`text-xs rounded-full px-2 py-1 font-medium border-0 ${etapaBadge[c.etapa]}`}>
-                          {ETAPAS.map((et) => <option key={et} value={et}>{et}</option>)}
+                        <select aria-label={`Etapa de ${c.nombre}`} value={c.etapa} onChange={(e) => moverEtapa(c.id, e.target.value)} className="input h-8! w-auto! text-xs">
+                          {ETAPAS.map((et) => <option key={et} value={et}>{etapaBadge[et].etiqueta}</option>)}
                         </select>
                       ) : (
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${etapaBadge[c.etapa]}`}>{c.etapa}</span>
+                        <EstadoBadge valor={c.etapa} etiqueta={etapaBadge[c.etapa]?.etiqueta} tono={etapaBadge[c.etapa]?.tono} />
                       )}
                     </li>
                   ))}

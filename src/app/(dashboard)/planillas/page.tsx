@@ -2,7 +2,15 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
+import { Prisma } from "@prisma/client";
 import PageHeader from "@/components/ui/PageHeader";
+import EstadoVacio from "@/components/ui/EstadoVacio";
+import FilaEnlace from "@/components/ui/FilaEnlace";
+import FormFiltros from "@/components/ui/FormFiltros";
+import FranjaCifras from "@/components/ui/FranjaCifras";
+import Paginacion from "@/components/ui/Paginacion";
+import ThOrden from "@/components/ui/ThOrden";
+import { leerOrden, type Orden } from "@/lib/http/orden";
 import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
 import FiltroEstructura from "@/components/organizacion/FiltroEstructura";
 import { describirAlcance, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
@@ -11,11 +19,29 @@ import { cargarOpcionesEstructura } from "@/lib/organizacion/estructura-bd";
 export const metadata = { title: "Planillas" };
 
 const TIPOS = ["MENSUAL", "QUINCENAL", "SEMANAL"] as const;
+const POR_PAGINA = 25;
+
+const COLUMNAS = ["creada", "tipo", "periodo", "bruto", "deducciones", "neto", "estado"] as const;
+type Columna = (typeof COLUMNAS)[number];
+
+function ordenDeConsulta({ campo, dir }: Orden<Columna>): Prisma.PlanillaOrderByWithRelationInput[] {
+  const principal: Record<Columna, Prisma.PlanillaOrderByWithRelationInput> = {
+    creada: { createdAt: dir },
+    tipo: { tipo: dir },
+    periodo: { fechaInicio: dir },
+    bruto: { totalBruto: dir },
+    deducciones: { totalDeducciones: dir },
+    neto: { totalNeto: dir },
+    estado: { estado: dir },
+  };
+  // El `id` desempata: sin él, dos filas iguales pueden saltar de una página a otra.
+  return [principal[campo], { id: "desc" }];
+}
 
 export default async function PlanillasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sucursalId?: string; divisionId?: string; departamentoId?: string }>;
+  searchParams: Promise<{ sucursalId?: string; divisionId?: string; departamentoId?: string; orden?: string; dir?: string; page?: string }>;
 }) {
   // Antes esta página no llamaba a auth() en absoluto: el menú lateral ocultaba
   // el enlace, pero escribir la URL mostraba la nómina completa a cualquiera.
@@ -31,12 +57,35 @@ export default async function PlanillasPage({
   // cada quien al pagarse): una planilla de toda la empresa también paga a la
   // gente de cada sucursal, y por eso aparece.
   const unidad = { select: { nombre: true } } as const;
-  const planillas = await prisma.planilla.findMany({
-    where: hayFiltro ? { detalles: { some: filtroDetallesOrg(alcance) } } : {},
-    include: { empresa: unidad, sucursal: unidad, division: unidad, departamento: unidad },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+  const where: Prisma.PlanillaWhereInput = hayFiltro ? { detalles: { some: filtroDetallesOrg(alcance) } } : {};
+  const orden = leerOrden(sp, COLUMNAS, { campo: "creada", dir: "desc" });
+  const pagina = Math.max(1, parseInt(sp.page ?? "1") || 1);
+
+  const [total, planillas, ultimas] = await Promise.all([
+    prisma.planilla.count({ where }),
+    prisma.planilla.findMany({
+      where,
+      include: { empresa: unidad, sucursal: unidad, division: unidad, departamento: unidad },
+      orderBy: ordenDeConsulta(orden),
+      skip: (pagina - 1) * POR_PAGINA,
+      take: POR_PAGINA,
+    }),
+    // Va aparte: la franja no depende de cómo esté ordenada o paginada la lista.
+    Promise.all(TIPOS.map((tipo) => prisma.planilla.findFirst({ where: { ...where, tipo }, orderBy: { createdAt: "desc" } }))),
+  ]);
+
+  // Enlaces que conservan filtros y orden.
+  const consulta = (cambios: Record<string, string | undefined>) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...sp, ...cambios })) if (v) q.set(k, v);
+    return `?${q.toString()}`;
+  };
+  const enlaceOrden = (o: Orden<Columna>) => consulta({ orden: o.campo, dir: o.dir, page: undefined });
+  const enlacePagina = (n: number) => consulta({ page: String(n) });
+  const th = { actual: orden, enlace: enlaceOrden };
+
+  // En una sola empresa la columna repite lo mismo en todas las filas.
+  const variasEmpresas = new Set(planillas.map((p) => p.empresaId)).size > 1;
 
   return (
     <div className="space-y-6">
@@ -51,55 +100,44 @@ export default async function PlanillasPage({
           )
         }
       >
-        <form className="flex flex-wrap gap-2">
+        <FormFiltros campos={["sucursalId", "divisionId", "departamentoId"]} etiqueta="Filtrar planillas" className="flex flex-wrap gap-2">
           <FiltroEstructura {...opciones} inicial={sp} />
-          <button type="submit" className="btn btn-secondary">Filtrar</button>
-          {hayFiltro && <Link href="/planillas" className="btn btn-ghost">Quitar filtros</Link>}
-        </form>
+        </FormFiltros>
       </PageHeader>
 
       {/* Última planilla de cada tipo, en una franja con divisores. */}
-      <section aria-label="Última planilla por tipo">
-        <div className="grid grid-cols-1 divide-y divide-gray-200 border-b border-gray-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          {TIPOS.map((tipo) => {
-            const ultima = planillas.find((p) => p.tipo === tipo);
-            return (
-              <div key={tipo} className="px-5 py-4 sm:first:pl-0 lg:px-6 lg:first:pl-0">
-                <p className="text-sm text-gray-500">Última {etiquetaEstado(tipo).toLowerCase()}</p>
-                {ultima ? (
-                  <>
-                    <p className="tnum mt-1 text-xl font-semibold leading-none text-gray-900">
-                      {formatCurrency(ultima.totalNeto)}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                      <span>
-                        {formatDate(ultima.fechaInicio)} al {formatDate(ultima.fechaFin)}
-                      </span>
-                      <EstadoBadge valor={ultima.estado} />
-                    </div>
-                  </>
-                ) : (
-                  <p className="mt-1 text-sm text-gray-400">Sin planillas de este tipo</p>
-                )}
+      <FranjaCifras
+        etiqueta="Última planilla por tipo"
+        cifras={TIPOS.map((tipo, i) => {
+          const ultima = ultimas[i];
+          return {
+            label: `Última ${etiquetaEstado(tipo).toLowerCase()}`,
+            valor: ultima ? formatCurrency(ultima.totalNeto) : <span className="text-sm font-normal text-gray-500">Sin planillas de este tipo</span>,
+            detalle: ultima && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  {formatDate(ultima.fechaInicio)} al {formatDate(ultima.fechaFin)}
+                </span>
+                <EstadoBadge valor={ultima.estado} />
               </div>
-            );
-          })}
-        </div>
-      </section>
+            ),
+          };
+        })}
+      />
 
       <div className="panel overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="table-base">
+        <div className="tabla-fija overflow-x-auto">
+          <table className="table-base tabla-tarjetas">
             <thead>
               <tr>
-                <th>Planilla</th>
-                <th>Período</th>
-                <th>Empresa</th>
+                <ThOrden campo="tipo" {...th}>Planilla</ThOrden>
+                <ThOrden campo="periodo" dirInicial="desc" {...th}>Período</ThOrden>
+                {variasEmpresas && <th>Empresa</th>}
                 <th>Alcance</th>
-                <th className="num">Bruto</th>
-                <th className="num">Deducciones</th>
-                <th className="num">Neto</th>
-                <th>Estado</th>
+                <ThOrden campo="bruto" dirInicial="desc" className="num" {...th}>Bruto</ThOrden>
+                <ThOrden campo="deducciones" dirInicial="desc" className="num" {...th}>Deducciones</ThOrden>
+                <ThOrden campo="neto" dirInicial="desc" className="num" {...th}>Neto</ThOrden>
+                <ThOrden campo="estado" {...th}>Estado</ThOrden>
                 <th>
                   <span className="sr-only">Acciones</span>
                 </th>
@@ -108,54 +146,57 @@ export default async function PlanillasPage({
             <tbody>
               {planillas.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center">
-                    <p className="text-sm font-medium text-gray-900">
-                      {hayFiltro ? "Ninguna planilla incluye personal de esa unidad." : "Todavía no hay planillas."}
-                    </p>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {hayFiltro
-                        ? "Quite o cambie el filtro para ver las demás."
-                        : puedeCrear
-                          ? "Calcule la primera con los empleados activos y el período que corresponda."
-                          : "Cuando Nómina calcule una, aparecerá aquí."}
-                    </p>
-                    {puedeCrear && !hayFiltro && (
-                      <Link href="/planillas/nueva" className="btn btn-primary mt-5">
-                        Nueva planilla
-                      </Link>
-                    )}
+                  <td colSpan={9}>
+                    <EstadoVacio
+                      titulo={hayFiltro ? "Ninguna planilla incluye personal de esa unidad." : "Todavía no hay planillas."}
+                      detalle={
+                        hayFiltro
+                          ? "Quite o cambie el filtro para ver las demás."
+                          : puedeCrear
+                            ? "Genere la primera: queda en borrador para revisarla antes de confirmarla."
+                            : "Cuando Nómina genere una, aparecerá aquí."
+                      }
+                      accion={
+                        puedeCrear && !hayFiltro && (
+                          <Link href="/planillas/nueva" className="btn btn-primary">
+                            Nueva planilla
+                          </Link>
+                        )
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
                 planillas.map((p) => (
-                  <tr key={p.id}>
-                    <td>
+                  <FilaEnlace key={p.id} href={`/planillas/${p.id}`}>
+                    <td data-titulo>
                       <Link href={`/planillas/${p.id}`} className="font-medium text-gray-900 hover:text-blue-700">
                         {etiquetaEstado(p.tipo)}
                       </Link>
                     </td>
-                    <td className="whitespace-nowrap">
+                    <td data-etiqueta="Período" className="whitespace-nowrap">
                       {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}
                     </td>
-                    <td>{p.empresa.nombre}</td>
-                    <td className="text-gray-600">{describirAlcance(p)}</td>
-                    <td className="num whitespace-nowrap">{formatCurrency(p.totalBruto)}</td>
-                    <td className="num whitespace-nowrap text-gray-500">{formatCurrency(p.totalDeducciones)}</td>
-                    <td className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(p.totalNeto)}</td>
-                    <td>
+                    {variasEmpresas && <td data-etiqueta="Empresa">{p.empresa.nombre}</td>}
+                    <td data-etiqueta="Alcance" className="text-gray-600">{describirAlcance(p)}</td>
+                    <td data-etiqueta="Bruto" className="num whitespace-nowrap">{formatCurrency(p.totalBruto)}</td>
+                    <td data-etiqueta="Deducciones" className="num whitespace-nowrap text-gray-500">{formatCurrency(p.totalDeducciones)}</td>
+                    <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(p.totalNeto)}</td>
+                    <td data-etiqueta="Estado">
                       <EstadoBadge valor={p.estado} />
                     </td>
-                    <td className="text-right">
+                    <td data-accion className="text-right">
                       <Link href={`/planillas/${p.id}`} className="text-sm font-medium text-blue-600 hover:underline">
                         Ver detalle
                       </Link>
                     </td>
-                  </tr>
+                  </FilaEnlace>
                 ))
               )}
             </tbody>
           </table>
         </div>
+        <Paginacion pagina={pagina} totalPaginas={Math.ceil(total / POR_PAGINA)} enlace={enlacePagina} />
       </div>
     </div>
   );

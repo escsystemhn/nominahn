@@ -11,6 +11,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 interface Centro {
   id: string;
@@ -79,27 +82,29 @@ export default function CentrosCostoClient({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Centros de costo</h1>
-          <p className="text-sm text-gray-500">
+    <div className="space-y-6">
+      <PageHeader
+        title="Centros de costo"
+        description={
+          <>
             Segunda dimensión del asiento contable: la cuenta dice <em>qué</em> es el gasto, el
             centro dice <em>dónde</em> se imputa.
-          </p>
-        </div>
-        {puedeGestionar && (
-          <button
-            onClick={() => {
-              setForm(FORM_VACIO);
-              setModal(true);
-            }}
-            className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800"
-          >
-            Nuevo centro
-          </button>
-        )}
-      </div>
+          </>
+        }
+        actions={
+          puedeGestionar && (
+            <button
+              onClick={() => {
+                setForm(FORM_VACIO);
+                setModal(true);
+              }}
+              className="btn btn-primary"
+            >
+              Nuevo centro
+            </button>
+          )
+        }
+      />
 
       {error && (
         <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
@@ -123,56 +128,56 @@ export default function CentrosCostoClient({
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="panel overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-base tabla-tarjetas">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Código</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Nombre</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Cuenta contable</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Departamentos</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Empleados propios</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th>
-                {puedeGestionar && <th className="text-left px-4 py-3 font-medium text-gray-600">Acciones</th>}
+              <tr>
+                <th>Código</th>
+                <th>Nombre</th>
+                <th>Cuenta contable</th>
+                <th className="num">Departamentos</th>
+                <th className="num">Empleados propios</th>
+                <th>Estado</th>
+                {puedeGestionar && <th>Acciones</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {centros.length === 0 ? (
                 <tr>
-                  <td colSpan={puedeGestionar ? 7 : 6} className="text-center py-8 text-gray-400">
-                    Todavía no hay centros de costo. Sin ellos, la partida contable sale consolidada,
-                    sin reparto por área.
+                  <td colSpan={puedeGestionar ? 7 : 6}>
+                    <EstadoVacio
+                      titulo="Todavía no hay centros de costo."
+                      detalle={
+                        puedeGestionar
+                          ? "Sin ellos, la partida contable sale consolidada, sin reparto por área. Cree el primero con «Nuevo centro»."
+                          : "Sin ellos, la partida contable sale consolidada, sin reparto por área."
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
                 centros.map((c) => (
-                  <tr key={c.id} className={`hover:bg-gray-50 ${!c.activo ? "opacity-60" : ""}`}>
-                    <td className="px-4 py-3 font-mono text-xs">{c.codigo}</td>
-                    <td className="px-4 py-3">
+                  <tr key={c.id} className={!c.activo ? "opacity-60" : ""}>
+                    <td data-etiqueta="Código" className="font-mono text-xs">{c.codigo}</td>
+                    <td data-titulo>
                       <div className="font-medium text-gray-900">{c.nombre}</div>
                       {c.descripcion && <div className="text-xs text-gray-500">{c.descripcion}</div>}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                      {c.cuentaGasto ?? <span className="text-gray-400 font-sans">plan general</span>}
+                    <td data-etiqueta="Cuenta contable" className="font-mono text-xs text-gray-600">
+                      {c.cuentaGasto ?? <span className="text-gray-500 font-sans">plan general</span>}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{c.departamentos}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.empleados}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          c.activo ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {c.activo ? "Activo" : "Inactivo"}
-                      </span>
+                    <td data-etiqueta="Departamentos" className="num text-gray-600">{c.departamentos}</td>
+                    <td data-etiqueta="Empleados propios" className="num text-gray-600">{c.empleados}</td>
+                    <td data-etiqueta="Estado">
+                      <EstadoBadge valor={c.activo ? "ACTIVO" : "INACTIVO"} />
                     </td>
                     {puedeGestionar && (
-                      <td className="px-4 py-3">
-                        <div className="flex gap-3 text-xs">
+                      <td data-accion>
+                        <div className="flex flex-wrap gap-1">
                           <button
                             onClick={() => setAsignando(c)}
-                            className="text-blue-600 hover:text-blue-800 font-medium"
+                            className="btn btn-ghost btn-sm"
                           >
                             Departamentos
                           </button>
@@ -184,7 +189,7 @@ export default function CentrosCostoClient({
                               })
                             }
                             disabled={cargando}
-                            className="text-gray-600 hover:text-gray-900 disabled:opacity-40"
+                            className="btn btn-ghost btn-sm"
                           >
                             {c.activo ? "Desactivar" : "Reactivar"}
                           </button>
@@ -207,7 +212,7 @@ export default function CentrosCostoClient({
                 value={form.codigo}
                 onChange={(e) => setForm({ ...form, codigo: e.target.value })}
                 placeholder="PROD"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                className="input font-mono"
               />
             </Campo>
             <Campo etiqueta="Nombre">
@@ -215,14 +220,14 @@ export default function CentrosCostoClient({
                 value={form.nombre}
                 onChange={(e) => setForm({ ...form, nombre: e.target.value })}
                 placeholder="Producción"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="input"
               />
             </Campo>
             <Campo etiqueta="Descripción">
               <input
                 value={form.descripcion}
                 onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="input"
               />
             </Campo>
             <Campo
@@ -233,7 +238,7 @@ export default function CentrosCostoClient({
                 value={form.cuentaGasto}
                 onChange={(e) => setForm({ ...form, cuentaGasto: e.target.value })}
                 placeholder="-01"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                className="input font-mono"
               />
             </Campo>
           </div>
@@ -303,10 +308,10 @@ function AsignarDepartamentos({
                 }
               />
               <span className="flex-1">
-                {d.nombre} <span className="text-xs text-gray-400">· {d.sucursal}</span>
+                {d.nombre} <span className="text-xs text-gray-500">({d.sucursal})</span>
               </span>
               {ocupadoPorOtro && !seleccion.includes(d.id) && (
-                <span className="text-xs text-amber-600" title="Ya imputa a otro centro de costo">
+                <span className="text-xs text-amber-700" title="Ya imputa a otro centro de costo">
                   otro centro
                 </span>
               )}
@@ -329,7 +334,7 @@ function Campo({
 }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-gray-700 mb-1">{etiqueta}</span>
+      <span className="block text-sm font-medium text-gray-800 mb-1">{etiqueta}</span>
       {children}
       {ayuda && <span className="block text-xs text-gray-500 mt-1">{ayuda}</span>}
     </label>
@@ -351,19 +356,19 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="panel shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-100 shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">{titulo}</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{titulo}</h2>
         </div>
         <div className="px-6 py-5 overflow-y-auto flex-1">{children}</div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-          <button onClick={onCerrar} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onCerrar} className="btn btn-ghost">
             Cancelar
           </button>
           <button
             onClick={onGuardar}
             disabled={cargando}
-            className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {cargando ? "Guardando…" : "Guardar"}
           </button>

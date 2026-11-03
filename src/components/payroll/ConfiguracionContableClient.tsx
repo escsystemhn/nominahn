@@ -81,7 +81,7 @@ function BuscadorCuenta({
               >
                 <span className="shrink-0 font-mono text-xs text-gray-500">{c.codigo}</span>
                 <span className="flex-1 truncate text-gray-800">{c.nombre}</span>
-                <span className="shrink-0 text-[11px] text-gray-400">{ETIQUETA_TIPO[c.tipo]}</span>
+                <span className="shrink-0 text-xs text-gray-500">{ETIQUETA_TIPO[c.tipo]}</span>
               </button>
             ))
           )}
@@ -193,7 +193,7 @@ export default function ConfiguracionContableClient({ conceptos: inicial, cuenta
                         {falta && <span className="ml-2 text-xs font-normal text-amber-700">sin asignar</span>}
                       </p>
                       <p className="mt-0.5 text-xs text-gray-500">{item.detalle}</p>
-                      <p className="mt-1 text-[11px] text-gray-400">
+                      <p className="mt-1 text-xs text-gray-500">
                         Cuenta de {c.tiposPermitidos.map((t) => ETIQUETA_TIPO[t].toLowerCase()).join(" o ")}. Predeterminada {c.porOmision.codigo}.
                       </p>
                     </div>
@@ -208,7 +208,7 @@ export default function ConfiguracionContableClient({ conceptos: inicial, cuenta
                           </button>
                         )}
                       </div>
-                      {guardando === item.clave && <p className="mt-1 text-xs text-gray-500">Guardando</p>}
+                      {guardando === item.clave && <p className="mt-1 text-xs text-gray-500">Guardando…</p>}
                       {errores[item.clave] && <p className="mt-1 text-xs text-red-700">{errores[item.clave]}</p>}
                     </div>
                   </div>

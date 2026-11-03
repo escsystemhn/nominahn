@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { alcanzaUbicacion, conAlcance } from "@/lib/auth/alcance";
+import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
 import { Prisma, EstadoEmpleado } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso, puede } from "@/lib/auth/guard";
@@ -108,25 +110,15 @@ export async function GET(req: NextRequest) {
   const page = parseInt(searchParams.get("page") ?? "1");
   const limit = parseInt(searchParams.get("limit") ?? "20");
 
-  const where: Prisma.EmpleadoWhereInput = {
+  const filtros: Prisma.EmpleadoWhereInput = {
     AND: [
-      search
-        ? {
-            OR: [
-              { primerNombre: { contains: search, mode: "insensitive" } },
-              { primerApellido: { contains: search, mode: "insensitive" } },
-              { codigo: { contains: search, mode: "insensitive" } },
-              // Buscar por identidad sólo si el rol puede verla: si no, el
-              // resultado revelaría el número que no se le devuelve.
-              ...(vePII ? [{ identidad: { contains: search, mode: "insensitive" as const } }] : []),
-            ],
-          }
-        : {},
+      filtroBusquedaEmpleados(search, { conIdentidad: vePII }),
       sucursalId ? { sucursalId } : {},
       departamentoId ? { departamentoId } : {},
       estado ? { estado: estado as EstadoEmpleado } : {},
     ],
   };
+  const where = conAlcance(filtros, g.usuario);
 
   const [total, empleados] = await Promise.all([
     prisma.empleado.count({ where }),
@@ -160,6 +152,9 @@ export async function POST(req: NextRequest) {
     sucursalId: data.sucursalId, departamentoId: data.departamentoId, puestoId: data.puestoId || null,
   });
   if (ubicacion) return NextResponse.json({ error: ubicacion }, { status: 400 });
+  if (!alcanzaUbicacion(g.usuario, { sucursalId: data.sucursalId, departamentoId: data.departamentoId })) {
+    return NextResponse.json({ error: "Esa ubicación está fuera del alcance de su cuenta." }, { status: 403 });
+  }
 
   // Generar código único
   const count = await prisma.empleado.count();

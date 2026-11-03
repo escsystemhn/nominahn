@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAvisos } from "@/components/ui/Avisos";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatCurrency } from "@/lib/utils";
 import CorreoSalienteConfig from "./CorreoSalienteConfig";
 import SapConexionConfig from "./SapConexionConfig";
@@ -69,6 +72,7 @@ export default function ConfiguracionClient({
   puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco,
 }: Props) {
   const router = useRouter();
+  const { avisar } = useAvisos();
   const [tab, setTab] = useState<"empresa" | "sucursales" | "salarios" | "sistema" | "parametros" | "correo" | "sap" | "banco">(
     puedeVer ? "empresa" : puedeParametros ? "parametros" : puedeCorreo ? "correo" : "sap"
   );
@@ -86,7 +90,7 @@ export default function ConfiguracionClient({
   async function aplicarAumentoColectivo() {
     const valor = formAumento.tipo === "PORCENTAJE" ? formAumento.porcentaje : formAumento.montoFijo;
     if (!valor || isNaN(parseFloat(valor))) {
-      alert("Ingrese un valor numérico válido.");
+      avisar.error("Ingrese un valor numérico válido.");
       return;
     }
     setLoading(true);
@@ -99,10 +103,10 @@ export default function ConfiguracionClient({
       if (!res.ok) throw new Error();
       const data = await res.json();
       setModalAumentoColectivo(false);
-      alert(`Aumento aplicado a ${data.actualizados} empleados.`);
+      avisar.exito(`Aumento aplicado a ${data.actualizados} empleados.`);
       router.refresh();
     } catch {
-      alert("No se pudo aplicar el aumento. Intente nuevamente.");
+      avisar.error("No se pudo aplicar el aumento. Intente nuevamente.");
     } finally {
       setLoading(false);
     }
@@ -128,11 +132,8 @@ export default function ConfiguracionClient({
   ];
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Configuración del sistema</h1>
-        <p className="text-sm text-gray-500">Empresa, sucursales, salarios y parámetros de ley</p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Configuración del sistema" description="Empresa, sucursales, salarios y parámetros de ley." />
 
       <div className="flex gap-1 overflow-x-auto border-b border-gray-200">
         {tabs.map((t) => (
@@ -172,25 +173,25 @@ export default function ConfiguracionClient({
       {/* Salarios */}
       {tab === "salarios" && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+          <div className="panel p-5">
             <h2 className="font-semibold text-gray-800 mb-3">Salario mínimo vigente</h2>
             {salarioMinimo ? (
               <div className="flex items-center gap-6">
                 <div>
-                  <p className="text-3xl font-bold text-blue-700">{formatCurrency(Number(salarioMinimo.monto))}</p>
-                  <p className="text-sm text-gray-500">Año {salarioMinimo.anio} · {salarioMinimo.sector}</p>
+                  <p className="tnum text-3xl font-semibold text-gray-900">{formatCurrency(Number(salarioMinimo.monto))}</p>
+                  <p className="text-sm text-gray-500">Año {salarioMinimo.anio}, {salarioMinimo.sector}</p>
                 </div>
               </div>
             ) : (
-              <p className="text-gray-400 text-sm">Sin salario mínimo configurado</p>
+              <p className="text-gray-500 text-sm">Sin salario mínimo configurado</p>
             )}
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+          <div className="panel p-5">
             <h2 className="font-semibold text-gray-800 mb-3">Aumento de salario colectivo</h2>
             <p className="text-sm text-gray-500 mb-4">Aplica un aumento de salario a todos o a un grupo de empleados en una sola operación.</p>
-            <button onClick={() => setModalAumentoColectivo(true)} className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700">
-              Aplicar Aumento Colectivo
+            <button onClick={() => setModalAumentoColectivo(true)} className="btn btn-primary">
+              Aplicar aumento colectivo
             </button>
           </div>
         </div>
@@ -198,67 +199,71 @@ export default function ConfiguracionClient({
 
       {/* Sistema */}
       {tab === "sistema" && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-gray-50 border-b"><th className="text-left px-4 py-3 font-medium text-gray-600">Configuración</th><th className="text-left px-4 py-3 font-medium text-gray-600">Valor</th><th className="text-left px-4 py-3 font-medium text-gray-600">Descripción</th></tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {configs.map((c) => (
-                <tr key={c.clave} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs text-blue-700">{c.clave}</td>
-                  <td className="px-4 py-3 font-medium">{c.valor}</td>
-                  <td className="px-4 py-3 text-gray-500">{c.descripcion ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table-base">
+              <thead><tr><th>Configuración</th><th>Valor</th><th>Descripción</th></tr></thead>
+              <tbody>
+                {configs.length === 0 ? (
+                  <tr><td colSpan={3}><EstadoVacio titulo="No hay opciones generales guardadas." detalle="Aquí aparecerán las opciones que el sistema vaya registrando." /></td></tr>
+                ) : configs.map((c) => (
+                  <tr key={c.clave}>
+                    <td className="font-mono text-xs text-blue-700">{c.clave}</td>
+                    <td className="font-medium text-gray-900">{c.valor}</td>
+                    <td className="text-gray-500">{c.descripcion ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Modal aumento colectivo */}
       {modalAumentoColectivo && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
+          <div className="panel w-full max-w-md space-y-4 p-6 shadow-xl">
             <h3 className="font-semibold text-gray-900">Aumento colectivo de salario</h3>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Tipo de Aumento</label>
+              <span className="mb-1 block text-sm font-medium text-gray-800">Tipo de aumento</span>
               <div className="flex gap-3">
                 {["PORCENTAJE", "MONTO_FIJO"].map((t) => (
                   <button key={t} type="button" onClick={() => setFormAumento((f) => ({ ...f, tipo: t }))} className={`flex-1 py-2 border-2 rounded-lg text-sm font-medium ${formAumento.tipo === t ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"}`}>
-                    {t === "PORCENTAJE" ? "Porcentaje" : "Monto Fijo"}
+                    {t === "PORCENTAJE" ? "Porcentaje" : "Monto fijo"}
                   </button>
                 ))}
               </div>
             </div>
             {formAumento.tipo === "PORCENTAJE" ? (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Porcentaje de Aumento (%)</label>
-                <input type="number" step="0.1" value={formAumento.porcentaje} onChange={(e) => setFormAumento((f) => ({ ...f, porcentaje: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Ej: 5.5" />
-              </div>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-gray-800">Porcentaje de aumento (%)</span>
+                <input type="number" step="0.1" value={formAumento.porcentaje} onChange={(e) => setFormAumento((f) => ({ ...f, porcentaje: e.target.value }))} className="input" placeholder="Ej.: 5.5" />
+              </label>
             ) : (
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Monto Fijo a Agregar (L.)</label>
-                <input type="number" step="0.01" value={formAumento.montoFijo} onChange={(e) => setFormAumento((f) => ({ ...f, montoFijo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-              </div>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-gray-800">Monto fijo a agregar (L.)</span>
+                <input type="number" step="0.01" value={formAumento.montoFijo} onChange={(e) => setFormAumento((f) => ({ ...f, montoFijo: e.target.value }))} className="input" />
+              </label>
             )}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Aplicar a Sucursal (vacío = todas)</label>
-              <select value={formAumento.sucursalId} onChange={(e) => setFormAumento((f) => ({ ...f, sucursalId: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-gray-800">Aplicar a la sucursal (vacío = todas)</span>
+              <select value={formAumento.sucursalId} onChange={(e) => setFormAumento((f) => ({ ...f, sucursalId: e.target.value }))} className="input">
                 <option value="">Todas las sucursales</option>
                 {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Motivo</label>
-              <input value={formAumento.motivo} onChange={(e) => setFormAumento((f) => ({ ...f, motivo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setModalAumentoColectivo(false)} className="flex-1 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">Cancelar</button>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-gray-800">Motivo</span>
+              <input value={formAumento.motivo} onChange={(e) => setFormAumento((f) => ({ ...f, motivo: e.target.value }))} className="input" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setModalAumentoColectivo(false)} className="btn btn-ghost">Cancelar</button>
               <button
                 onClick={aplicarAumentoColectivo}
                 disabled={loading || !(formAumento.tipo === "PORCENTAJE" ? formAumento.porcentaje : formAumento.montoFijo)}
-                className="flex-1 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:bg-emerald-400"
+                className="btn btn-primary"
               >
-                {loading ? "Aplicando..." : "Aplicar Aumento"}
+                {loading ? "Aplicando…" : "Aplicar aumento"}
               </button>
             </div>
           </div>

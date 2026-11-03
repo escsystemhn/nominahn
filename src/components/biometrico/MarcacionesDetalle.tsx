@@ -13,6 +13,8 @@
  */
 
 import { useEffect, useState } from "react";
+import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 interface EventoDetalle {
   id: string;
@@ -35,11 +37,11 @@ interface Props {
 
 const POR_PAGINA = 100;
 
-const COLOR_ESTADO: Record<EventoDetalle["estado"], string> = {
-  PROCESADO: "bg-green-100 text-green-800",
-  PENDIENTE: "bg-blue-100 text-blue-800",
-  CUARENTENA: "bg-amber-100 text-amber-800",
-  DESCARTADO: "bg-gray-100 text-gray-600",
+const ESTADO_MARCA: Record<EventoDetalle["estado"], { etiqueta: string; tono: Tono }> = {
+  PROCESADO: { etiqueta: "Procesado", tono: "ok" },
+  PENDIENTE: { etiqueta: "Pendiente", tono: "marca" },
+  CUARENTENA: { etiqueta: "En cuarentena", tono: "aviso" },
+  DESCARTADO: { etiqueta: "Descartado", tono: "neutro" },
 };
 
 const ETIQUETA_TIPO: Record<EventoDetalle["tipo"], string> = {
@@ -101,7 +103,7 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
         setError(null);
       } catch (e) {
         if (!vivo) return;
-        setError(e instanceof Error ? e.message : "Error al cargar");
+        setError(e instanceof Error ? e.message : "No se pudieron cargar las marcaciones");
         setEventos([]);
         setTotal(0);
       } finally {
@@ -133,16 +135,16 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
 
   const desde = total === 0 ? 0 : pagina * POR_PAGINA + 1;
   const hasta = Math.min((pagina + 1) * POR_PAGINA, total);
-  const campoClase =
-    "px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const campoClase = "input";
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+      <div className="panel p-4">
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <select
             value={filtros.dispositivoId}
             onChange={(e) => filtrar("dispositivoId", e.target.value)}
+            aria-label="Equipo"
             className={campoClase}
           >
             <option value="">Todos los equipos</option>
@@ -154,6 +156,7 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
           <select
             value={filtros.empleadoId}
             onChange={(e) => filtrar("empleadoId", e.target.value)}
+            aria-label="Empleado"
             className={`${campoClase} col-span-2`}
           >
             <option value="">Todos los empleados</option>
@@ -165,6 +168,7 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
           <select
             value={filtros.estado}
             onChange={(e) => filtrar("estado", e.target.value)}
+            aria-label="Estado de la marca"
             className={campoClase}
           >
             <option value="">Todos los estados</option>
@@ -195,12 +199,13 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
             value={filtros.pin}
             onChange={(e) => filtrar("pin", e.target.value)}
             placeholder="Filtrar por PIN exacto…"
+            aria-label="PIN"
             className={`${campoClase} font-mono w-56`}
           />
           <button
             onClick={recargar}
             disabled={cargando}
-            className="px-3 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            className="btn btn-secondary"
           >
             {cargando ? "Cargando…" : "Actualizar"}
           </button>
@@ -208,10 +213,10 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">{error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">{error}</div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="panel overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-semibold text-gray-800 text-sm">
             Marcaciones del reloj
@@ -226,14 +231,14 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
               <button
                 onClick={() => irAPagina(Math.max(pagina - 1, 0))}
                 disabled={pagina === 0 || cargando}
-                className="px-3 py-1 border border-gray-300 text-xs rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                className="btn btn-secondary btn-sm"
               >
                 Anterior
               </button>
               <button
                 onClick={() => irAPagina(pagina + 1)}
                 disabled={hasta >= total || cargando}
-                className="px-3 py-1 border border-gray-300 text-xs rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                className="btn btn-secondary btn-sm"
               >
                 Siguiente
               </button>
@@ -242,50 +247,48 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-base tabla-tarjetas">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Marca</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 whitespace-nowrap">Día laboral</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Empleado</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">PIN</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Equipo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Verificación</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th>
+              <tr>
+                <th>Marca</th>
+                <th>Día laboral</th>
+                <th>Empleado</th>
+                <th>PIN</th>
+                <th>Equipo</th>
+                <th>Tipo</th>
+                <th>Verificación</th>
+                <th>Estado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {eventos.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-gray-400">
-                    {cargando
-                      ? "Cargando marcaciones…"
-                      : "No hay marcaciones con estos filtros. Sincronice un dispositivo para traerlas."}
+                  <td colSpan={8}>
+                    <EstadoVacio
+                      titulo={cargando ? "Cargando marcaciones…" : "No hay marcaciones con estos filtros."}
+                      detalle={cargando ? undefined : "Cambie los filtros o sincronice un dispositivo para traerlas."}
+                    />
                   </td>
                 </tr>
               ) : (
                 eventos.map((e) => (
-                  <tr key={e.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-900 whitespace-nowrap">
+                  <tr key={e.id}>
+                    <td data-titulo className="font-mono text-xs text-gray-900 whitespace-nowrap">
                       {horaHN(e.ocurridoEn)}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">
+                    <td data-etiqueta="Día laboral" className="whitespace-nowrap">
                       {diaCalendario(e.fechaLocal)}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-900">
+                    <td data-etiqueta="Empleado" className="text-gray-900">
                       {e.empleado ?? <span className="text-amber-700 italic">Sin asignar</span>}
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-blue-700">{e.pin}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{e.dispositivo}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{ETIQUETA_TIPO[e.tipo]}</td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs">{e.verificacion ?? "—"}</td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${COLOR_ESTADO[e.estado]}`}
-                        title={e.motivo ?? undefined}
-                      >
-                        {e.estado === "CUARENTENA" ? "En cuarentena" : e.estado.toLowerCase()}
+                    <td data-etiqueta="PIN" className="font-mono text-xs text-blue-700">{e.pin}</td>
+                    <td data-etiqueta="Equipo" className="text-gray-600">{e.dispositivo}</td>
+                    <td data-etiqueta="Tipo" className="text-gray-600">{ETIQUETA_TIPO[e.tipo]}</td>
+                    <td data-etiqueta="Verificación" className="text-gray-500 text-xs">{e.verificacion ?? "—"}</td>
+                    <td data-etiqueta="Estado">
+                      <span title={e.motivo ?? undefined}>
+                        <EstadoBadge valor={e.estado} etiqueta={ESTADO_MARCA[e.estado].etiqueta} tono={ESTADO_MARCA[e.estado].tono} />
                       </span>
                     </td>
                   </tr>

@@ -17,7 +17,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAvisos } from "@/components/ui/Avisos";
 import { formatDateTime } from "@/lib/utils";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 type Alcance = "TODO" | "SUCURSAL" | "DEPARTAMENTO" | "PROPIO";
 
@@ -50,6 +54,16 @@ const ROLES = [
   "SUPER_ADMIN", "ADMIN_RRHH", "CONTADOR", "GERENTE", "SUPERVISOR", "AUDITOR", "EMPLEADO",
 ] as const;
 
+const ETIQUETA_ROL: Record<string, string> = {
+  SUPER_ADMIN: "Administrador general",
+  ADMIN_RRHH: "Administrador de RRHH",
+  CONTADOR: "Contador",
+  GERENTE: "Gerente",
+  SUPERVISOR: "Supervisor",
+  AUDITOR: "Auditor",
+  EMPLEADO: "Empleado",
+};
+
 const ETIQUETA_ALCANCE: Record<Alcance, string> = {
   TODO: "Toda la empresa",
   SUCURSAL: "Sus sucursales",
@@ -77,6 +91,7 @@ export default function UsuariosClient({
   puedeVerPerfiles,
 }: Props) {
   const router = useRouter();
+  const { confirmar } = useAvisos();
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
@@ -147,9 +162,11 @@ export default function UsuariosClient({
 
   async function alternarActivo(u: Usuario) {
     if (u.activo) {
-      const confirmado = window.confirm(
-        `¿Desactivar la cuenta de ${u.name ?? u.email}?\n\nNo podrá iniciar sesión y su sesión abierta se cerrará en pocos minutos. La cuenta no se elimina: su rastro en la auditoría se conserva.`
-      );
+      const confirmado = await confirmar({
+        titulo: `¿Desactivar la cuenta de ${u.name ?? u.email}?`,
+        detalle: "No podrá iniciar sesión y su sesión abierta se cerrará en pocos minutos. La cuenta no se elimina: su rastro en la auditoría se conserva.",
+        accion: "Desactivar",
+      });
       if (!confirmado) return;
       await llamar(`/api/usuarios/${u.id}`, { method: "DELETE" });
     } else {
@@ -161,9 +178,11 @@ export default function UsuariosClient({
   }
 
   async function resetear(u: Usuario) {
-    const confirmado = window.confirm(
-      `¿Restablecer la contraseña de ${u.name ?? u.email}?\n\nSe generará una clave temporal que deberá entregarle por un canal seguro. Su sesión actual se cerrará.`
-    );
+    const confirmado = await confirmar({
+      titulo: `¿Restablecer la contraseña de ${u.name ?? u.email}?`,
+      detalle: "Se generará una clave temporal que deberá entregarle por un canal seguro. Su sesión actual se cerrará.",
+      accion: "Restablecer",
+    });
     if (!confirmado) return;
     const datos = await llamar(`/api/usuarios/${u.id}/password`, { method: "POST" });
     if (datos) setTemporal({ email: u.email, password: String(datos.passwordTemporal) });
@@ -186,36 +205,31 @@ export default function UsuariosClient({
   const pideSucursales = alcanceSeleccionado === "SUCURSAL";
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Usuarios</h1>
-          <p className="text-sm text-gray-500">
-            {usuarios.filter((u) => u.activo).length} cuenta(s) activa(s) de {usuarios.length}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {puedeVerPerfiles && (
-            <Link
-              href="/usuarios/perfiles"
-              className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"
-            >
-              Perfiles de acceso
-            </Link>
-          )}
-          {puedeGestionar && (
-            <button
-              onClick={() => {
-                setForm(FORM_VACIO);
-                setModalNuevo(true);
-              }}
-              className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800"
-            >
-              Nuevo usuario
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Usuarios"
+        description={`${usuarios.filter((u) => u.activo).length} cuenta(s) activa(s) de ${usuarios.length}.`}
+        actions={
+          <>
+            {puedeVerPerfiles && (
+              <Link href="/usuarios/perfiles" className="btn btn-secondary">
+                Perfiles de acceso
+              </Link>
+            )}
+            {puedeGestionar && (
+              <button
+                onClick={() => {
+                  setForm(FORM_VACIO);
+                  setModalNuevo(true);
+                }}
+                className="btn btn-primary"
+              >
+                Nuevo usuario
+              </button>
+            )}
+          </>
+        }
+      />
 
       {error && (
         <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
@@ -229,104 +243,98 @@ export default function UsuariosClient({
         value={busqueda}
         onChange={(e) => setBusqueda(e.target.value)}
         placeholder="Buscar por nombre o correo…"
-        className="w-full max-w-sm px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        aria-label="Buscar usuario"
+        className="input max-w-sm"
       />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="panel overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-base tabla-tarjetas">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Usuario</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Perfil / Rol</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Alcance</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Empleado</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Último acceso</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Acciones</th>
+              <tr>
+                <th>Usuario</th>
+                <th>Perfil / Rol</th>
+                <th>Alcance</th>
+                <th>Empleado</th>
+                <th>Último acceso</th>
+                <th>Estado</th>
+                <th>Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {visibles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-8 text-gray-400">
-                    No hay usuarios que coincidan
+                  <td colSpan={7}>
+                    <EstadoVacio
+                      titulo="No hay usuarios que coincidan."
+                      detalle={busqueda.trim() ? "Pruebe con otra parte del nombre o del correo." : "Cuando se cree una cuenta, aparecerá aquí."}
+                    />
                   </td>
                 </tr>
               ) : (
                 visibles.map((u) => {
                   const esYo = u.id === usuarioActualId;
                   return (
-                    <tr key={u.id} className={`hover:bg-gray-50 ${!u.activo ? "opacity-60" : ""}`}>
-                      <td className="px-4 py-3">
+                    <tr key={u.id} className={!u.activo ? "opacity-60" : ""}>
+                      <td data-titulo>
                         <div className="font-medium text-gray-900">
                           {u.name ?? "—"}
                           {esYo && (
-                            <span className="ml-2 text-xs font-normal text-blue-600">(usted)</span>
+                            <span className="ml-2 text-xs font-normal text-blue-700">(usted)</span>
                           )}
                         </div>
-                        <div className="text-xs text-gray-400">{u.email}</div>
+                        <div className="text-xs text-gray-500">{u.email}</div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td data-etiqueta="Perfil / Rol">
                         {u.perfil ? (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {u.perfil.nombre}
-                          </span>
+                          <span className="font-medium text-gray-900">{u.perfil.nombre}</span>
                         ) : (
                           <span
-                            className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"
+                            className="text-gray-600"
                             title="Sin perfil asignado: los permisos se derivan del rol."
                           >
-                            {u.role}
+                            {ETIQUETA_ROL[u.role] ?? u.role}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
+                      <td data-etiqueta="Alcance" className="text-xs text-gray-600">
                         {ETIQUETA_ALCANCE[u.perfil?.alcance ?? "TODO"]}
                         {u.perfil?.alcance === "SUCURSAL" && (
-                          <span className="block text-gray-400">
+                          <span className="block text-gray-500">
                             {u.sucursalesIds.length === 0
                               ? "sin sucursales asignadas"
                               : `${u.sucursalesIds.length} sucursal(es)`}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
-                        {u.empleado ? `${u.empleado.codigo} · ${u.empleado.primerNombre} ${u.empleado.primerApellido}` : "—"}
+                      <td data-etiqueta="Empleado" className="text-xs text-gray-600">
+                        {u.empleado ? `${u.empleado.codigo}, ${u.empleado.primerNombre} ${u.empleado.primerApellido}` : "—"}
                         {u.empleado?.estado === "INACTIVO" && (
                           <span className="block text-amber-700" title="La cuenta no puede entrar, salvo que sea la única que puede administrar accesos.">
                             Dado de baja: sin acceso
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
+                      <td data-etiqueta="Último acceso" className="text-xs text-gray-500">
                         {u.ultimoAcceso ? formatDateTime(u.ultimoAcceso) : "Nunca"}
                       </td>
-                      <td className="px-4 py-3">
-                        {u.activo ? (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            Activo
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                            Inactivo
-                          </span>
-                        )}
+                      <td data-etiqueta="Estado">
+                        <EstadoBadge valor={u.activo ? "ACTIVO" : "INACTIVO"} />
                         {u.debeCambiarPassword && u.activo && (
                           <span
-                            className="block mt-1 text-xs text-amber-600"
+                            className="block mt-1 text-xs text-amber-700"
                             title="Tiene una contraseña temporal y deberá cambiarla al entrar."
                           >
                             clave temporal
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-3 text-xs">
+                      <td data-accion>
+                        <div className="flex flex-wrap gap-1">
                           {puedeGestionar && (
                             <button
                               onClick={() => abrirEdicion(u)}
-                              className="text-blue-600 hover:text-blue-800 font-medium"
+                              className="btn btn-ghost btn-sm"
                             >
                               Editar
                             </button>
@@ -335,7 +343,7 @@ export default function UsuariosClient({
                             <button
                               onClick={() => resetear(u)}
                               disabled={cargando}
-                              className="text-gray-600 hover:text-gray-900 disabled:opacity-40"
+                              className="btn btn-ghost btn-sm"
                             >
                               Restablecer clave
                             </button>
@@ -345,8 +353,8 @@ export default function UsuariosClient({
                               onClick={() => alternarActivo(u)}
                               disabled={cargando || esYo}
                               title={esYo ? "No puede desactivar su propia cuenta." : undefined}
-                              className={`disabled:opacity-40 disabled:cursor-not-allowed ${
-                                u.activo ? "text-red-600 hover:text-red-800" : "text-green-700 hover:text-green-900"
+                              className={`btn btn-sm ${
+                                u.activo ? "border border-red-300 bg-white text-red-700 hover:bg-red-50" : "btn-ghost"
                               }`}
                             >
                               {u.activo ? "Desactivar" : "Reactivar"}
@@ -378,7 +386,7 @@ export default function UsuariosClient({
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="input"
                 placeholder="Ana Núñez"
               />
             </Campo>
@@ -392,7 +400,7 @@ export default function UsuariosClient({
                 value={form.email}
                 disabled={!!editando}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-50 disabled:text-gray-500"
+                className="input disabled:bg-gray-50 disabled:text-gray-500"
                 placeholder="ana.nunez@empresa.hn"
               />
             </Campo>
@@ -404,12 +412,12 @@ export default function UsuariosClient({
               <select
                 value={form.perfilId}
                 onChange={(e) => setForm({ ...form, perfilId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="input"
               >
                 <option value="">Sin perfil — usar el rol</option>
                 {perfiles.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.nombre} · {ETIQUETA_ALCANCE[p.alcance]}
+                    {p.nombre}, {ETIQUETA_ALCANCE[p.alcance]}
                   </option>
                 ))}
               </select>
@@ -422,10 +430,10 @@ export default function UsuariosClient({
               <select
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="input"
               >
                 {ROLES.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>{ETIQUETA_ROL[r]}</option>
                 ))}
               </select>
             </Campo>
@@ -450,7 +458,7 @@ export default function UsuariosClient({
                           })
                         }
                       />
-                      {s.nombre} <span className="text-xs text-gray-400">({s.codigo})</span>
+                      {s.nombre} <span className="text-xs text-gray-500">({s.codigo})</span>
                     </label>
                   ))}
                 </div>
@@ -464,18 +472,18 @@ export default function UsuariosClient({
               <select
                 value={form.empleadoId}
                 onChange={(e) => setForm({ ...form, empleadoId: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="input"
               >
                 <option value="">Sin vincular</option>
                 {editando?.empleado && (
                   <option value={editando.empleado.id}>
-                    {editando.empleado.codigo} · {editando.empleado.primerNombre}{" "}
+                    {editando.empleado.codigo}, {editando.empleado.primerNombre}{" "}
                     {editando.empleado.primerApellido}
                   </option>
                 )}
                 {empleadosSinCuenta.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.codigo} · {e.primerNombre} {e.primerApellido}
+                    {e.codigo}, {e.primerNombre} {e.primerApellido}
                   </option>
                 ))}
               </select>
@@ -507,7 +515,7 @@ function Campo({
 }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-gray-700 mb-1">{etiqueta}</span>
+      <span className="block text-sm font-medium text-gray-800 mb-1">{etiqueta}</span>
       {children}
       {ayuda && <span className="block text-xs text-gray-500 mt-1">{ayuda}</span>}
     </label>
@@ -529,19 +537,19 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="panel shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-100 shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">{titulo}</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{titulo}</h2>
         </div>
         <div className="px-6 py-5 overflow-y-auto flex-1">{children}</div>
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-          <button onClick={onCerrar} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onCerrar} className="btn btn-ghost">
             Cancelar
           </button>
           <button
             onClick={onGuardar}
             disabled={cargando}
-            className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {cargando ? "Guardando…" : "Guardar"}
           </button>
@@ -585,11 +593,11 @@ function PanelPasswordTemporal({
               setCopiada(false);
             }
           }}
-          className="px-3 py-2 bg-amber-700 text-white text-sm rounded-lg hover:bg-amber-800"
+          className="btn btn-secondary"
         >
-          {copiada ? "Copiada ✓" : "Copiar"}
+          {copiada ? "Copiada" : "Copiar"}
         </button>
-        <button onClick={onCerrar} className="px-3 py-2 text-sm text-amber-800 hover:text-amber-950">
+        <button onClick={onCerrar} className="btn btn-ghost">
           Ya la guardé
         </button>
       </div>

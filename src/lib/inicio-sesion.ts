@@ -26,14 +26,19 @@ export interface Novedad {
 export const NOVEDADES: Record<string, Novedad[]> = {
   "1.0": [
     {
-      titulo: "Nueva imagen",
-      detalle: "Paleta derivada del logo de ESC System, tipografía IBM Plex y cifras alineadas en todas las tablas.",
-      modulo: "General",
+      titulo: "Planilla en borrador",
+      detalle: "Revísela con sus reportes y recalcúlela las veces que haga falta. Las cuotas se cobran al confirmarla.",
+      modulo: "Nómina",
     },
     {
-      titulo: "Inicio operativo",
-      detalle: "Conteos del día, solicitudes por aprobar y últimas planillas, según lo que cada perfil puede ver.",
-      modulo: "Inicio",
+      titulo: "Plantillas en Excel",
+      detalle: "Empleados, deducciones y horas extra se cargan desde Excel, con instrucciones incluidas.",
+      modulo: "Importar",
+    },
+    {
+      titulo: "Cada división en su hoja",
+      detalle: "Imprima la nómina con cada división en hoja aparte, en PDF o en Excel.",
+      modulo: "Reportes",
     },
     {
       titulo: "Fondo de Reserva Laboral",

@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso, puede } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -17,6 +18,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const g = await requerirPermiso(["empleados.pii", "empleados.salud"]);
   if (!g.ok) return g.response;
   const { id } = await params;
+  if (!(await empleadoAlAlcance(g.usuario, id))) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
   const salud = puede(g.usuario, "empleados.salud");
   const pii = puede(g.usuario, "empleados.pii");
   return NextResponse.json({
@@ -29,6 +31,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const g = await requerirPermiso(["empleados.editar", "empleados.salud"]);
   if (!g.ok) return g.response;
   const { id } = await params;
+  if (!(await empleadoAlAlcance(g.usuario, id))) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
   const parsed = await parsearBody(req, schemaSaludFamilia);
   if (!parsed.ok) return parsed.response;
   const c = parsed.data;

@@ -24,6 +24,9 @@
 import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
+import PageHeader from "@/components/ui/PageHeader";
+import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 interface Nodo {
   id: string;
@@ -63,14 +66,6 @@ interface Props {
   sucursales: Array<{ id: string; nombre: string }>;
   sucursalActiva?: string;
 }
-
-const COLOR_ESTADO: Record<string, string> = {
-  ACTIVO: "bg-green-100 text-green-800",
-  VACACIONES: "bg-blue-100 text-blue-800",
-  PERMISO: "bg-amber-100 text-amber-800",
-  SUSPENDIDO: "bg-red-100 text-red-800",
-  INACTIVO: "bg-gray-100 text-gray-500",
-};
 
 export default function OrganigramaClient({
   raices,
@@ -132,30 +127,27 @@ export default function OrganigramaClient({
   const sinJefe = totales.sinJefe;
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Organigrama</h1>
-          <p className="text-sm text-gray-500">
-            Línea de reporte: quién depende de quién. Decide también quién aprueba los permisos y
-            quién evalúa a cada persona.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setPlegados(new Set())}
-            className="px-3 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
-          >
-            Desplegar todo
-          </button>
-          <button
-            onClick={() => setPlegados(new Set(planos.filter((n) => n.supervisorId === null).map((n) => n.id)))}
-            className="px-3 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
-          >
-            Plegar todo
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Organigrama"
+        description="Línea de reporte: quién depende de quién. Decide también quién aprueba los permisos y quién evalúa a cada persona."
+        actions={
+          <>
+            <button
+              onClick={() => setPlegados(new Set())}
+              className="btn btn-secondary"
+            >
+              Desplegar todo
+            </button>
+            <button
+              onClick={() => setPlegados(new Set(planos.filter((n) => n.supervisorId === null).map((n) => n.id)))}
+              className="btn btn-secondary"
+            >
+              Plegar todo
+            </button>
+          </>
+        }
+      />
 
       {/* ─── Avisos ────────────────────────────────────────────────────── */}
       {enCiclo.length > 0 && (
@@ -191,14 +183,16 @@ export default function OrganigramaClient({
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, código, puesto o departamento…"
-          className="flex-1 min-w-56 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-label="Buscar en el organigrama"
+          className="input flex-1 min-w-56"
         />
         <form className="flex gap-2">
           <select
             name="sucursalId"
             defaultValue={sucursalActiva ?? ""}
             onChange={(e) => e.currentTarget.form?.requestSubmit()}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            aria-label="Filtrar por sucursal"
+            className="input w-auto"
           >
             <option value="">Todas las sucursales</option>
             {sucursales.map((s) => (
@@ -208,16 +202,17 @@ export default function OrganigramaClient({
         </form>
         <span className="text-sm text-gray-500">
           {totales.empleados} persona(s)
-          {coincidencias && ` · ${coincidencias.size} coincidencia(s)`}
+          {coincidencias && `, ${coincidencias.size} coincidencia(s)`}
         </span>
       </div>
 
       {/* ─── Árbol ─────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 overflow-x-auto">
+      <div className="panel p-4 overflow-x-auto">
         {raices.length === 0 ? (
-          <p className="text-center py-10 text-gray-400 text-sm">
-            No hay empleados que mostrar con los filtros actuales.
-          </p>
+          <EstadoVacio
+            titulo="No hay empleados que mostrar con los filtros actuales."
+            detalle="Quite el filtro de sucursal o borre la búsqueda para ver a todo el personal de su alcance."
+          />
         ) : (
           <ul className="space-y-1 min-w-[32rem]">
             {raices.map((nodo) => (
@@ -290,23 +285,26 @@ function Rama({
           resaltado ? "bg-yellow-50 ring-1 ring-yellow-300" : "hover:bg-gray-50"
         } ${apagado ? "opacity-40" : ""}`}
       >
-        <button
+        {/* Sin equipo no hay nada que plegar: sólo se conserva la sangría. */}
+        {!tieneHijos && <span aria-hidden="true" className="mt-1 h-5 w-5 shrink-0" />}
+        {tieneHijos && <button
           type="button"
-          onClick={() => tieneHijos && alternar(datos.id)}
-          aria-label={tieneHijos ? (plegado ? "Desplegar equipo" : "Plegar equipo") : undefined}
-          disabled={!tieneHijos}
-          className={`mt-1 w-5 h-5 shrink-0 flex items-center justify-center rounded text-xs ${
-            tieneHijos ? "text-gray-500 hover:bg-gray-200" : "text-transparent"
-          }`}
+          onClick={() => alternar(datos.id)}
+          aria-label={plegado ? "Desplegar equipo" : "Plegar equipo"}
+          className="mt-1 w-5 h-5 shrink-0 flex items-center justify-center rounded text-xs text-gray-500 hover:bg-gray-200"
         >
-          {tieneHijos ? (plegado ? "▸" : "▾") : "·"}
-        </button>
+          {tieneHijos && (
+            <svg className={`h-3.5 w-3.5 transition-transform ${plegado ? "" : "rotate-90"}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
+            </svg>
+          )}
+        </button>}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             {datos.contexto ? (
               // Fuera del alcance: sin enlace a la ficha, que tampoco podría abrir.
-              <span className="font-medium text-gray-400 italic">{datos.nombre}</span>
+              <span className="font-medium text-gray-500 italic">{datos.nombre}</span>
             ) : (
               <Link
                 href={`/empleados/${datos.id}`}
@@ -315,12 +313,10 @@ function Rama({
                 {datos.nombre}
               </Link>
             )}
-            <span className="font-mono text-xs text-gray-400">{datos.codigo}</span>
+            <span className="font-mono text-xs text-gray-500">{datos.codigo}</span>
 
             {datos.estado !== "ACTIVO" && (
-              <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${COLOR_ESTADO[datos.estado] ?? ""}`}>
-                {datos.estado}
-              </span>
+              <EstadoBadge valor={datos.estado} />
             )}
             {datos.contexto && (
               <span
@@ -332,15 +328,15 @@ function Rama({
             )}
             {nodo.total > 0 && (
               <span
-                className="px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700"
+                className="text-xs text-gray-500"
                 title={`${nodo.directos} directo(s), ${nodo.total} en total`}
               >
-                {nodo.directos} · {nodo.total} total
+                {nodo.directos} directo(s), {nodo.total} en total
               </span>
             )}
             {plazas ? (
               <span
-                className="px-1.5 py-0.5 rounded text-xs bg-purple-50 text-purple-700"
+                className="text-xs font-medium text-gray-700"
                 title="Vacantes abiertas en este departamento"
               >
                 {plazas} vacante(s)
@@ -350,13 +346,13 @@ function Rama({
 
           <div className="text-xs text-gray-500 flex flex-wrap gap-x-3">
             {datos.puesto && <span>{datos.puesto}</span>}
-            {datos.departamento && <span>· {datos.departamento}</span>}
-            {datos.sucursal && <span>· {datos.sucursal}</span>}
-            {datos.centroCosto && <span title="Centro de costo">· 💼 {datos.centroCosto}</span>}
-            {datos.emailCorporativo && <span>· {datos.emailCorporativo}</span>}
-            {datos.extension && <span>· ext. {datos.extension}</span>}
+            {datos.departamento && <span>{datos.departamento}</span>}
+            {datos.sucursal && <span>{datos.sucursal}</span>}
+            {datos.centroCosto && <span title="Centro de costo">Centro: {datos.centroCosto}</span>}
+            {datos.emailCorporativo && <span>{datos.emailCorporativo}</span>}
+            {datos.extension && <span>ext. {datos.extension}</span>}
             {vePII && datos.salarioBase && (
-              <span className="text-gray-600">· {formatCurrency(datos.salarioBase)}</span>
+              <span className="tnum text-gray-600">{formatCurrency(datos.salarioBase)}</span>
             )}
           </div>
         </div>
@@ -365,7 +361,7 @@ function Rama({
           <button
             type="button"
             onClick={() => onReasignar(datos)}
-            className="text-xs text-blue-600 hover:text-blue-800 shrink-0 mt-1"
+            className="btn btn-ghost btn-sm shrink-0"
           >
             Cambiar jefe
           </button>
@@ -430,11 +426,11 @@ function DialogoReasignar({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+      <div className="panel shadow-xl w-full max-w-md">
         <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900">Cambiar jefe directo</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Cambiar jefe directo</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            {empleado.nombre} · <span className="font-mono text-xs">{empleado.codigo}</span>
+            {empleado.nombre}, <span className="font-mono text-xs">{empleado.codigo}</span>
           </p>
         </div>
 
@@ -446,16 +442,16 @@ function DialogoReasignar({
           )}
 
           <label className="block">
-            <span className="block text-sm font-medium text-gray-700 mb-1">Nuevo jefe</span>
+            <span className="block text-sm font-medium text-gray-800 mb-1">Nuevo jefe</span>
             <select
               value={nuevo}
               onChange={(e) => setNuevo(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="input"
             >
               <option value="">Sin jefe (raíz del organigrama)</option>
               {candidatos.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nombre} · {c.codigo}
+                  {c.nombre}, {c.codigo}
                   {c.puesto ? ` — ${c.puesto}` : ""}
                 </option>
               ))}
@@ -473,13 +469,13 @@ function DialogoReasignar({
         </div>
 
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-          <button onClick={onCerrar} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          <button onClick={onCerrar} className="btn btn-ghost">
             Cancelar
           </button>
           <button
             onClick={guardar}
             disabled={guardando}
-            className="px-4 py-2 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {guardando ? "Guardando…" : "Guardar"}
           </button>

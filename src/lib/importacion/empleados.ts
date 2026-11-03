@@ -714,7 +714,7 @@ export function validar(
       previsualizacion.push({
         linea,
         accion: "OMITIR",
-        referencia: `${codigo} · ${existente!.primerNombre} ${existente!.primerApellido}`,
+        referencia: `${codigo}, ${existente!.primerNombre} ${existente!.primerApellido}`,
         cambios: ["Sin cambios respecto a lo registrado."],
       });
       continue;
@@ -722,8 +722,8 @@ export function validar(
 
     const referencia =
       accion === "ACTUALIZAR"
-        ? `${codigo} · ${existente!.primerNombre} ${existente!.primerApellido}`
-        : `${codigo || "(nuevo)"} · ${datos.primer_nombre ?? ""} ${datos.primer_apellido ?? ""}`.trim();
+        ? `${codigo}, ${existente!.primerNombre} ${existente!.primerApellido}`
+        : `${codigo || "(nuevo)"}, ${datos.primer_nombre ?? ""} ${datos.primer_apellido ?? ""}`.trim();
 
     filas.push({
       linea,

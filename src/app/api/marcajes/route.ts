@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { registrarMarcaje } from "@/lib/asistencia/registrar-marcaje";
 import { turnoDe } from "@/lib/asistencia/turnos";
 import { resolverDescanso } from "@/lib/asistencia/descanso";
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   const marcajes = await prisma.marcaje.findMany({
-    where,
+    where: { AND: [where, filtroPorEmpleado(g.usuario)] },
     include: {
       empleado: {
         select: {
@@ -73,6 +75,11 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const { empleadoId, fecha, horaEntrada, minutosDescanso } = parsed.data;
   let { horaSalida } = parsed.data;
+
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, empleadoId))) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
 
   const turno = await turnoDe(empleadoId, fecha);
 

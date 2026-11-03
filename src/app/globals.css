@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Sistema visual de NominaHN.
+ * Sistema visual de Gestión360 Nómina.
  *
  * Toda la paleta nace del cian del logo de ESC System (#20B1D2, tono ≈ 191°).
  * La escala `blue` de Tailwind se REDEFINE aquí con esa familia para que las
@@ -9,8 +9,9 @@
  * los componentes cambien de golpe sin tocar cada archivo. `gray` se enfría con
  * un matiz cian para que fondos y reglas pertenezcan a la misma familia.
  *
- * Contrastes comprobados sobre blanco: blue-600 4.8:1 (texto/enlaces),
- * blue-700 6.2:1 (botones con texto blanco), blue-900 15:1 (tinta).
+ * Contrastes comprobados: blue-600 4.8:1 sobre papel y 5.1:1 sobre blanco (enlaces),
+ * blue-700 6.2:1 (botones con texto blanco), gray-500 4.7:1 sobre papel (texto
+ * secundario), blue-900 15:1 (tinta). gray-400 ya no se usa para texto: 2.7:1.
  */
 @theme {
   /* Escala de marca (sustituye a `blue`) */
@@ -20,7 +21,7 @@
   --color-blue-300: #8ad3e6;
   --color-blue-400: #4fc0da;
   --color-blue-500: #20b1d2; /* cian del logo: foco, indicador activo */
-  --color-blue-600: #0c7d99; /* enlaces y texto de acento */
+  --color-blue-600: #0b7893; /* enlaces y texto de acento */
   --color-blue-700: #0a6a82; /* acción primaria */
   --color-blue-800: #085569;
   --color-blue-900: #0d2b38; /* tinta: barra lateral, titulares */
@@ -32,7 +33,7 @@
   --color-gray-200: #dce3e7;
   --color-gray-300: #c3ced4;
   --color-gray-400: #90a0a8;
-  --color-gray-500: #637580;
+  --color-gray-500: #5f717c;
   --color-gray-600: #4a5b65;
   --color-gray-700: #354550;
   --color-gray-800: #22303a;
@@ -182,5 +183,155 @@
   }
   .table-base .num {
     @apply text-right;
+  }
+}
+
+/*
+ * Pantalla angosta. Va fuera de las capas a propósito: las utilidades de Tailwind
+ * (`grid-cols-2`, `text-sm`, `overflow-hidden`) viven en una capa y le ganarían a
+ * cualquier regla de `@layer components`, sin importar el orden.
+ */
+
+/*
+ * Una lista que en un celular se lee como tarjetas: cada fila es un bloque, la
+ * celda `data-titulo` la encabeza y las demás se rotulan con su `data-etiqueta`.
+ */
+@media (max-width: 639.98px) {
+  .tabla-tarjetas thead {
+    @apply sr-only;
+  }
+  .tabla-tarjetas,
+  .tabla-tarjetas tbody,
+  .tabla-tarjetas tr {
+    display: block;
+    width: 100%;
+  }
+  .tabla-tarjetas tbody tr {
+    display: flex;
+    flex-direction: column;
+    @apply border-b border-gray-200 px-4 py-3;
+  }
+  .tabla-tarjetas tbody tr:last-child {
+    @apply border-b-0;
+  }
+  .tabla-tarjetas tbody td {
+    @apply flex items-baseline justify-between gap-4 border-b-0 px-0 py-1 text-right;
+    white-space: normal;
+  }
+  .tabla-tarjetas tbody td[data-etiqueta]::before {
+    content: attr(data-etiqueta);
+    @apply shrink-0 text-left text-xs text-gray-500;
+  }
+  .tabla-tarjetas tbody td[data-titulo] {
+    order: -1;
+    @apply block pb-1 pt-0 text-left text-base;
+  }
+  .tabla-tarjetas tbody td[data-accion] {
+    order: 1;
+    @apply justify-start pt-2;
+  }
+  .tabla-tarjetas tbody td:empty {
+    display: none;
+  }
+  .tabla-tarjetas tbody tr:hover td {
+    background: transparent;
+  }
+
+  /* Un formulario a varias columnas no cabe: los campos van uno bajo otro. */
+  main form .grid-cols-2,
+  main form .grid-cols-3,
+  main form .grid-cols-4,
+  .fixed.inset-0 .grid-cols-2,
+  .fixed.inset-0 .grid-cols-3,
+  .fixed.inset-0 .grid-cols-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Una ventana más alta que la pantalla debe poder recorrerse. */
+  .fixed.inset-0 > div {
+    max-height: 100%;
+    overflow-y: auto;
+  }
+
+  /* Una lista con opciones largas no debe ensanchar la página. */
+  main select {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Las pestañas que no caben se recorren de lado: nunca ensanchan la página. */
+  main .flex.border-b:has(> button, > a) {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  main .flex.border-b > button,
+  main .flex.border-b > a {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/*
+ * Listas largas: la tabla se desplaza dentro de su recuadro, con el encabezado y los
+ * totales siempre a la vista. Con `sticky`, el borde colapsado de la celda no acompaña
+ * al desplazarse: por eso la línea es una sombra.
+ */
+@media (min-width: 640px) {
+  .tabla-fija {
+    max-height: calc(100dvh - 9rem);
+    overflow: auto;
+  }
+  .tabla-fija thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: inset 0 -1px 0 var(--color-gray-200);
+  }
+  .tabla-fija tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--color-gray-50);
+    box-shadow: inset 0 1px 0 var(--color-gray-300);
+  }
+}
+
+/*
+ * Por debajo del menú fijo, una tabla ancha se recorre dentro de su recuadro. Es
+ * `relative` porque un título `sr-only` de la tabla, que es absoluto, se escaparía
+ * del recuadro y ensancharía la página entera.
+ */
+@media (max-width: 1023.98px) {
+  main :has(> table) {
+    position: relative;
+    overflow-x: auto;
+  }
+}
+
+/*
+ * Con el dedo: blancos de 44 px, y 16 px en los campos para que el teléfono no
+ * acerque la pantalla cada vez que se toca uno.
+ */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 2.75rem;
+  }
+  .btn-sm {
+    min-height: 2.5rem;
+  }
+  .tabla-tarjetas td[data-accion] a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+  main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  main select,
+  main textarea,
+  .fixed.inset-0 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .fixed.inset-0 select,
+  .fixed.inset-0 textarea {
+    min-height: 2.75rem;
+    font-size: 16px;
   }
 }

@@ -147,7 +147,7 @@ export async function construirOrganigrama(
       departamento: e.departamento?.nombre ?? null,
       departamentoId: e.departamento?.id ?? null,
       sucursal: e.sucursal?.nombre ?? null,
-      centroCosto: e.centroCosto ? `${e.centroCosto.codigo} · ${e.centroCosto.nombre}` : null,
+      centroCosto: e.centroCosto ? `${e.centroCosto.codigo}, ${e.centroCosto.nombre}` : null,
       fotoPerfil: e.fotoPerfil,
       estado: e.estado,
       // Un nodo de contexto no entrega datos de contacto: está fuera del alcance.

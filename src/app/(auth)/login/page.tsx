@@ -41,7 +41,7 @@ const ESTADOS: Record<Exclude<EstadoServicio, null>, { punto: string; texto: str
   servidor: { punto: "bg-red-400", texto: "Sin conexión con el servidor. Revise la red o avise a soporte." },
 };
 
-const VISIBLES = 3;
+const VISIBLES = 2;
 
 // ─── Iconos (trazo fino, como los del menú) ───────────────────────────────────
 const svg = "h-4 w-4 shrink-0";
@@ -121,7 +121,7 @@ function PanelInicio() {
   const mostradas = todas ? novedades : novedades.slice(0, VISIBLES);
 
   return (
-    <div className="space-y-7 lg:pb-6">
+    <div className="space-y-6 lg:pb-4">
       <Seccion titulo="Avisos">
         {avisos.length === 0 ? (
           <p className="text-sm text-white/50">Sin avisos pendientes.</p>
@@ -397,7 +397,7 @@ export default function LoginPage() {
               {pistaTeclado && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
                   <div className="flex items-start gap-2 text-amber-800">
-                    <IconoAviso className="mt-0.5 text-amber-600" />
+                    <IconoAviso className="mt-0.5 text-amber-700" />
                     <div>
                       <p className="font-semibold">Verifique la configuración del teclado</p>
                       <ul className="mt-1.5 space-y-1 text-xs text-amber-700">

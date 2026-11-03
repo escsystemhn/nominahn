@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatDateTime } from "@/lib/utils";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 interface Datos {
   plantillas: { id: string; nombre: string; tipo: string }[];
@@ -27,7 +28,7 @@ export default function MisConstancias() {
     return () => clearTimeout(t);
   }, [cargar]);
 
-  if (!datos) return <p className="text-sm text-gray-400">Cargando…</p>;
+  if (!datos) return <p className="text-sm text-gray-500">Cargando…</p>;
   const sel = plantillaId || datos.plantillas[0]?.id || "";
 
   async function generar(e: React.FormEvent) {
@@ -70,7 +71,7 @@ export default function MisConstancias() {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="mc-dest">Dirigida a</label>
               <input id="mc-dest" className="input" placeholder="A quien interese" value={destinatario} onChange={(e) => setDestinatario(e.target.value)} />
-              <p className="mt-1 text-[11px] text-gray-500">Por ejemplo, el nombre del banco o de la embajada.</p>
+              <p className="mt-1 text-xs text-gray-500">Por ejemplo, el nombre del banco o de la embajada.</p>
             </div>
             {aviso && <p className={`text-sm ${aviso.ok ? "text-green-800" : "text-red-700"}`}>{aviso.texto}</p>}
             <button type="submit" className="btn btn-primary" disabled={enviando || !sel}>{enviando ? "Generando…" : "Generar y descargar"}</button>
@@ -78,9 +79,9 @@ export default function MisConstancias() {
         )}
       </form>
       <section className="panel overflow-hidden" aria-labelledby="mis-constancias">
-        <h2 id="mis-constancias" className="border-b border-gray-100 px-5 py-3 text-sm font-semibold text-gray-900">Mis constancias</h2>
+        <h2 id="mis-constancias" className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">Mis constancias</h2>
         {datos.emitidos.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">No ha generado constancias.</p>
+          <EstadoVacio titulo="Todavía no ha generado constancias." detalle="Elija una constancia en el formulario y genérela; quedará aquí con su folio." />
         ) : (
           <ul className="divide-y divide-gray-100">
             {datos.emitidos.map((d) => (

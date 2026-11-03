@@ -15,6 +15,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatDate } from "@/lib/utils";
+import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 
 type ModoEnvio = "MANUAL" | "AL_APROBAR" | "AL_PAGAR";
 type FechaContable = "PAGO" | "FIN_PERIODO";
@@ -175,12 +177,12 @@ const SECCIONES: Array<{ key: Seccion; label: string }> = [
   { key: "bitacora", label: "Bitácora" },
 ];
 
-const ESTADO_ENVIO: Record<EnvioResumen["estado"], { label: string; punto: string }> = {
-  PENDIENTE: { label: "Pendiente", punto: "bg-amber-500" },
-  ENVIANDO: { label: "Enviando", punto: "bg-blue-500" },
-  ENVIADO: { label: "Enviado", punto: "bg-green-600" },
-  ERROR: { label: "Error", punto: "bg-red-600" },
-  CANCELADO: { label: "Cancelado", punto: "bg-gray-400" },
+const ESTADO_ENVIO: Record<EnvioResumen["estado"], { label: string; tono: Tono }> = {
+  PENDIENTE: { label: "Pendiente", tono: "aviso" },
+  ENVIANDO: { label: "Enviando", tono: "marca" },
+  ENVIADO: { label: "Enviado", tono: "ok" },
+  ERROR: { label: "Con error", tono: "error" },
+  CANCELADO: { label: "Cancelado", tono: "neutro" },
 };
 
 const ETIQUETA_TIPO: Record<string, string> = {
@@ -274,7 +276,7 @@ export default function SapConexionConfig() {
         });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al cargar");
+      setError(e instanceof Error ? e.message : "No se pudo cargar la configuración");
     }
   }, []);
 
@@ -346,7 +348,7 @@ export default function SapConexionConfig() {
       await cargar();
       if (mapeo) await cargarMapeo();
     } catch (e) {
-      setAviso({ ok: false, texto: e instanceof Error ? e.message : "Error al guardar" });
+      setAviso({ ok: false, texto: e instanceof Error ? e.message : "No se pudo guardar" });
     } finally {
       setGuardando(false);
     }
@@ -521,7 +523,7 @@ export default function SapConexionConfig() {
     }
   }
 
-  if (!estado && !error) return <p className="text-sm text-gray-400">Cargando…</p>;
+  if (!estado && !error) return <p className="text-sm text-gray-500">Cargando…</p>;
 
   const c = estado?.configuracion ?? null;
   const resumen = !c
@@ -606,7 +608,7 @@ export default function SapConexionConfig() {
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="sap-url">URL del Service Layer *</label>
               <input id="sap-url" value={form.urlBase} onChange={(e) => set("urlBase", e.target.value)} className="input" placeholder="https://servidor-sap:50000/b1s/v1/" autoComplete="off" />
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 Puerto 50000 por omisión. Si el certificado es propio de la empresa, el servidor de la aplicación necesita la CA en <code>NODE_EXTRA_CA_CERTS</code>.
               </p>
             </div>
@@ -629,7 +631,7 @@ export default function SapConexionConfig() {
                   </select>
                 )}
               </div>
-              <p className="mt-1 text-[11px] text-gray-500">
+              <p className="mt-1 text-xs text-gray-500">
                 La misma base sirve para el Service Layer y para la conexión SQL Server de abajo. Con la base de datos configurada, «Listar empresas» la ofrece para elegir.
               </p>
             </div>
@@ -643,7 +645,7 @@ export default function SapConexionConfig() {
                 <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="sap-password">Contraseña de SAP</label>
                 <input id="sap-password" type="password" value={form.password} onChange={(e) => set("password", e.target.value)} className="input" autoComplete="new-password"
                   placeholder={c?.tienePassword ? "•••••• (sin cambios)" : ""} />
-                <p className="mt-1 text-[11px] text-gray-500">Se guarda cifrada y nunca se muestra. Si cambia la URL hay que volver a escribirla.</p>
+                <p className="mt-1 text-xs text-gray-500">Se guarda cifrada y nunca se muestra. Si cambia la URL hay que volver a escribirla.</p>
               </div>
             </div>
 
@@ -692,7 +694,7 @@ export default function SapConexionConfig() {
                 <input id="sap-bd-instancia" value={form.dbInstancia} onChange={(e) => set("dbInstancia", e.target.value)} className="input" placeholder="SAPB1" autoComplete="off" />
               </div>
             </div>
-            {form.dbInstancia.trim() && <p className="-mt-2 text-[11px] text-gray-500">Con instancia nombrada el puerto lo resuelve el servicio SQL Browser del servidor.</p>}
+            {form.dbInstancia.trim() && <p className="-mt-2 text-xs text-gray-500">Con instancia nombrada el puerto lo resuelve el servicio SQL Browser del servidor.</p>}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -703,7 +705,7 @@ export default function SapConexionConfig() {
                 <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="sap-bd-password">Contraseña de SQL Server</label>
                 <input id="sap-bd-password" type="password" value={form.dbPassword} onChange={(e) => set("dbPassword", e.target.value)} className="input" autoComplete="new-password"
                   placeholder={c?.baseDatos.tienePassword ? "•••••• (sin cambios)" : ""} />
-                <p className="mt-1 text-[11px] text-gray-500">Se guarda cifrada y nunca se muestra. Si cambia el servidor hay que volver a escribirla.</p>
+                <p className="mt-1 text-xs text-gray-500">Se guarda cifrada y nunca se muestra. Si cambia el servidor hay que volver a escribirla.</p>
               </div>
             </div>
 
@@ -721,13 +723,13 @@ export default function SapConexionConfig() {
             {bd.mensaje && (
               <div className={`rounded-md border px-3 py-2 text-sm whitespace-pre-line ${bd.mensaje.ok ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-800"}`}>
                 {bd.mensaje.texto}
-                {bd.mensaje.tecnico && <span className="mt-1 block text-[11px] opacity-75">{bd.mensaje.tecnico}</span>}
+                {bd.mensaje.tecnico && <span className="mt-1 block text-xs opacity-75">{bd.mensaje.tecnico}</span>}
               </div>
             )}
 
             {bd.resultado && (
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
-                <dt className="text-gray-500">Servidor</dt><dd className="text-gray-900">{bd.resultado.servidor} · {bd.resultado.versionSql}</dd>
+                <dt className="text-gray-500">Servidor</dt><dd className="text-gray-900">{bd.resultado.servidor}, {bd.resultado.versionSql}</dd>
                 <dt className="text-gray-500">Usuario</dt><dd className="text-gray-900">{bd.resultado.login}{bd.resultado.puedeEscribir ? " (puede escribir)" : " (sólo lectura)"}</dd>
                 <dt className="text-gray-500">Base</dt><dd className="text-gray-900">{bd.resultado.baseDatos}{bd.resultado.esBaseSap ? "" : " (no es de SAP)"}</dd>
                 {bd.resultado.empresa && (<><dt className="text-gray-500">Empresa</dt><dd className="text-gray-900">{bd.resultado.empresa}</dd></>)}
@@ -756,7 +758,7 @@ export default function SapConexionConfig() {
           </section>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-500">
               {c ? `Última modificación: ${fechaHora(c.updatedAt)}${c.actualizadoPor ? ` por ${c.actualizadoPor}` : ""}` : "Todavía no se ha guardado ninguna configuración."}
             </p>
             <button type="button" onClick={guardar} disabled={guardando} className="btn btn-primary">
@@ -864,7 +866,7 @@ export default function SapConexionConfig() {
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="sap-memo">Texto del asiento (Memo)</label>
             <input id="sap-memo" value={form.memoPlantilla} onChange={(e) => set("memoPlantilla", e.target.value)} className="input" />
-            <p className="mt-1 text-[11px] text-gray-500">
+            <p className="mt-1 text-xs text-gray-500">
               Variables: {"{tipo}"} {"{desde}"} {"{hasta}"} {"{empresa}"}. SAP lo corta a {c?.longitudes.memo ?? 50} caracteres. La referencia del asiento lleva el
               período y, en la segunda referencia, el identificador de la planilla, con el que se evita enviarla dos veces.
             </p>
@@ -904,16 +906,16 @@ export default function SapConexionConfig() {
               (AcctCode). Si varios conceptos comparten cuenta, comparten código. Con el catálogo importado de SAP, el código ya viene puesto.
             </p>
             {!mapeo ? (
-              <p className="mt-3 text-sm text-gray-400">Cargando…</p>
+              <p className="mt-3 text-sm text-gray-500">Cargando…</p>
             ) : (
               <div className="mt-3 overflow-x-auto">
-                <table className="table-base text-sm">
+                <table className="table-base">
                   <thead>
                     <tr>
-                      <th className="px-3">Concepto</th>
-                      <th className="px-3">Cuenta del catálogo</th>
-                      <th className="px-3">Cuenta en SAP</th>
-                      <th className="px-3">Verificación</th>
+                      <th>Concepto</th>
+                      <th>Cuenta del catálogo</th>
+                      <th>Cuenta en SAP</th>
+                      <th>Verificación</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -922,21 +924,21 @@ export default function SapConexionConfig() {
                       const abierto = busqueda?.cuentaId === cu?.id;
                       return (
                         <tr key={cpt.clave} className="align-top">
-                          <td className="px-3 py-2">
+                          <td>
                             <div className="text-gray-900">{cpt.concepto}</div>
-                            <div className="text-[11px] text-gray-400">{cpt.naturaleza === "GASTO" ? "Gasto" : "Pasivo"}</div>
+                            <div className="text-xs text-gray-500">{cpt.naturaleza === "GASTO" ? "Gasto" : "Pasivo"}</div>
                           </td>
-                          <td className="px-3 py-2">
+                          <td>
                             {cu ? (
                               <>
                                 <span className="font-mono text-gray-900">{cu.codigo}</span> <span className="text-gray-600">{cu.nombre}</span>
-                                {!cu.activa && <span className="ml-1 text-[11px] text-red-700">(inactiva)</span>}
+                                {!cu.activa && <span className="ml-1 text-xs text-red-700">(inactiva)</span>}
                               </>
                             ) : (
                               <span className="text-amber-700">Sin cuenta: asígnela en Configuración contable</span>
                             )}
                           </td>
-                          <td className="relative px-3 py-2">
+                          <td className="relative">
                             {cu && (
                               <div className="flex gap-1">
                                 <input
@@ -955,7 +957,7 @@ export default function SapConexionConfig() {
                               <div className="absolute left-3 z-10 mt-1 w-80 rounded-md border border-gray-200 bg-white p-2 text-xs shadow-lg">
                                 <div className="mb-1 flex items-center justify-between">
                                   <span className="text-gray-500">{busqueda.cargando ? "Buscando en SAP…" : "Cuentas de SAP"}</span>
-                                  <button type="button" className="text-gray-400 hover:text-gray-700" onClick={() => setBusqueda(null)} aria-label="Cerrar">×</button>
+                                  <button type="button" className="text-gray-500 hover:text-gray-700" onClick={() => setBusqueda(null)} aria-label="Cerrar">×</button>
                                 </div>
                                 {busqueda.error && <p className="text-red-700">{busqueda.error}</p>}
                                 <ul className="max-h-56 overflow-y-auto">
@@ -979,7 +981,7 @@ export default function SapConexionConfig() {
                               </div>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-xs">
+                          <td className="text-xs">
                             {cu?.sapVerificadaAt ? (
                               cu.sapActiva === false && !cu.sapNombre ? (
                                 <span className="text-red-700">No existe en SAP ({fechaHora(cu.sapVerificadaAt)})</span>
@@ -989,7 +991,7 @@ export default function SapConexionConfig() {
                                 <span className="text-green-800">{cu.sapNombre} ({fechaHora(cu.sapVerificadaAt)})</span>
                               )
                             ) : codigosSap[cu?.id ?? ""] ? (
-                              <span className="text-gray-400">Sin verificar</span>
+                              <span className="text-gray-500">Sin verificar</span>
                             ) : null}
                           </td>
                         </tr>
@@ -1008,31 +1010,31 @@ export default function SapConexionConfig() {
             </p>
             {mapeo && (
               <div className="mt-3 overflow-x-auto">
-                <table className="table-base text-sm">
+                <table className="table-base">
                   <thead>
                     <tr>
-                      <th className="px-3">Centro</th>
-                      <th className="px-3">Código en SAP</th>
-                      <th className="px-3">Proyecto en SAP</th>
+                      <th>Centro</th>
+                      <th>Código en SAP</th>
+                      <th>Proyecto en SAP</th>
                     </tr>
                   </thead>
                   <tbody>
                     {mapeo.centros.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="px-3 py-3 text-gray-500">No hay centros de costo definidos.</td>
+                        <td colSpan={3}><EstadoVacio titulo="No hay centros de costo definidos." detalle="Créelos en Centros de costo y vuelva aquí a indicar su código en SAP." /></td>
                       </tr>
                     )}
                     {mapeo.centros.map((ce) => (
                       <tr key={ce.id}>
-                        <td className="px-3 py-2">
+                        <td>
                           <span className="font-mono text-gray-900">{ce.codigo}</span> <span className="text-gray-600">{ce.nombre}</span>
-                          {!ce.activo && <span className="ml-1 text-[11px] text-gray-400">(inactivo)</span>}
+                          {!ce.activo && <span className="ml-1 text-xs text-gray-500">(inactivo)</span>}
                         </td>
-                        <td className="px-3 py-2">
+                        <td>
                           <input value={centrosSap[ce.id]?.costing ?? ""} onChange={(e) => setCentrosSap((m) => ({ ...m, [ce.id]: { costing: e.target.value, project: m[ce.id]?.project ?? "" } }))}
                             className="input w-36 font-mono" aria-label={`Código en SAP del centro ${ce.nombre}`} />
                         </td>
-                        <td className="px-3 py-2">
+                        <td>
                           <input value={centrosSap[ce.id]?.project ?? ""} onChange={(e) => setCentrosSap((m) => ({ ...m, [ce.id]: { costing: m[ce.id]?.costing ?? "", project: e.target.value } }))}
                             className="input w-36 font-mono" aria-label={`Proyecto en SAP del centro ${ce.nombre}`} />
                         </td>
@@ -1058,21 +1060,21 @@ export default function SapConexionConfig() {
                 </button>
               </div>
               <div className="mt-3 overflow-x-auto">
-                <table className="table-base text-sm">
+                <table className="table-base">
                   <thead>
                     <tr>
-                      <th className="px-3">Sucursal local</th>
-                      <th className="px-3">Sucursal en SAP</th>
+                      <th>Sucursal local</th>
+                      <th>Sucursal en SAP</th>
                     </tr>
                   </thead>
                   <tbody>
                     {mapeo.sucursales.map((s) => (
                       <tr key={s.id}>
-                        <td className="px-3 py-2">
+                        <td>
                           <span className="font-mono text-gray-900">{s.codigo}</span> <span className="text-gray-600">{s.nombre}</span>
-                          {!s.activa && <span className="ml-1 text-[11px] text-gray-400">(inactiva)</span>}
+                          {!s.activa && <span className="ml-1 text-xs text-gray-500">(inactiva)</span>}
                         </td>
-                        <td className="px-3 py-2">
+                        <td>
                           {sucursalesSap ? (
                             <select
                               value={sucursalesMap[s.id] ?? ""}
@@ -1130,45 +1132,42 @@ export default function SapConexionConfig() {
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void cargar()}>Actualizar</button>
           </div>
           <div className="mt-3 overflow-x-auto">
-            <table className="table-base text-sm">
+            <table className="table-base">
               <thead>
                 <tr>
-                  <th className="px-3">Planilla</th>
-                  <th className="px-3">Tipo</th>
-                  <th className="px-3">Estado</th>
-                  <th className="num px-3">N.º SAP</th>
-                  <th className="num px-3">Intentos</th>
-                  <th className="px-3">Detalle</th>
-                  <th className="px-3">Actualizado</th>
+                  <th>Planilla</th>
+                  <th>Tipo</th>
+                  <th>Estado</th>
+                  <th className="num">N.º SAP</th>
+                  <th className="num">Intentos</th>
+                  <th>Detalle</th>
+                  <th>Actualizado</th>
                 </tr>
               </thead>
               <tbody>
                 {estado.envios.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-4 text-gray-500">Todavía no se ha enviado ningún asiento.</td>
+                    <td colSpan={7}><EstadoVacio titulo="Todavía no se ha enviado ningún asiento." detalle="Cuando una planilla se envíe a SAP, aparecerá aquí con su estado." /></td>
                   </tr>
                 )}
                 {estado.envios.map((e) => (
                   <tr key={e.id}>
-                    <td className="px-3 py-2">
+                    <td>
                       <a href={`/planillas/${e.planillaId}`} className="text-blue-700 hover:underline">
                         {e.planilla.tipo.charAt(0) + e.planilla.tipo.slice(1).toLowerCase()} {formatDate(e.planilla.fechaInicio)} al {formatDate(e.planilla.fechaFin)}
                       </a>
                     </td>
-                    <td className="px-3 py-2">{e.tipo === "REVERSO" ? "Reverso" : "Asiento"}</td>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className={`inline-block h-2 w-2 rounded-full ${ESTADO_ENVIO[e.estado].punto}`} aria-hidden />
-                        {ESTADO_ENVIO[e.estado].label}
-                      </span>
+                    <td>{e.tipo === "REVERSO" ? "Reverso" : "Asiento"}</td>
+                    <td>
+                      <EstadoBadge valor={e.estado} etiqueta={ESTADO_ENVIO[e.estado].label} tono={ESTADO_ENVIO[e.estado].tono} />
                     </td>
-                    <td className="num px-3 py-2">{e.sapNumero ?? e.sapTransId ?? ""}</td>
-                    <td className="num px-3 py-2">{e.intentos}</td>
-                    <td className="max-w-md px-3 py-2 text-xs text-gray-600">
+                    <td className="num">{e.sapNumero ?? e.sapTransId ?? ""}</td>
+                    <td className="num">{e.intentos}</td>
+                    <td className="max-w-md text-xs text-gray-600">
                       {e.estado === "ENVIADO" ? `Enviado el ${fechaHora(e.enviadoAt)}` : e.errorTraducido ?? ""}
                       {e.estado === "PENDIENTE" && e.proximoIntentoAt ? ` Próximo intento: ${fechaHora(e.proximoIntentoAt)}.` : ""}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">{fechaHora(e.updatedAt)}</td>
+                    <td className="whitespace-nowrap text-xs text-gray-500">{fechaHora(e.updatedAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1180,7 +1179,7 @@ export default function SapConexionConfig() {
       {/* ─── Modal: importar el catálogo desde SAP ───────────────────────── */}
       {importacion && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 p-4" role="dialog" aria-modal="true" aria-labelledby="importacion-titulo">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+          <div className="panel max-h-[90vh] w-full max-w-3xl overflow-y-auto p-6 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 id="importacion-titulo" className="text-lg font-semibold text-gray-900">
@@ -1192,7 +1191,7 @@ export default function SapConexionConfig() {
                     : "Se borra el plan de cuentas local y se crea el de SAP. Los conceptos de la nómina se reenganchan donde haya equivalencia; el resto queda sin cuenta para que el contador lo asigne."}
                 </p>
               </div>
-              <button type="button" className="text-gray-400 hover:text-gray-700" onClick={() => setImportacion(null)} aria-label="Cerrar" disabled={importacion.cargando}>×</button>
+              <button type="button" className="text-gray-500 hover:text-gray-700" onClick={() => setImportacion(null)} aria-label="Cerrar" disabled={importacion.cargando}>×</button>
             </div>
 
             {importacion.cargando && <p className="mt-4 text-sm text-gray-500">{importacion.vista ? "Reemplazando el catálogo…" : "Leyendo el plan de cuentas de SAP…"}</p>}
@@ -1275,15 +1274,15 @@ export default function SapConexionConfig() {
                   <p className="text-xs text-gray-500">Primeras cuentas tal como quedarán:</p>
                   <table className="table-base mt-1 text-xs">
                     <thead>
-                      <tr><th className="px-2">Código</th><th className="px-2">Nombre</th><th className="px-2">Tipo</th><th className="num px-2">Nivel</th></tr>
+                      <tr><th>Código</th><th>Nombre</th><th>Tipo</th><th className="num">Nivel</th></tr>
                     </thead>
                     <tbody>
                       {importacion.vista.muestra.map((m) => (
                         <tr key={m.codigo}>
-                          <td className="px-2 py-1 font-mono">{m.codigo}</td>
-                          <td className="px-2 py-1">{m.nombre}{m.esDetalle ? "" : <span className="ml-1 text-gray-400">(título)</span>}</td>
-                          <td className="px-2 py-1">{ETIQUETA_TIPO[m.tipo] ?? m.tipo}</td>
-                          <td className="num px-2 py-1">{m.nivel}</td>
+                          <td className="font-mono">{m.codigo}</td>
+                          <td>{m.nombre}{m.esDetalle ? "" : <span className="ml-1 text-gray-500">(título)</span>}</td>
+                          <td>{ETIQUETA_TIPO[m.tipo] ?? m.tipo}</td>
+                          <td className="num">{m.nivel}</td>
                         </tr>
                       ))}
                     </tbody>

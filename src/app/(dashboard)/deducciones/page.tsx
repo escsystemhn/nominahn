@@ -72,15 +72,13 @@ export default async function DeduccionesPage() {
   }));
 
   return (
-    <div className="space-y-6">
-      {puede(usuario, "deducciones.asignar") && <SolicitudesPrestamoPanel />}
-      <DeduccionesClient
-        tipos={tiposSerializados}
-        deduccionesEmpleados={deduccionesSerializadas}
-        empleados={empleados}
-        puedeExportar={puede(usuario, "deducciones.exportar")}
-        puedeImportar={puede(usuario, "deducciones.importar")}
-      />
-    </div>
+    <DeduccionesClient
+      tipos={tiposSerializados}
+      deduccionesEmpleados={deduccionesSerializadas}
+      empleados={empleados}
+      puedeExportar={puede(usuario, "deducciones.exportar")}
+      puedeImportar={puede(usuario, "deducciones.importar")}
+      solicitudes={puede(usuario, "deducciones.asignar") && <SolicitudesPrestamoPanel />}
+    />
   );
 }

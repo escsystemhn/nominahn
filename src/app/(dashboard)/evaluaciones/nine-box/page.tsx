@@ -2,7 +2,7 @@ import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { prisma } from "@/lib/prisma";
 import NineBoxClient from "./NineBoxClient";
 
-export const metadata = { title: "Nine-Box Grid | NominaHN" };
+export const metadata = { title: "Matriz nine-box" };
 
 export default async function NineBoxPage() {
   await requerirPermisoPagina("talento.evaluaciones_ver");

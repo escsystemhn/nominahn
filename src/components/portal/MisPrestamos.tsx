@@ -6,7 +6,9 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { evaluarSolicitud, CUOTAS_MINIMAS_ADELANTO, type LimiteDescuento } from "@/lib/payroll/prestamos";
 
@@ -45,6 +47,7 @@ interface Datos {
 const PERIODO: Record<string, string> = { MENSUAL: "mes", QUINCENAL: "quincena", SEMANAL: "semana" };
 
 export default function MisPrestamos() {
+  const { confirmar } = useAvisos();
   const [datos, setDatos] = useState<Datos | null>(null);
   const [form, setForm] = useState({ tipo: "PRESTAMO" as "PRESTAMO" | "ADELANTO", monto: "", cuotas: "6", motivo: "" });
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -60,7 +63,7 @@ export default function MisPrestamos() {
     return () => clearTimeout(t);
   }, [cargar]);
 
-  if (!datos) return <p className="text-sm text-gray-400">Cargando…</p>;
+  if (!datos) return <p className="text-sm text-gray-500">Cargando…</p>;
 
   const monto = Number(form.monto);
   const cuotas = Number(form.cuotas);
@@ -91,7 +94,7 @@ export default function MisPrestamos() {
   }
 
   async function cancelar(id: string) {
-    if (!confirm("¿Cancelar esta solicitud?")) return;
+    if (!(await confirmar({ titulo: "¿Cancelar esta solicitud?", accion: "Cancelar solicitud", peligro: true }))) return;
     await fetch(`/api/mi-espacio/prestamos/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "cancelar" }) });
     await cargar();
   }
@@ -99,21 +102,21 @@ export default function MisPrestamos() {
   return (
     <div className="space-y-5">
       <section className="panel overflow-hidden" aria-labelledby="mis-descuentos">
-        <h2 id="mis-descuentos" className="border-b border-gray-100 px-5 py-3 text-sm font-semibold text-gray-900">Lo que se me descuenta</h2>
+        <h2 id="mis-descuentos" className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">Lo que se me descuenta</h2>
         {datos.vigentes.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">No tiene préstamos, anticipos ni cooperativa vigentes.</p>
+          <EstadoVacio titulo="No tiene descuentos vigentes." detalle="Aquí aparecerán sus préstamos, anticipos y aportes a cooperativa mientras se le descuenten." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="table-base text-sm">
-              <thead><tr><th className="px-4">Concepto</th><th className="num px-4">Cuota por {periodo}</th><th className="px-4">Avance</th><th className="num px-4">Saldo</th><th className="px-4">Desde</th></tr></thead>
+            <table className="table-base tabla-tarjetas">
+              <thead><tr><th>Concepto</th><th className="num">Cuota por {periodo}</th><th>Avance</th><th className="num">Saldo</th><th>Desde</th></tr></thead>
               <tbody>
                 {datos.vigentes.map((v) => (
                   <tr key={v.id}>
-                    <td className="px-4 py-2.5">{v.tipoDeduccion.nombre}</td>
-                    <td className="num px-4 py-2.5">{formatCurrency(v.cuota)}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{v.cuotasMeses ? `${v.cuotasPagadas} de ${v.cuotasMeses} cuotas` : `${v.cuotasPagadas} cuotas pagadas`}</td>
-                    <td className="num px-4 py-2.5 font-medium">{v.saldo !== null ? formatCurrency(Number(v.saldo)) : "Recurrente"}</td>
-                    <td className="tnum px-4 py-2.5">{formatDate(v.fechaInicio)}</td>
+                    <td data-titulo className="font-medium text-gray-900">{v.tipoDeduccion.nombre}</td>
+                    <td data-etiqueta={`Cuota por ${periodo}`} className="num whitespace-nowrap">{formatCurrency(v.cuota)}</td>
+                    <td data-etiqueta="Avance" className="text-gray-600">{v.cuotasMeses ? `${v.cuotasPagadas} de ${v.cuotasMeses} cuotas` : `${v.cuotasPagadas} cuotas pagadas`}</td>
+                    <td data-etiqueta="Saldo" className="num whitespace-nowrap font-medium text-gray-900">{v.saldo !== null ? formatCurrency(Number(v.saldo)) : "Recurrente"}</td>
+                    <td data-etiqueta="Desde" className="tnum whitespace-nowrap">{formatDate(v.fechaInicio)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -170,9 +173,9 @@ export default function MisPrestamos() {
         </form>
 
         <section className="panel overflow-hidden" aria-labelledby="mis-solicitudes">
-          <h2 id="mis-solicitudes" className="border-b border-gray-100 px-5 py-3 text-sm font-semibold text-gray-900">Mis solicitudes</h2>
+          <h2 id="mis-solicitudes" className="border-b border-gray-200 px-5 py-3 text-sm font-semibold text-gray-900">Mis solicitudes</h2>
           {datos.solicitudes.length === 0 ? (
-            <p className="p-5 text-sm text-gray-500">No ha hecho solicitudes.</p>
+            <EstadoVacio titulo="Todavía no ha hecho solicitudes." detalle="Llene el formulario para pedir un préstamo o un anticipo de salario." />
           ) : (
             <ul className="divide-y divide-gray-100">
               {datos.solicitudes.map((s) => (
@@ -183,7 +186,7 @@ export default function MisPrestamos() {
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <EstadoBadge valor={s.estado} tono={s.estado === "APROBADA" ? "ok" : undefined} />
-                    {s.estado === "PENDIENTE" && <button type="button" className="text-xs text-gray-500 hover:underline" onClick={() => void cancelar(s.id)}>Cancelar</button>}
+                    {s.estado === "PENDIENTE" && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void cancelar(s.id)}>Cancelar</button>}
                   </div>
                 </li>
               ))}

@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useAvisos } from "@/components/ui/Avisos";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface Solicitud {
@@ -28,6 +29,7 @@ const nombre = (e: Solicitud["empleado"]) => [e.primerNombre, e.segundoNombre, e
 const periodo: Record<string, string> = { MENSUAL: "mes", QUINCENAL: "quincena", SEMANAL: "semana" };
 
 export default function SolicitudesPrestamoPanel() {
+  const { confirmar } = useAvisos();
   const [solicitudes, setSolicitudes] = useState<Solicitud[] | null>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [rechazo, setRechazo] = useState<{ id: string; motivo: string } | null>(null);
@@ -46,9 +48,11 @@ export default function SolicitudesPrestamoPanel() {
   async function resolver(s: Solicitud, accion: "aprobar" | "rechazar", observacion?: string) {
     let confirmarExceso = false;
     if (accion === "aprobar" && s.excedeLimite) {
-      confirmarExceso = confirm(
-        `La cuota de ${formatCurrency(Number(s.cuotaPeriodo))} pasa de lo que se puede descontar del salario de ${nombre(s.empleado)} (Arts. 371 y 372 del Código del Trabajo). ¿Aprobarla de todos modos?`
-      );
+      confirmarExceso = await confirmar({
+        titulo: "¿Aprobar la solicitud de todos modos?",
+        detalle: `La cuota de ${formatCurrency(Number(s.cuotaPeriodo))} pasa de lo que se puede descontar del salario de ${nombre(s.empleado)} (Arts. 371 y 372 del Código del Trabajo).`,
+        accion: "Aprobar",
+      });
       if (!confirmarExceso) return;
     }
     setOcupado(s.id);
@@ -99,7 +103,7 @@ export default function SolicitudesPrestamoPanel() {
               {rechazo?.id === s.id && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   <input className="input max-w-sm" placeholder="Motivo del rechazo (lo verá el empleado)" value={rechazo.motivo} onChange={(e) => setRechazo({ id: s.id, motivo: e.target.value })} aria-label="Motivo del rechazo" />
-                  <button type="button" className="btn btn-secondary btn-sm text-red-700" disabled={!rechazo.motivo.trim() || ocupado === s.id} onClick={() => void resolver(s, "rechazar", rechazo.motivo.trim())}>Confirmar rechazo</button>
+                  <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" disabled={!rechazo.motivo.trim() || ocupado === s.id} onClick={() => void resolver(s, "rechazar", rechazo.motivo.trim())}>Confirmar rechazo</button>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRechazo(null)}>Cancelar</button>
                 </div>
               )}
@@ -107,7 +111,7 @@ export default function SolicitudesPrestamoPanel() {
             {rechazo?.id !== s.id && (
               <div className="flex shrink-0 gap-2">
                 <button type="button" className="btn btn-primary btn-sm" disabled={ocupado === s.id} onClick={() => void resolver(s, "aprobar")}>Aprobar</button>
-                <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => setRechazo({ id: s.id, motivo: "" })}>Rechazar</button>
+                <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => setRechazo({ id: s.id, motivo: "" })}>Rechazar</button>
               </div>
             )}
           </li>

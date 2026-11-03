@@ -10,6 +10,7 @@ import { pdfmakeListo } from "@/lib/reportes/salida";
 import { horaDeMinutos, horas, ETIQUETA_EXTRA, type ClaseExtra } from "./ley";
 import { fechaCorta, lunesDe, periodoTexto, rango } from "./fechas";
 import type { DiaCalculado, EmpleadoPlan, ResultadoValidacion } from "./tipos";
+import { PRODUCTO } from "@/lib/marca";
 
 export interface DatosExportacion {
   plan: { nombre: string; desde: string; hasta: string; estado: string };
@@ -110,7 +111,7 @@ export function aJson(d: DatosExportacion) {
 export async function aXlsxPlan(d: DatosExportacion): Promise<Buffer> {
   const { porEmpleado, resumen, fechas, grupos, texto, clase, nombreSuc } = preparar(d);
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Gestión360 Nómina";
+  wb.creator = PRODUCTO;
   wb.created = d.generado;
   const relleno = (c: string) => ({ type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: `FF${c}` } });
   const titulo = (ws: ExcelJS.Worksheet, t: string, ncol: number) => {
@@ -245,7 +246,7 @@ export async function aPdfPlan(d: DatosExportacion): Promise<Buffer> {
     pageOrientation: "landscape",
     pageMargins: [28, 28, 28, 34],
     defaultStyle: { font: "Helvetica", fontSize: 8, color: "#142129" },
-    info: { title: d.plan.nombre, author: "Gestión360 Nómina", creator: "Gestión360 Nómina" },
+    info: { title: d.plan.nombre, author: PRODUCTO, creator: PRODUCTO },
     content: contenido,
     footer: (pagina: number, total: number) => ({
       columns: [

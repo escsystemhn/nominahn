@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
+import { alcanzaEmpleado, alcanzaUbicacion } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { creariaCiclo } from "@/lib/organizacion/jerarquia";
 import { validarUbicacionEmpleado } from "@/lib/organizacion/estructura-bd";
@@ -84,6 +86,9 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   if (!esPropio && !puede(g.usuario, "empleados.pii")) {
     return NextResponse.json({ error: "Permiso insuficiente" }, { status: 403 });
   }
+  if (!esPropio && !(await empleadoAlAlcance(g.usuario, id))) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
 
   const empleado = await prisma.empleado.findUnique({
     where: { id },
@@ -120,12 +125,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const empleadoActual = await prisma.empleado.findUnique({
     where: { id },
     select: {
-      salarioBase: true, estado: true, sucursalId: true, departamentoId: true, puestoId: true, ihssMontoFijo: true,
+      id: true, salarioBase: true, estado: true, sucursalId: true, departamentoId: true, puestoId: true, ihssMontoFijo: true,
       fechaIngreso: true, fechaSalida: true, tipoContrato: true,
       contratos: { where: { activo: true }, select: { id: true }, take: 1 },
     },
   });
-  if (!empleadoActual) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver `alcanzaEmpleado`).
+  if (!empleadoActual || !alcanzaEmpleado(g.usuario, empleadoActual)) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
 
   const parsed = await parsearBody(req, schemaEditar);
   if (!parsed.ok) return parsed.response;
@@ -166,6 +174,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   ) {
     const error = await validarUbicacionEmpleado(prisma, ubicacion);
     if (error) return NextResponse.json({ error }, { status: 400 });
+    if (!alcanzaUbicacion(g.usuario, ubicacion)) {
+      return NextResponse.json({ error: "Esa ubicación está fuera del alcance de su cuenta." }, { status: 403 });
+    }
   }
 
   /**
@@ -284,9 +295,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const actual = await prisma.empleado.findUnique({
     where: { id },
-    select: { estado: true, fechaSalida: true },
+    select: { id: true, sucursalId: true, departamentoId: true, estado: true, fechaSalida: true },
   });
-  if (!actual) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  if (!actual || !alcanzaEmpleado(g.usuario, actual)) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   // Baja lógica con la fecha del día en Honduras: `fechaSalida` es una columna
   // de calendario y se compara contra los períodos de planilla.

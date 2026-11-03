@@ -9,7 +9,9 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAvisos } from "@/components/ui/Avisos";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import EstadoVacio from "@/components/ui/EstadoVacio";
 import { Modal, Campo } from "@/components/ui/ModalForm";
 import { SIN_DIVISION, etiquetaDepartamento } from "@/lib/organizacion/estructura";
 import { rangoSalarialValido } from "@/lib/organizacion/puestos";
@@ -58,6 +60,7 @@ function textoRango(p: PuestoEstructura): string {
 
 export default function EstructuraOrganizacional({ empresaId, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, puedeEditar }: Props) {
   const router = useRouter();
+  const { confirmar } = useAvisos();
   const [edicion, setEdicion] = useState<Edicion | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [exito, setExito] = useState<string | null>(null);
@@ -86,7 +89,11 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
 
   async function cambiarOpcion(habilitar: boolean) {
     if (!habilitar && divisiones.length > 0 &&
-      !confirm(`Las ${divisiones.length} división(es) y la división de cada departamento se conservan, pero dejarán de mostrarse y los reportes volverán a agrupar Sucursal → Departamento. ¿Desactivar?`)) return;
+      !(await confirmar({
+        titulo: "¿Desactivar las divisiones?",
+        detalle: `Las ${divisiones.length} división(es) y la división de cada departamento se conservan, pero dejarán de mostrarse y los reportes volverán a agrupar Sucursal → Departamento.`,
+        accion: "Desactivar",
+      }))) return;
     setOpcion(habilitar);
     setCambiandoOpcion(true);
     const error = await enviar("/api/configuracion/estructura", "PUT", { divisiones: habilitar });
@@ -97,14 +104,18 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
   }
 
   async function alternarSucursal(s: SucursalEstructura) {
-    if (s.activa && !confirm(`«${s.nombre}» dejará de ofrecerse al crear empleados, planillas y horarios. Su historial se conserva. ¿Desactivar?`)) return;
+    if (s.activa && !(await confirmar({
+      titulo: `¿Desactivar la sucursal «${s.nombre}»?`,
+      detalle: "Dejará de ofrecerse al crear empleados, planillas y horarios. Su historial se conserva.",
+      accion: "Desactivar",
+    }))) return;
     const error = await enviar(`/api/configuracion/sucursales/${s.id}`, "PATCH", { activa: !s.activa });
     setAviso(error);
     if (!error) router.refresh();
   }
 
   async function borrarDivision(v: DivisionEstructura) {
-    if (!confirm(`¿Eliminar la división «${v.nombre}»?`)) return;
+    if (!(await confirmar({ titulo: `¿Eliminar la división «${v.nombre}»?`, accion: "Eliminar", peligro: true }))) return;
     const error = await enviar(`/api/configuracion/divisiones/${v.id}`, "DELETE");
     setAviso(error);
     if (!error) router.refresh();
@@ -117,14 +128,18 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
   }
 
   async function alternarPuesto(p: PuestoEstructura) {
-    if (p.activo && !confirm(`«${p.nombre}» dejará de ofrecerse al asignar puestos. Quienes ya lo tienen lo conservan. ¿Desactivar?`)) return;
+    if (p.activo && !(await confirmar({
+      titulo: `¿Desactivar el puesto «${p.nombre}»?`,
+      detalle: "Dejará de ofrecerse al asignar puestos. Quienes ya lo tienen lo conservan.",
+      accion: "Desactivar",
+    }))) return;
     const error = await enviar(`/api/configuracion/puestos/${p.id}`, "PATCH", { activo: !p.activo });
     setAviso(error);
     if (!error) router.refresh();
   }
 
   async function borrarPuesto(p: PuestoEstructura) {
-    if (!confirm(`¿Eliminar el puesto «${p.nombre}»?`)) return;
+    if (!(await confirmar({ titulo: `¿Eliminar el puesto «${p.nombre}»?`, accion: "Eliminar", peligro: true }))) return;
     const error = await enviar(`/api/configuracion/puestos/${p.id}`, "DELETE");
     setAviso(error);
     if (!error) router.refresh();
@@ -176,11 +191,11 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900">Sucursales ({sucursales.length})</h2>
-          {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "sucursal", sucursal: null })}>Nueva sucursal</button>}
+          {puedeEditar && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEdicion({ tipo: "sucursal", sucursal: null })}>Nueva sucursal</button>}
         </div>
         <div className="panel overflow-x-auto">
           <table className="table-base">
-            <thead><tr><th>Nombre</th><th>Código</th><th>Dirección</th><th>Estado</th><th /></tr></thead>
+            <thead><tr><th>Nombre</th><th>Código</th><th>Dirección</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
             <tbody>
               {sucursales.map((s) => (
                 <tr key={s.id}>
@@ -207,14 +222,14 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-900">Divisiones ({divisiones.length})</h2>
-            {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "division", division: null })}>Nueva división</button>}
+            {puedeEditar && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEdicion({ tipo: "division", division: null })}>Nueva división</button>}
           </div>
           <div className="panel overflow-x-auto">
             <table className="table-base">
-              <thead><tr><th>Sucursal</th><th>División</th><th>Código</th><th className="num">Departamentos</th><th>Estado</th><th /></tr></thead>
+              <thead><tr><th>Sucursal</th><th>División</th><th>Código</th><th className="num">Departamentos</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
               <tbody>
                 {divisiones.length === 0 && (
-                  <tr><td colSpan={6} className="text-gray-500">Todavía no hay divisiones. Cree la primera y luego asígnela a sus departamentos.</td></tr>
+                  <tr><td colSpan={6}><EstadoVacio titulo="Todavía no hay divisiones." detalle="Cree la primera y luego asígnela a sus departamentos." /></td></tr>
                 )}
                 {divisiones.map((v) => (
                   <tr key={v.id}>
@@ -250,15 +265,15 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
                 {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
             )}
-            {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: null })}>Nuevo departamento</button>}
+            {puedeEditar && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: null })}>Nuevo departamento</button>}
           </div>
         </div>
         <div className="panel overflow-x-auto">
           <table className="table-base">
-            <thead><tr><th>Departamento</th><th>Código</th><th className="num">Puestos</th><th className="num">Empleados</th><th>Estado</th><th /></tr></thead>
+            <thead><tr><th>Departamento</th><th>Código</th><th className="num">Puestos</th><th className="num">Empleados</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
             <tbody>
               {visibles.length === 0 && (
-                <tr><td colSpan={6} className="text-gray-500">Todavía no hay departamentos{filtroSucursal ? " en esta sucursal" : ""}.{puedeEditar ? " Cree el primero con «Nuevo departamento»." : ""}</td></tr>
+                <tr><td colSpan={6}><EstadoVacio titulo={`Todavía no hay departamentos${filtroSucursal ? " en esta sucursal" : ""}.`} detalle={puedeEditar ? "Cree el primero con «Nuevo departamento»." : undefined} /></td></tr>
               )}
               {visibles.map(({ sucursal, grupos }) => (
                 <Fragment key={sucursal.id}>
@@ -304,7 +319,7 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
                                     <p className="pl-8 text-sm text-gray-500">Este departamento todavía no tiene puestos.</p>
                                   ) : (
                                     <table className="table-base rounded-lg bg-white" aria-label={`Puestos de ${d.nombre}`}>
-                                      <thead><tr><th>Puesto</th><th>Rango salarial</th><th className="num">Empleados</th><th>Estado</th><th /></tr></thead>
+                                      <thead><tr><th>Puesto</th><th>Rango salarial</th><th className="num">Empleados</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
                                       <tbody>
                                         {propios.map((p) => (
                                           <tr key={p.id}>

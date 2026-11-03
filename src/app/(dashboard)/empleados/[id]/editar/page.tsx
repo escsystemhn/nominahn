@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { alcanzaEmpleado, filtroSucursales } from "@/lib/auth/alcance";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import PageHeader from "@/components/ui/PageHeader";
 import EditarEmpleadoForm, { type EmpleadoEditable } from "@/components/employees/EditarEmpleadoForm";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { nombreCompleto } from "@/lib/utils";
@@ -24,14 +26,14 @@ export default async function EditarEmpleadoPage({
   // Editar el expediente toca salario, identidad y cuenta bancaria: mismo
   // conjunto de roles que exige `PUT /api/empleados/[id]`, para que la pantalla
   // no se abra a quien luego recibiría un 403 al guardar.
-  await requerirPermisoPagina("empleados.editar");
+  const usuario = await requerirPermisoPagina("empleados.editar");
 
   const { id } = await params;
 
   const conDivisiones = await divisionesHabilitadas(prisma);
   const [emp, sucursales, divisiones, departamentos, puestos, centrosCosto, contratosVigentes] = await Promise.all([
     prisma.empleado.findUnique({ where: { id } }),
-    prisma.sucursal.findMany({ where: { activa: true }, orderBy: { nombre: "asc" } }),
+    prisma.sucursal.findMany({ where: { activa: true, ...filtroSucursales(usuario) }, orderBy: { nombre: "asc" } }),
     conDivisiones
       ? prisma.division.findMany({ where: { activa: true }, select: { id: true, nombre: true, sucursalId: true }, orderBy: { nombre: "asc" } })
       : Promise.resolve([]),
@@ -55,7 +57,8 @@ export default async function EditarEmpleadoPage({
     prisma.contrato.count({ where: { empleadoId: id, activo: true } }),
   ]);
 
-  if (!emp) notFound();
+  // Fuera de su alcance responde igual que si no existiera (ver `alcanzaEmpleado`).
+  if (!emp || !alcanzaEmpleado(usuario, emp)) notFound();
 
   // Un empleado no puede supervisarse a sí mismo, así que se excluye de la lista
   // (el API lo rechaza igualmente).
@@ -108,16 +111,17 @@ export default async function EditarEmpleadoPage({
   };
 
   return (
-    <div className="max-w-4xl">
-      <div className="mb-5">
-        <Link href={`/empleados/${id}`} className="text-sm text-blue-700 hover:underline">
-          Volver al expediente
-        </Link>
-        <h1 className="text-xl font-bold text-gray-900 mt-1">Editar empleado</h1>
-        <p className="text-sm text-gray-500">
-          {nombreCompleto(emp)} &middot; Código <strong>{emp.codigo}</strong>
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Editar empleado"
+        description={<>{nombreCompleto(emp)}, código <strong>{emp.codigo}</strong></>}
+        actions={
+          <Link href={`/empleados/${id}`} className="btn btn-secondary">
+            Volver al expediente
+          </Link>
+        }
+      />
+      <div className="max-w-4xl">
       <EditarEmpleadoForm
         empleado={empleado}
         sucursales={sucursales}
@@ -128,6 +132,7 @@ export default async function EditarEmpleadoPage({
         centrosCosto={centrosCosto}
         tieneContratoVigente={contratosVigentes > 0}
       />
+      </div>
     </div>
   );
 }

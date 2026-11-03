@@ -275,7 +275,7 @@ export function validar(
 
     const fecha = dia(rFecha.valor);
     const clave = `${empleado.id}|${fecha}`;
-    const referencia = `${empleado.codigo} · ${empleado.nombre} · ${formatDate(rFecha.valor)}`;
+    const referencia = `${empleado.codigo}, ${empleado.nombre}, ${formatDate(rFecha.valor)}`;
 
     const repetida = vistas.get(clave);
     if (repetida !== undefined) anota(undefined, `Ya hay una fila para este empleado y día en la línea ${repetida}.`);

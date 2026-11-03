@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PageHeader from "@/components/ui/PageHeader";
 
 interface Empleado {
   id: string;
@@ -22,14 +23,14 @@ interface Props {
 const CUADRANTES = [
   // fila superior (alto potencial)
   { label: "Enigma", color: "bg-yellow-100 border-yellow-300", dot: "bg-yellow-500" },
-  { label: "Alto Potencial", color: "bg-green-100 border-green-300", dot: "bg-green-500" },
+  { label: "Alto potencial", color: "bg-green-100 border-green-300", dot: "bg-green-500" },
   { label: "Estrella", color: "bg-emerald-100 border-emerald-400", dot: "bg-emerald-600" },
   // fila media
   { label: "Dilema", color: "bg-orange-50 border-orange-200", dot: "bg-orange-400" },
-  { label: "Núcleo Sólido", color: "bg-blue-100 border-blue-300", dot: "bg-blue-500" },
-  { label: "Alto Rendimiento", color: "bg-blue-200 border-blue-400", dot: "bg-blue-700" },
+  { label: "Núcleo sólido", color: "bg-blue-100 border-blue-300", dot: "bg-blue-500" },
+  { label: "Alto rendimiento", color: "bg-blue-200 border-blue-400", dot: "bg-blue-700" },
   // fila inferior (bajo potencial)
-  { label: "Bajo Impacto", color: "bg-red-50 border-red-200", dot: "bg-red-400" },
+  { label: "Bajo impacto", color: "bg-red-50 border-red-200", dot: "bg-red-400" },
   { label: "Efectivo", color: "bg-gray-100 border-gray-300", dot: "bg-gray-500" },
   { label: "Confiable", color: "bg-teal-100 border-teal-300", dot: "bg-teal-500" },
 ];
@@ -52,34 +53,35 @@ export default function NineBoxClient({ datos }: Props) {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Nine-Box Grid</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Potencial vs Desempeño — {datos.length} empleados</p>
-        </div>
-        <input
-          type="text"
-          placeholder="Buscar empleado..."
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg w-56 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Matriz nine-box"
+        description={`Potencial frente a desempeño, ${datos.length} empleados.`}
+        actions={
+          <input
+            type="text"
+            aria-label="Buscar empleado"
+            placeholder="Buscar empleado…"
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            className="input w-56"
+          />
+        }
+      />
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* Cuadrícula 3×3 */}
         <div className="xl:col-span-2">
           {/* Eje Y label */}
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex flex-col items-center justify-center w-6 h-full">
-              <span className="text-xs text-gray-400 -rotate-90 whitespace-nowrap">← POTENCIAL →</span>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-full w-6 flex-col items-center justify-center">
+              <span className="-rotate-90 whitespace-nowrap text-xs text-gray-500">Potencial</span>
             </div>
             <div className="flex-1">
               {/* Cabecera eje X */}
-              <div className="grid grid-cols-3 gap-1 mb-1">
-                {["Bajo Desempeño", "Desempeño Medio", "Alto Desempeño"].map((l) => (
-                  <div key={l} className="text-center text-xs text-gray-400 font-medium">{l}</div>
+              <div className="mb-1 grid grid-cols-3 gap-1">
+                {["Bajo desempeño", "Desempeño medio", "Alto desempeño"].map((l) => (
+                  <div key={l} className="text-center text-xs font-medium text-gray-500">{l}</div>
                 ))}
               </div>
               {/* 3 filas de 3 celdas */}
@@ -95,23 +97,24 @@ export default function NineBoxClient({ datos }: Props) {
                       return (
                         <div
                           key={col}
-                          className={`border rounded-xl p-3 min-h-[120px] ${cuad.color}`}
+                          className={`min-h-[120px] rounded-xl border p-3 ${cuad.color}`}
                         >
-                          <p className="text-xs font-semibold text-gray-700 mb-2">{cuad.label}</p>
+                          <p className="mb-2 text-xs font-semibold text-gray-700">{cuad.label}</p>
                           <div className="flex flex-wrap gap-1">
                             {empleadosCuad.map((emp) => (
                               <button
                                 key={emp.id}
                                 onClick={() => setSeleccionado(emp)}
                                 title={emp.nombre}
-                                className={`w-6 h-6 rounded-full ${cuad.dot} text-white text-xs font-bold flex items-center justify-center hover:scale-110 transition-transform`}
+                                aria-label={emp.nombre}
+                                className={`flex h-6 w-6 items-center justify-center rounded-full ${cuad.dot} text-xs font-bold text-white transition-transform hover:scale-110`}
                               >
                                 {emp.nombre.charAt(0)}
                               </button>
                             ))}
                           </div>
                           {empleadosCuad.length === 0 && (
-                            <p className="text-xs text-gray-400 mt-1">—</p>
+                            <p className="mt-1 text-xs text-gray-500">—</p>
                           )}
                         </div>
                       );
@@ -120,7 +123,7 @@ export default function NineBoxClient({ datos }: Props) {
                 ))}
               </div>
               {/* Eje X */}
-              <div className="text-center text-xs text-gray-400 mt-2">← DESEMPEÑO →</div>
+              <div className="mt-2 text-center text-xs text-gray-500">Desempeño</div>
             </div>
           </div>
         </div>
@@ -128,13 +131,13 @@ export default function NineBoxClient({ datos }: Props) {
         {/* Panel lateral */}
         <div className="space-y-4">
           {seleccionado ? (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900">{seleccionado.nombre}</h3>
+            <div className="panel p-5">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-gray-900">{seleccionado.nombre}</h2>
                 <button
                   onClick={() => setSeleccionado(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >✕</button>
+                  className="btn btn-ghost btn-sm"
+                >Cerrar</button>
               </div>
               <dl className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -143,7 +146,7 @@ export default function NineBoxClient({ datos }: Props) {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Puesto</dt>
-                  <dd className="font-medium text-right max-w-[160px]">{seleccionado.puesto || "—"}</dd>
+                  <dd className="max-w-[160px] text-right font-medium">{seleccionado.puesto || "—"}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Departamento</dt>
@@ -151,19 +154,19 @@ export default function NineBoxClient({ datos }: Props) {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Desempeño</dt>
-                  <dd className="font-bold text-blue-700">{seleccionado.desempeno}%</dd>
+                  <dd className="tnum font-semibold text-gray-900">{seleccionado.desempeno}%</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Potencial</dt>
-                  <dd className="font-bold text-emerald-600">{seleccionado.potencial}%</dd>
+                  <dd className="tnum font-semibold text-gray-900">{seleccionado.potencial}%</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Calificación</dt>
-                  <dd className="font-bold">{seleccionado.calificacion.toFixed(1)}</dd>
+                  <dd className="tnum font-semibold text-gray-900">{seleccionado.calificacion.toFixed(1)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-gray-500">Cuadrante</dt>
-                  <dd className="font-medium text-purple-700">
+                  <dd className="font-medium text-gray-900">
                     {CUADRANTES[getCuadrante(seleccionado.desempeno, seleccionado.potencial)]?.label}
                   </dd>
                 </div>
@@ -174,26 +177,26 @@ export default function NineBoxClient({ datos }: Props) {
               </dl>
               <a
                 href={`/empleados/${seleccionado.id}`}
-                className="mt-4 block text-center py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium rounded-lg transition-colors"
+                className="btn btn-secondary mt-4 w-full"
               >
                 Ver ficha del empleado
               </a>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 text-center text-sm text-gray-400">
-              Haz clic en un empleado para ver su detalle
+            <div className="panel p-5 text-center text-sm text-gray-500">
+              Haga clic en un empleado para ver su detalle.
             </div>
           )}
 
           {/* Leyenda de cuadrantes */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <h3 className="font-semibold text-gray-800 mb-3 text-sm">Leyenda</h3>
+          <div className="panel p-5">
+            <h2 className="mb-3 text-sm font-semibold text-gray-800">Leyenda</h2>
             <div className="space-y-1">
               {CUADRANTES.map((c) => (
                 <div key={c.label} className="flex items-center gap-2 text-xs">
-                  <span className={`w-3 h-3 rounded-full ${c.dot}`}></span>
+                  <span className={`h-3 w-3 rounded-full ${c.dot}`}></span>
                   <span className="text-gray-600">{c.label}</span>
-                  <span className="text-gray-400 ml-auto">
+                  <span className="tnum ml-auto text-gray-500">
                     {filtrados.filter((e) => CUADRANTES[getCuadrante(e.desempeno, e.potencial)].label === c.label).length}
                   </span>
                 </div>

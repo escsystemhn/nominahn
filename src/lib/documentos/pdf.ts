@@ -11,6 +11,7 @@
 
 import type { Content, ContentText, TDocumentDefinitions } from "pdfmake/interfaces";
 import { pdfmakeListo } from "@/lib/reportes/salida";
+import { PRODUCTO } from "@/lib/marca";
 
 const TINTA = "#0D2B38";
 const LINEA = "#C9D3D8";
@@ -132,7 +133,7 @@ export async function pdfCarta(d: DatosCarta): Promise<Buffer> {
     pageSize: "LETTER",
     pageMargins: [48, 44, 48, 52],
     defaultStyle: { font: "Helvetica", color: "#1B2A31" },
-    info: { title: d.titulo, producer: "NominaHN" },
+    info: { title: d.titulo, producer: PRODUCTO },
     watermark: d.marcaAgua ? { text: d.marcaAgua, color: "#B91C1C", opacity: 0.12, bold: true } : undefined,
     content: [
       membrete(d.empresa),
@@ -291,7 +292,7 @@ export async function pdfFiniquito(d: DatosFiniquito): Promise<Buffer> {
     pageSize: "LETTER",
     pageMargins: [48, 44, 48, 52],
     defaultStyle: { font: "Helvetica", color: "#1B2A31" },
-    info: { title: `Liquidación ${d.trabajador.nombre}`, producer: "NominaHN" },
+    info: { title: `Liquidación ${d.trabajador.nombre}`, producer: PRODUCTO },
     watermark: vigente ? undefined : { text: d.estado === "ANULADA" ? "ANULADA" : "BORRADOR", color: "#B91C1C", opacity: 0.12, bold: true },
     content: contenido,
     footer: pie(d.folio),

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { expandir, definicion } from "@/lib/auth/permisos";
 import { ETIQUETAS_ALCANCE } from "@/lib/auth/alcance";
 import CambiarPassword from "@/components/seguridad/CambiarPassword";
+import PageHeader from "@/components/ui/PageHeader";
 
 /**
  * La cuenta de quien ha iniciado sesión: su contraseña y sus accesos.
@@ -31,13 +32,8 @@ export default async function MiCuentaPage() {
   const alcance = ETIQUETAS_ALCANCE[usuario.alcance ?? "TODO"];
 
   return (
-    <div className="space-y-5 max-w-4xl">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Mi cuenta</h1>
-        <p className="text-sm text-gray-500">
-          {cuenta?.name ?? usuario.email} · {cuenta?.email}
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="Mi cuenta" description={`${cuenta?.name ?? usuario.email}, ${cuenta?.email ?? ""}`} />
 
       {cuenta?.debeCambiarPassword && (
         <div className="px-4 py-3 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-900">
@@ -45,13 +41,13 @@ export default async function MiCuentaPage() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-5 items-start">
+      <div className="grid max-w-4xl items-start gap-5 md:grid-cols-2">
         <CambiarPassword
           contexto={[cuenta?.email ?? "", cuenta?.name ?? ""]}
           obligatorio={cuenta?.debeCambiarPassword}
         />
 
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <div className="panel space-y-4 p-5">
           <div>
             <h2 className="font-semibold text-gray-900">Mis accesos</h2>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -63,7 +59,7 @@ export default async function MiCuentaPage() {
             <div>
               <dt className="text-xs text-gray-500">Perfil</dt>
               <dd className="font-medium text-gray-900">
-                {cuenta?.perfil?.nombre ?? `Sin perfil — permisos del rol ${cuenta?.role}`}
+                {cuenta?.perfil?.nombre ?? `Sin perfil, permisos del rol ${cuenta?.role}`}
               </dd>
               {cuenta?.perfil?.descripcion && (
                 <dd className="text-xs text-gray-500">{cuenta.perfil.descripcion}</dd>
@@ -91,15 +87,15 @@ export default async function MiCuentaPage() {
             <p className="text-xs text-gray-500 mb-2">
               {permisos.length} permiso(s) concedido(s)
             </p>
-            <ul className="space-y-1 max-h-64 overflow-y-auto text-xs">
+            <ul tabIndex={0} aria-label="Permisos concedidos" className="max-h-64 list-disc space-y-1 overflow-y-auto pl-4 text-xs">
               {permisos.length === 0 && (
-                <li className="text-gray-400">
+                <li className="text-gray-500">
                   Sin permisos de gestión. Su acceso se limita a su propio espacio.
                 </li>
               )}
               {permisos.map((codigo) => (
                 <li key={codigo} className="text-gray-700">
-                  · {definicion(codigo)?.etiqueta ?? codigo}
+                  {definicion(codigo)?.etiqueta ?? codigo}
                 </li>
               ))}
             </ul>

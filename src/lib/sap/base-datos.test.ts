@@ -19,7 +19,7 @@ describe("configDriver", () => {
   it("puerto, tiempos cortos, intención de sólo lectura y nombre de aplicación", () => {
     const c = configDriver(cfg, "SBO_PRUEBA");
     expect(c).toMatchObject({ server: "192.168.1.10", port: 1433, user: "nomina_lectura", database: "SBO_PRUEBA", connectionTimeout: 15000, requestTimeout: 20000 });
-    expect(c.options).toMatchObject({ encrypt: false, trustServerCertificate: true, readOnlyIntent: true, appName: "NominaHN" });
+    expect(c.options).toMatchObject({ encrypt: false, trustServerCertificate: true, readOnlyIntent: true, appName: "Gestion360 Nomina" });
   });
   it("con instancia nombrada no manda puerto", () => {
     const c = configDriver({ ...cfg, instancia: "SAPB1" }, "SBO_PRUEBA");
