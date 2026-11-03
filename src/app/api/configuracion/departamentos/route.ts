@@ -22,6 +22,10 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const d = parsed.data;
 
+  const sucursal = await prisma.sucursal.findUnique({ where: { id: d.sucursalId }, select: { nombre: true, activa: true } });
+  if (!sucursal) return NextResponse.json({ error: "La sucursal no existe." }, { status: 400 });
+  if (!sucursal.activa) return NextResponse.json({ error: `La sucursal ${sucursal.nombre} está inactiva.` }, { status: 400 });
+
   const error = await validarDivisionDeDepartamento(prisma, d, await divisionesHabilitadas(prisma));
   if (error) return NextResponse.json({ error }, { status: 400 });
 

@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
   if (!(await divisionesHabilitadas(prisma))) {
     return NextResponse.json({ error: "Las divisiones no están habilitadas. Actívelas en Configuración → Estructura organizacional." }, { status: 409 });
   }
-  const sucursal = await prisma.sucursal.findUnique({ where: { id: d.sucursalId }, select: { id: true } });
+  const sucursal = await prisma.sucursal.findUnique({ where: { id: d.sucursalId }, select: { nombre: true, activa: true } });
   if (!sucursal) return NextResponse.json({ error: "La sucursal no existe." }, { status: 400 });
+  if (!sucursal.activa) return NextResponse.json({ error: `La sucursal ${sucursal.nombre} está inactiva.` }, { status: 400 });
 
   try {
     const division = await prisma.division.create({

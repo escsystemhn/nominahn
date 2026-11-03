@@ -201,6 +201,23 @@ describe("altas", () => {
   });
 });
 
+describe("sucursales inactivas", () => {
+  const inactiva = () => ({ ...catalogos(), sucursalesInactivas: new Set(["suc-tgu"]) });
+
+  it("no da de alta en una sucursal inactiva", () => {
+    const r = validar(`${CABECERA_ALTA}\n${ALTA_OK}`, inactiva(), "CREAR_O_ACTUALIZAR", alcanceTotal());
+    expect(errores(r).map((e) => e.mensaje)).toContain('La sucursal "TGU" está inactiva.');
+  });
+
+  it("quien ya está en ella no da error por repetirla en el archivo", () => {
+    const csv =
+      "Codigo,Primer Nombre,Primer Apellido,Genero,Nacionalidad,Estado,Tipo Contrato,Tipo Planilla,Salario Base,Sucursal,Departamento\n" +
+      "EMP-0001,Ana,Núñez,F,Hondureño,ACTIVO,INDEFINIDO,MENSUAL,15000.00,TGU,Contabilidad";
+    const r = validar(csv, inactiva(), "CREAR_O_ACTUALIZAR", alcanceTotal());
+    expect(errores(r)).toHaveLength(0);
+  });
+});
+
 describe("puestos", () => {
   const conPuesto = (puesto: string) => `${CABECERA_ALTA},Puesto\n${ALTA_OK},${puesto}`;
   const inactivo = () => ({ ...catalogos(), puestosInactivos: new Set(["pue-analista"]) });

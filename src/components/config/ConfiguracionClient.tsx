@@ -28,6 +28,7 @@ interface SucursalConfig {
   nombre: string;
   codigo: string;
   direccion: string | null;
+  telefono: string | null;
   activa: boolean;
 }
 

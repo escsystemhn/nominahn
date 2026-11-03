@@ -72,6 +72,8 @@ export interface ResultadoValidacion {
 export interface CatalogosEmpleados {
   /** clave: código o nombre normalizado → id de sucursal */
   sucursales: Map<string, string>;
+  /** Ids de sucursales inactivas: quien ya está en una sigue ahí, pero nadie más entra. */
+  sucursalesInactivas?: Set<string>;
   /** clave: `${sucursalId}|${nombre normalizado}` → id de departamento */
   departamentos: Map<string, string>;
   /**
@@ -183,7 +185,7 @@ const norm = (s: string) =>
 /** Carga los catálogos de una sola vez. Sin esto la validación haría N consultas por fila. */
 export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmpleados> {
   const [sucursales, departamentos, puestos, empleados, centros, salarioMinimo] = await Promise.all([
-    db.sucursal.findMany({ select: { id: true, codigo: true, nombre: true } }),
+    db.sucursal.findMany({ select: { id: true, codigo: true, nombre: true, activa: true } }),
     db.departamento.findMany({ select: { id: true, nombre: true, sucursalId: true, division: { select: { nombre: true } } } }),
     db.puesto.findMany({ select: { id: true, nombre: true, departamentoId: true, activo: true } }),
     // Se traen los campos completos: es lo que permite comparar y mostrar sólo
@@ -250,6 +252,7 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosEmplea
 
   return {
     sucursales: mapaSucursales,
+    sucursalesInactivas: new Set(sucursales.filter((s) => !s.activa).map((s) => s.id)),
     departamentos: mapaDepartamentos,
     departamentosPorDivision,
     departamentosAmbiguos,
@@ -560,6 +563,9 @@ export function validar(
         // Mover a alguien a una sucursal fuera de su alcance equivale a sacarlo
         // de su vista, y dar de alta allí, a poblar una plantilla ajena.
         anota("Sucursal", `La sucursal "${sucursalBruta}" está fuera de su alcance de datos.`);
+        sucursalId = undefined;
+      } else if (encontrada !== existente?.sucursalId && catalogos.sucursalesInactivas?.has(encontrada)) {
+        anota("Sucursal", `La sucursal "${sucursalBruta}" está inactiva.`);
         sucursalId = undefined;
       } else {
         if (encontrada !== existente?.sucursalId) {

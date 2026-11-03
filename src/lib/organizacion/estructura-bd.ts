@@ -106,9 +106,10 @@ export async function validarUbicacionEmpleado(
   db: Db,
   u: { sucursalId: string; departamentoId: string; puestoId: string | null }
 ): Promise<string | null> {
-  const d = await db.departamento.findUnique({ where: { id: u.departamentoId }, select: { sucursalId: true } });
+  const d = await db.departamento.findUnique({ where: { id: u.departamentoId }, select: { sucursalId: true, sucursal: { select: { activa: true } } } });
   if (!d) return "El departamento no existe.";
   if (d.sucursalId !== u.sucursalId) return "El departamento elegido pertenece a otra sucursal.";
+  if (!d.sucursal.activa) return "La sucursal elegida está inactiva.";
   if (u.puestoId) {
     const p = await db.puesto.findUnique({ where: { id: u.puestoId }, select: { departamentoId: true, activo: true } });
     if (!p) return "El puesto no existe.";

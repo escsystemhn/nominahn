@@ -25,6 +25,9 @@ const prisma = new PrismaClient({ adapter });
  * otra persona, no arranca marcada como temporal. `SEED_EMPRESA_NOMBRE` pone el
  * nombre de la empresa en el login y en la barra superior desde el primer día.
  *
+ * Tampoco arranca con la estructura de ejemplo: sólo una sucursal con el nombre de
+ * la empresa, y los departamentos y puestos los crea el cliente en Configuración.
+ *
  * El resto (catálogo, ISR, vecinal, feriados, perfiles) se siembra igual.
  */
 const INSTALACION = process.env.SEED_INSTALACION === "1";
@@ -229,7 +232,7 @@ async function main() {
   console.log("✓ Empresa creada:", empresa.nombre);
 
   // ─── Sucursales ───────────────────────────────────────────────────────────
-  const sucursalesData = [
+  const sucursalesData: { nombre: string; codigo: string; direccion?: string }[] = INSTALACION ? [{ nombre: empresa.nombre, codigo: "PRINCIPAL" }] : [
     { nombre: "Sede Central", codigo: "SC-001", direccion: "Tegucigalpa" },
     { nombre: "Sucursal San Pedro Sula", codigo: "SPS-001", direccion: "San Pedro Sula" },
     { nombre: "Sucursal La Ceiba", codigo: "LC-001", direccion: "La Ceiba" },
@@ -249,7 +252,7 @@ async function main() {
   console.log(`✓ ${sucursales.length} sucursales creadas`);
 
   // ─── Departamentos ────────────────────────────────────────────────────────
-  const deptosData = [
+  const deptosData = INSTALACION ? [] : [
     { nombre: "Administración", codigo: "ADM" },
     { nombre: "Recursos Humanos", codigo: "RRHH" },
     { nombre: "Operaciones", codigo: "OPE" },
@@ -270,7 +273,7 @@ async function main() {
   console.log(`✓ ${departamentos.length} departamentos creados`);
 
   // ─── Puestos ──────────────────────────────────────────────────────────────
-  const puestosData = [
+  const puestosData = INSTALACION ? [] : [
     { nombre: "Gerente General", departamentoId: departamentos[0].id, salarioMinimo: 40000, salarioMaximo: 80000 },
     { nombre: "Jefe de RRHH", departamentoId: departamentos[1].id, salarioMinimo: 25000, salarioMaximo: 45000 },
     { nombre: "Auxiliar Administrativo", departamentoId: departamentos[0].id, salarioMinimo: 12000, salarioMaximo: 18000 },

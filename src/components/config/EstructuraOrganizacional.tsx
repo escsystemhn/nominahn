@@ -14,7 +14,7 @@ import { SIN_DIVISION, etiquetaDepartamento } from "@/lib/organizacion/estructur
 import { rangoSalarialValido } from "@/lib/organizacion/puestos";
 import { formatCurrency } from "@/lib/utils";
 
-export interface SucursalEstructura { id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; activa: boolean }
+export interface SucursalEstructura { id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; telefono: string | null; activa: boolean }
 export interface DivisionEstructura { id: string; nombre: string; codigo: string | null; activa: boolean; sucursalId: string; departamentos: number }
 export interface DepartamentoEstructura { id: string; nombre: string; codigo: string | null; activo: boolean; sucursalId: string; divisionId: string | null; empleados: number }
 export interface PuestoEstructura {
@@ -34,7 +34,7 @@ interface Props {
 }
 
 type Edicion =
-  | { tipo: "sucursal" }
+  | { tipo: "sucursal"; sucursal: SucursalEstructura | null }
   | { tipo: "division"; division: DivisionEstructura | null }
   | { tipo: "departamento"; departamento: DepartamentoEstructura | null }
   | { tipo: "puesto"; puesto: PuestoEstructura | null; departamentoId: string }
@@ -95,6 +95,13 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
     else router.refresh();
   }
 
+  async function alternarSucursal(s: SucursalEstructura) {
+    if (s.activa && !confirm(`«${s.nombre}» dejará de ofrecerse al crear empleados, planillas y horarios. Su historial se conserva. ¿Desactivar?`)) return;
+    const error = await enviar(`/api/configuracion/sucursales/${s.id}`, "PATCH", { activa: !s.activa });
+    setAviso(error);
+    if (!error) router.refresh();
+  }
+
   async function borrarDivision(v: DivisionEstructura) {
     if (!confirm(`¿Eliminar la división «${v.nombre}»?`)) return;
     const error = await enviar(`/api/configuracion/divisiones/${v.id}`, "DELETE");
@@ -135,6 +142,8 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
     return { sucursal: s, grupos };
   }), [sucursales, divisiones, departamentos, divisionesHabilitadas]);
 
+  const visibles = arbol.filter((a) => (!filtroSucursal || a.sucursal.id === filtroSucursal) && a.grupos.some((g) => g.departamentos.length || g.division));
+
   return (
     <div className="space-y-6">
       {aviso && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">{aviso}</div>}
@@ -166,11 +175,11 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900">Sucursales ({sucursales.length})</h2>
-          {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "sucursal" })}>Nueva sucursal</button>}
+          {puedeEditar && <button type="button" className="btn btn-primary btn-sm" onClick={() => setEdicion({ tipo: "sucursal", sucursal: null })}>Nueva sucursal</button>}
         </div>
         <div className="panel overflow-x-auto">
           <table className="table-base">
-            <thead><tr><th>Nombre</th><th>Código</th><th>Dirección</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Código</th><th>Dirección</th><th>Estado</th><th /></tr></thead>
             <tbody>
               {sucursales.map((s) => (
                 <tr key={s.id}>
@@ -178,6 +187,14 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
                   <td className="font-mono text-xs">{s.codigo}</td>
                   <td>{s.direccion ?? "—"}</td>
                   <td><EstadoBadge valor={s.activa ? "ACTIVA" : "INACTIVA"} /></td>
+                  <td className="whitespace-nowrap text-right">
+                    {puedeEditar && (
+                      <>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "sucursal", sucursal: s })}>Editar</button>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => alternarSucursal(s)}>{s.activa ? "Desactivar" : "Activar"}</button>
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -239,7 +256,10 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
           <table className="table-base">
             <thead><tr><th>Departamento</th><th>Código</th><th className="num">Puestos</th><th className="num">Empleados</th><th>Estado</th><th /></tr></thead>
             <tbody>
-              {arbol.filter((a) => (!filtroSucursal || a.sucursal.id === filtroSucursal) && a.grupos.some((g) => g.departamentos.length || g.division)).map(({ sucursal, grupos }) => (
+              {visibles.length === 0 && (
+                <tr><td colSpan={6} className="text-gray-500">Todavía no hay departamentos{filtroSucursal ? " en esta sucursal" : ""}.{puedeEditar ? " Cree el primero con «Nuevo departamento»." : ""}</td></tr>
+              )}
+              {visibles.map(({ sucursal, grupos }) => (
                 <Fragment key={sucursal.id}>
                   <tr><td colSpan={6} className="bg-gray-50 font-semibold text-gray-900">{sucursal.nombre}</td></tr>
                   {grupos.map((g) => (
@@ -324,7 +344,7 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
       </section>
 
       {edicion?.tipo === "sucursal" && (
-        <FormSucursal empresaId={empresaId} onCerrar={() => setEdicion(null)} onListo={() => { setEdicion(null); router.refresh(); }} />
+        <FormSucursal sucursal={edicion.sucursal} empresaId={empresaId} onCerrar={() => setEdicion(null)} onListo={() => { setEdicion(null); router.refresh(); }} />
       )}
       {edicion?.tipo === "division" && (
         <FormDivision division={edicion.division} sucursales={sucursales} onCerrar={() => setEdicion(null)} onListo={() => { setEdicion(null); router.refresh(); }} />
@@ -406,12 +426,14 @@ function useGuardar(onListo: () => void) {
   return { cargando, error, guardar };
 }
 
-function FormSucursal({ empresaId, onCerrar, onListo }: { empresaId: string | null; onCerrar: () => void; onListo: () => void }) {
-  const [f, setF] = useState({ nombre: "", codigo: "", direccion: "", telefono: "" });
+function FormSucursal({ sucursal, empresaId, onCerrar, onListo }: { sucursal: SucursalEstructura | null; empresaId: string | null; onCerrar: () => void; onListo: () => void }) {
+  const [f, setF] = useState({ nombre: sucursal?.nombre ?? "", codigo: sucursal?.codigo ?? "", direccion: sucursal?.direccion ?? "", telefono: sucursal?.telefono ?? "" });
   const { cargando, error, guardar } = useGuardar(onListo);
   return (
-    <Modal titulo="Nueva sucursal" error={error} cargando={cargando} puedeGuardar={!!f.nombre.trim() && !!f.codigo.trim()} onCerrar={onCerrar}
-      onGuardar={() => guardar("/api/configuracion/sucursales", "POST", { ...f, empresaId })}>
+    <Modal titulo={sucursal ? `Editar ${sucursal.nombre}` : "Nueva sucursal"} error={error} cargando={cargando} puedeGuardar={!!f.nombre.trim() && !!f.codigo.trim()} onCerrar={onCerrar}
+      onGuardar={() => sucursal
+        ? guardar(`/api/configuracion/sucursales/${sucursal.id}`, "PATCH", { nombre: f.nombre, codigo: f.codigo, direccion: f.direccion || null, telefono: f.telefono || null })
+        : guardar("/api/configuracion/sucursales", "POST", { ...f, empresaId })}>
       <Campo etiqueta="Nombre"><input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
       <Campo etiqueta="Código"><input className="input" value={f.codigo} placeholder="SPS-002" onChange={(e) => setF({ ...f, codigo: e.target.value })} /></Campo>
       <Campo etiqueta="Dirección"><input className="input" value={f.direccion} onChange={(e) => setF({ ...f, direccion: e.target.value })} /></Campo>
@@ -423,7 +445,8 @@ function FormSucursal({ empresaId, onCerrar, onListo }: { empresaId: string | nu
 function FormDivision({ division, sucursales, onCerrar, onListo }: {
   division: DivisionEstructura | null; sucursales: SucursalEstructura[]; onCerrar: () => void; onListo: () => void;
 }) {
-  const [f, setF] = useState({ nombre: division?.nombre ?? "", codigo: division?.codigo ?? "", sucursalId: division?.sucursalId ?? sucursales[0]?.id ?? "" });
+  const opcionesSucursal = sucursales.filter((s) => s.activa || s.id === division?.sucursalId);
+  const [f, setF] = useState({ nombre: division?.nombre ?? "", codigo: division?.codigo ?? "", sucursalId: division?.sucursalId ?? opcionesSucursal[0]?.id ?? "" });
   const { cargando, error, guardar } = useGuardar(onListo);
   return (
     <Modal titulo={division ? `Editar división ${division.nombre}` : "Nueva división"} error={error} cargando={cargando}
@@ -433,7 +456,7 @@ function FormDivision({ division, sucursales, onCerrar, onListo }: {
         : guardar("/api/configuracion/divisiones", "POST", f)}>
       <Campo etiqueta="Sucursal">
         <select className="input" value={f.sucursalId} disabled={!!division} onChange={(e) => setF({ ...f, sucursalId: e.target.value })}>
-          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          {opcionesSucursal.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
       </Campo>
       <Campo etiqueta="Nombre"><input className="input" value={f.nombre} placeholder="PAGSA MAYOREO" onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
@@ -446,10 +469,11 @@ function FormDivision({ division, sucursales, onCerrar, onListo }: {
 function FormDepartamento({ departamento, sucursales, divisiones, onCerrar, onListo }: {
   departamento: DepartamentoEstructura | null; sucursales: SucursalEstructura[]; divisiones: DivisionEstructura[]; onCerrar: () => void; onListo: () => void;
 }) {
+  const opcionesSucursal = sucursales.filter((s) => s.activa || s.id === departamento?.sucursalId);
   const [f, setF] = useState({
     nombre: departamento?.nombre ?? "",
     codigo: departamento?.codigo ?? "",
-    sucursalId: departamento?.sucursalId ?? sucursales[0]?.id ?? "",
+    sucursalId: departamento?.sucursalId ?? opcionesSucursal[0]?.id ?? "",
     divisionId: departamento?.divisionId ?? "",
     activo: departamento?.activo ?? true,
   });
@@ -472,7 +496,7 @@ function FormDepartamento({ departamento, sucursales, divisiones, onCerrar, onLi
       <Campo etiqueta="Código (opcional)"><input className="input" value={f.codigo} onChange={(e) => setF({ ...f, codigo: e.target.value })} /></Campo>
       <Campo etiqueta="Sucursal">
         <select className="input" value={f.sucursalId} disabled={!!departamento} onChange={(e) => setF({ ...f, sucursalId: e.target.value, divisionId: "" })}>
-          {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          {opcionesSucursal.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
       </Campo>
       {usaDivisiones && (

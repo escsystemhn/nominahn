@@ -286,6 +286,9 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
                   </option>
                 ))}
               </select>
+              {sucursalId && deptsFiltrados.length === 0 && (
+                <p className="mt-1 text-xs text-amber-700">No hay departamentos aquí. Créelos en Configuración → Estructura organizacional.</p>
+              )}
             </Field>
             <Field label="Puesto" error={errors.puestoId?.message}>
               <select {...register("puestoId")} className={fieldClass} disabled={!departamentoId}>
