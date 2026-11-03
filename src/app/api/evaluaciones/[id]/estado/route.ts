@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion, puede } from "@/lib/auth/guard";
 import type { Permiso } from "@/lib/auth/permisos";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { audit, getClientInfo } from "@/lib/audit";
 import { calcularBonoEvaluacion, marcarBonoAplicado } from "@/lib/evaluaciones/bonus-engine";
@@ -50,7 +51,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   const nuevoEstado = parsed.data.nuevoEstado as EstadoEvaluacion;
 
   const evaluacion = await prisma.evaluacion.findUnique({ where: { id } });
-  if (!evaluacion) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!evaluacion || !(await empleadoAlAlcance(g.usuario, evaluacion.empleadoId))) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
 
   const estadoActual = evaluacion.estado as EstadoEvaluacion;
 

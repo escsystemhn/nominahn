@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso, requerirSesion, puede } from "@/lib/auth/guard";
-import { alcanceEsTotal } from "@/lib/auth/alcance";
+import { alcanceEsTotal, alcanzaEmpleado, conAlcance, filtroEmpleados, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { z } from "zod";
 import { randomBytes } from "crypto";
@@ -49,21 +49,34 @@ export async function GET(req: NextRequest) {
         : { supervisorId: g.usuario.empleadoId };
   }
 
+  // Las propias son lo propio: el alcance acota lo ajeno, no su propio expediente.
+  // De las ajenas se ve sólo a los evaluadores de su alcance, y sólo lo que calificaron.
+  const soloPropias = !!whereEmpleado?.id;
+  const evaluador = soloPropias ? {} : filtroEmpleados(g.usuario);
+
   const evaluaciones = await prisma.evaluacion.findMany({
     where: {
-      ...(empleadoId ? { empleadoId } : {}),
-      ...(periodo ? { periodo } : {}),
-      ...(tipo ? { tipo: tipo as "DESEMPENO_MENSUAL" | "COMPETENCIA_TRIMESTRAL" } : {}),
-      ...(estado ? { estado: estado as "BORRADOR" | "EN_PROGRESO" | "PENDIENTE_FIRMA" | "FINALIZADA" | "CANCELADA" } : {}),
-      ...(whereEmpleado ? { empleado: whereEmpleado } : {}),
+      AND: [
+        {
+          ...(empleadoId ? { empleadoId } : {}),
+          ...(periodo ? { periodo } : {}),
+          ...(tipo ? { tipo: tipo as "DESEMPENO_MENSUAL" | "COMPETENCIA_TRIMESTRAL" } : {}),
+          ...(estado ? { estado: estado as "BORRADOR" | "EN_PROGRESO" | "PENDIENTE_FIRMA" | "FINALIZADA" | "CANCELADA" } : {}),
+          ...(whereEmpleado ? { empleado: whereEmpleado } : {}),
+        },
+        soloPropias ? {} : filtroPorEmpleado(g.usuario),
+      ],
     },
     include: {
       empleado: { select: { id: true, primerNombre: true, primerApellido: true, codigo: true } },
       participantes: {
+        // El token es el enlace para calificar: quien lo tiene, califica en nombre de ese evaluador.
+        omit: { tokenAcceso: true },
+        where: { evaluador },
         include: { evaluador: { select: { id: true, primerNombre: true, primerApellido: true } } },
       },
       campana: { select: { id: true, nombre: true } },
-      criterios: true,
+      criterios: { where: { OR: [{ participanteId: null }, { participante: { evaluador } }] } },
     },
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -84,9 +97,17 @@ export async function POST(req: NextRequest) {
 
   const empleado = await prisma.empleado.findUnique({
     where: { id: d.empleadoId },
-    select: { id: true, supervisorId: true },
+    select: { id: true, sucursalId: true, departamentoId: true, supervisorId: true },
   });
-  if (!empleado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!empleado || !alcanzaEmpleado(g.usuario, empleado)) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+
+  // Pares y subordinados son un lote: con uno solo fuera de su alcance no se crea nada.
+  const evaluadoresIds = [...new Set([...d.paresIds, ...d.subordinadosIds])];
+  if (evaluadoresIds.length > 0) {
+    const alcanzados = await prisma.empleado.count({ where: conAlcance({ id: { in: evaluadoresIds } }, g.usuario) });
+    if (alcanzados !== evaluadoresIds.length) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
 
   const evaluacion = await prisma.$transaction(async (tx) => {
     const ev = await tx.evaluacion.create({

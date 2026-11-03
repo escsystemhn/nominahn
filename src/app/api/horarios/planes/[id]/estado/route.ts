@@ -14,6 +14,7 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 import { planConValidacion, actualizarResumen } from "@/lib/horarios/bd";
+import { rechazoDeAccion, vistaDePlan } from "@/lib/horarios/alcance";
 
 const schema = z.object({ accion: z.enum(["publicar", "archivar", "borrador"]) });
 
@@ -27,6 +28,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const plan = await prisma.planHorario.findUnique({ where: { id }, select: { id: true, estado: true, nombre: true, desde: true, hasta: true } });
   if (!plan) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
+  // Publicar o archivar cambia el horario de todos: sólo quien los alcanza a todos.
+  const rechazo = rechazoDeAccion(await vistaDePlan(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
 
   if (accion === "publicar") {
     if (plan.estado !== "BORRADOR") return NextResponse.json({ error: "Sólo se publica un borrador." }, { status: 409 });

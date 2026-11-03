@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma, EstadoDotacion } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { z } from "zod";
 import { parsearBody, zId, zFecha } from "@/lib/http/validar";
 
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
   }
 
   const asignaciones = await prisma.asignacionDotacion.findMany({
-    where,
+    where: { AND: [where, filtroPorEmpleado(g.usuario)] },
     include: {
       empleado: { select: { primerNombre: true, primerApellido: true, codigo: true } },
       articulo: { select: { nombre: true, categoria: true } },
@@ -55,6 +57,11 @@ export async function POST(req: NextRequest) {
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
   const { empleadoId, articuloId, cantidad, talla, fechaEntrega, observacion } = parsed.data;
+
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, empleadoId))) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
 
   const articulo = await prisma.articuloDotacion.findUnique({ where: { id: articuloId } });
   if (!articulo) return NextResponse.json({ error: "Artículo no encontrado" }, { status: 404 });

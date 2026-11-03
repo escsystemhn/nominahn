@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma, TipoDecimo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { conAlcance, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 import {
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
   const anio = Number(searchParams.get("anio")) || new Date().getUTCFullYear();
 
   const liquidaciones = await prisma.liquidacionDecimo.findMany({
-    where: { anio, ...(tipo ? { tipo } : {}) },
+    where: { anio, ...(tipo ? { tipo } : {}), AND: [filtroPorEmpleado(g.usuario)] },
     include: {
       empleado: {
         select: {
@@ -65,13 +66,18 @@ export async function POST(req: NextRequest) {
 
   const ventana = ventanaDevengo(tipo, anio);
 
-  // Empleados con relación laboral vigente en algún momento de la ventana.
+  // Empleados con relación laboral vigente en algún momento de la ventana, sólo
+  // los de su alcance: todo lo que sigue (borrar, recalcular, totales) se deriva
+  // de esta lista. Pedir una sucursal ajena da cero empleados.
   const empleados = await prisma.empleado.findMany({
-    where: {
-      ...(sucursalId ? { sucursalId } : {}),
-      fechaIngreso: { lte: ventana.hasta },
-      OR: [{ fechaSalida: null }, { fechaSalida: { gte: ventana.desde } }],
-    },
+    where: conAlcance(
+      {
+        ...(sucursalId ? { sucursalId } : {}),
+        fechaIngreso: { lte: ventana.hasta },
+        OR: [{ fechaSalida: null }, { fechaSalida: { gte: ventana.desde } }],
+      },
+      g.usuario
+    ),
     select: {
       id: true, salarioBase: true, fechaIngreso: true, fechaSalida: true,
       historialSalarios: {
@@ -238,8 +244,9 @@ export async function PATCH(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const { ids, estado, motivo, fechaPago } = parsed.data;
 
+  // Una fila fuera de su alcance cuenta como inexistente, y eso rechaza el lote entero.
   const filas = await prisma.liquidacionDecimo.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, AND: [filtroPorEmpleado(g.usuario)] },
     select: { id: true, estado: true, observaciones: true },
   });
   if (filas.length !== ids.length) {

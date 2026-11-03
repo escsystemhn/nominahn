@@ -3,13 +3,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
 
 export async function GET(req: NextRequest) {
   const g = await requerirPermiso("deducciones.asignar");
   if (!g.ok) return g.response;
   const estado = new URL(req.url).searchParams.get("estado");
   const solicitudes = await prisma.solicitudPrestamo.findMany({
-    where: estado === "todas" ? {} : { estado: "PENDIENTE" },
+    where: { AND: [estado === "todas" ? {} : { estado: "PENDIENTE" }, filtroPorEmpleado(g.usuario)] },
     orderBy: { createdAt: estado === "todas" ? "desc" : "asc" },
     take: 200,
     include: {

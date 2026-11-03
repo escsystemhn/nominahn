@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { accesoAPlanilla } from "@/lib/payroll/alcance-planilla";
+import { textoEstadoPlanilla } from "@/lib/payroll/estado-planilla";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
@@ -18,6 +21,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!g.ok) return g.response;
 
   const { id } = await params;
+  if ((await accesoAPlanilla(prisma, g.usuario, id)) === "ninguno") {
+    return NextResponse.json({ error: "Planilla no encontrada" }, { status: 404 });
+  }
 
   // El cuerpo es opcional: el botón «enviar a todos» no manda nada.
   let filtro: string[] | undefined;
@@ -39,7 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       empresa: { select: { nombre: true, rtn: true } },
       detalles: {
-        where: filtro ? { empleadoId: { in: filtro } } : undefined,
+        // Sólo a las personas de su alcance, aunque pida otras.
+        where: { AND: [filtro ? { empleadoId: { in: filtro } } : {}, filtroPorEmpleado(g.usuario)] },
         include: {
           empleado: {
             select: {
@@ -61,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // trabajador recibiría un documento que luego deja de corresponder.
   if (!["APROBADA", "PAGADA"].includes(planilla.estado)) {
     return NextResponse.json(
-      { error: `La planilla está ${planilla.estado}: apruébela antes de enviar los comprobantes` },
+      { error: `La planilla está ${textoEstadoPlanilla(planilla.estado)}: apruébela antes de enviar los comprobantes` },
       { status: 409 }
     );
   }

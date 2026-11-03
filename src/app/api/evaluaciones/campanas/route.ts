@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -21,12 +21,13 @@ const crearCampanaSchema = z.object({
 });
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const g = await requerirPermiso(["talento.evaluaciones_ver", "talento.evaluaciones_gestionar"]);
+  if (!g.ok) return g.response;
 
   const campanas = await prisma.evaluacionCampana.findMany({
     include: {
-      _count: { select: { evaluaciones: true } },
+      // Cuántas de su alcance: el total de la empresa no le corresponde.
+      _count: { select: { evaluaciones: { where: filtroPorEmpleado(g.usuario) } } },
     },
     orderBy: { createdAt: "desc" },
     take: 50,

@@ -1,4 +1,5 @@
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
+import { conAlcance } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { nombreCompleto } from "@/lib/utils";
 import DotacionesClient from "@/components/employees/DotacionesClient";
@@ -8,7 +9,7 @@ export default async function DotacionesPage() {
 
   const [empleados, articulos] = await Promise.all([
     prisma.empleado.findMany({
-      where: { estado: "ACTIVO" },
+      where: conAlcance({ estado: "ACTIVO" }, usuario),
       select: { id: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, codigo: true },
       orderBy: { primerApellido: "asc" },
     }),

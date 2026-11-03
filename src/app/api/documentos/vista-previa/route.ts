@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
@@ -23,6 +24,10 @@ export async function POST(req: NextRequest) {
   if (!g.ok) return g.response;
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
+  // El texto resuelto lleva salario, identidad y cuenta: fuera de su alcance, como si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, parsed.data.empleadoId))) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
   try {
     return NextResponse.json(await previsualizar(prisma, parsed.data));
   } catch (e) {

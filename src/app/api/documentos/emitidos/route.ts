@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { emitir, ErrorDocumento } from "@/lib/documentos/emision";
@@ -23,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (!g.ok) return g.response;
   const empleadoId = new URL(req.url).searchParams.get("empleadoId") || undefined;
   const emitidos = await prisma.documentoEmitido.findMany({
-    where: empleadoId ? { empleadoId } : {},
+    where: { AND: [empleadoId ? { empleadoId } : {}, filtroPorEmpleado(g.usuario)] },
     orderBy: { createdAt: "desc" },
     take: 200,
     select: {
@@ -40,6 +42,10 @@ export async function POST(req: NextRequest) {
   if (!g.ok) return g.response;
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, parsed.data.empleadoId))) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
   try {
     const doc = await emitir(prisma, { ...parsed.data, emitidoPor: g.usuario.email ?? g.usuario.id ?? null, porAutoservicio: false });
     const { ip, userAgent } = getClientInfo(req);

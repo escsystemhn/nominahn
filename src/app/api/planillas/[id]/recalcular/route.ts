@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { accesoAPlanilla, rechazoDeAcceso } from "@/lib/payroll/alcance-planilla";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -17,6 +18,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const planilla = await prisma.planilla.findUnique({ where: { id } });
   if (!planilla) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   if (planilla.estado !== "BORRADOR") {
     return NextResponse.json({ error: "Sólo se recalcula una planilla en borrador." }, { status: 409 });
   }

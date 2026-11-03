@@ -9,9 +9,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { conAlcance } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { planConValidacion, actualizarResumen, aFecha, ymd } from "@/lib/horarios/bd";
+import { rechazoDeAccion, recortarPlan, vistaDePlan, type PlanValidado } from "@/lib/horarios/alcance";
 import { jornadaDeHoras } from "@/lib/horarios/ley";
 
 const hora = z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Hora con formato HH:MM");
@@ -29,10 +31,7 @@ const schema = z.object({
   })).min(1).max(500),
 });
 
-async function respuesta(id: string) {
-  const r = await planConValidacion(prisma, id);
-  if (!r) return null;
-  const { plan, ctx, validacion, notas } = r;
+function respuesta({ plan, ctx, validacion, notas }: PlanValidado) {
   return {
     plan: {
       id: plan.id, nombre: plan.nombre, desde: ymd(plan.desde), hasta: ymd(plan.hasta), estado: plan.estado,
@@ -53,9 +52,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const g = await requerirPermiso(["asistencia.turnos", "asistencia.ver"]);
   if (!g.ok) return g.response;
   const { id } = await params;
-  const r = await respuesta(id);
+  const vista = await vistaDePlan(prisma, g.usuario, id);
+  const r = vista.acceso === "ninguno" ? null : await planConValidacion(prisma, id);
   if (!r) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
-  return NextResponse.json(r, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json(respuesta(recortarPlan(r, vista)), { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -66,11 +66,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!parsed.ok) return parsed.response;
 
   const plan = await prisma.planHorario.findUnique({ where: { id }, select: { estado: true, desde: true, hasta: true, sucursalesIds: true } });
-  if (!plan) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
+  const vista = await vistaDePlan(prisma, g.usuario, id);
+  if (!plan || vista.acceso === "ninguno") return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
   if (plan.estado !== "BORRADOR") return NextResponse.json({ error: "Sólo se edita un borrador. Vuelva el plan a borrador para cambiarlo." }, { status: 409 });
 
+  // Los cambios son un lote: alguien fuera de su alcance responde igual que alguien que no
+  // existe, y como las filas se escriben al final, no se aplica ninguno.
   const empleados = new Map((await prisma.empleado.findMany({
-    where: { id: { in: parsed.data.cambios.map((c) => c.empleadoId) } }, select: { id: true, sucursalId: true },
+    where: conAlcance({ id: { in: parsed.data.cambios.map((c) => c.empleadoId) } }, g.usuario), select: { id: true, sucursalId: true },
   })).map((e) => [e.id, e]));
   const turnos = new Map((await prisma.turno.findMany({ where: { activo: true } })).map((t) => [t.id, t]));
 
@@ -95,7 +98,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const j = jornadaDeHoras(entrada, salida, c.pausa ?? pausaTurno);
       if (!j) return NextResponse.json({ error: "Horas inválidas" }, { status: 400 });
       const sucursalId = c.sucursalId || emp.sucursalId;
-      if (!plan.sucursalesIds.includes(sucursalId)) return NextResponse.json({ error: "La sucursal no está en este plan" }, { status: 400 });
+      // Trasladar a alguien a una sucursal que no alcanza responde como si no estuviera en el plan.
+      const fueraDeAlcance = vista.acceso === "parcial" && !vista.sucursales.has(sucursalId);
+      if (!plan.sucursalesIds.includes(sucursalId) || fueraDeAlcance) return NextResponse.json({ error: "La sucursal no está en este plan" }, { status: 400 });
       Object.assign(base, { turnoId: turno?.id ?? null, entrada: j.entrada, salida: j.salida, pausa: j.pausa, sucursalId, esTraslado: sucursalId !== emp.sucursalId, motivo: null });
     }
     filas.push({ empleadoId: c.empleadoId, fecha: c.fecha, datos: base });
@@ -111,14 +116,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   });
 
-  const r = await respuesta(id);
+  // El resumen que se guarda es el del plan entero; lo que se responde, el de su alcance.
+  const r = await planConValidacion(prisma, id);
   if (r) await actualizarResumen(prisma, id, r.validacion, r.notas);
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "UPDATE", tabla: "PlanHorario", registroId: id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
     valorNuevo: { cambios: parsed.data.cambios }, ip, userAgent,
   });
-  return NextResponse.json(r);
+  return NextResponse.json(r && respuesta(recortarPlan(r, await vistaDePlan(prisma, g.usuario, id))));
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -127,6 +133,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
   const plan = await prisma.planHorario.findUnique({ where: { id }, select: { estado: true, nombre: true } });
   if (!plan) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
+  // Borrarlo se lleva los días de todos: sólo quien los alcanza a todos.
+  const rechazo = rechazoDeAccion(await vistaDePlan(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   if (plan.estado === "PUBLICADO") {
     return NextResponse.json({ error: "Un plan publicado no se borra: archívelo (la planilla puede haber usado sus horarios)." }, { status: 409 });
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { CausaTerminacion } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { cerrarContratoVigente } from "@/lib/empleados/contratos-bd";
 import { parsearBody, zId } from "@/lib/http/validar";
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
   const empleadoId = searchParams.get("empleadoId") || undefined;
 
   const liquidaciones = await prisma.liquidacionFinal.findMany({
-    where: { ...(empleadoId ? { empleadoId } : {}) },
+    where: { ...(empleadoId ? { empleadoId } : {}), AND: [filtroPorEmpleado(g.usuario)] },
     include: {
       empleado: {
         select: {
@@ -78,9 +79,10 @@ export async function POST(req: NextRequest) {
 
   const empleado = await prisma.empleado.findUnique({
     where: { id: empleadoId },
-    select: { id: true, salarioBase: true, fechaIngreso: true, estado: true },
+    select: { id: true, sucursalId: true, departamentoId: true, salarioBase: true, fechaIngreso: true, estado: true },
   });
-  if (!empleado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!empleado || !alcanzaEmpleado(g.usuario, empleado)) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
 
   if (fechaSalida < empleado.fechaIngreso) {
     return NextResponse.json(
@@ -159,7 +161,9 @@ export async function POST(req: NextRequest) {
   // ─── Tamaño de la empresa ──────────────────────────────────────────────────
   // Hasta diez trabajadores: tope de cesantía reducido y sin 35 % por renuncia
   // (Art. 120-A). Es la razón por la que el formulario de la Secretaría de
-  // Trabajo pregunta «Más de 10 Empleados».
+  // Trabajo pregunta «Más de 10 Empleados». Este conteo NO lleva alcance: es el
+  // tamaño de la empresa entera, y acotarlo cambiaría el importe del finiquito
+  // según quién lo calcule.
   const totalActivos = await prisma.empleado.count({ where: { estado: "ACTIVO" } });
   const esMicroempresa = totalActivos <= MAX_EMPLEADOS_MICROEMPRESA;
 

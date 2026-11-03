@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { alcanzaDispositivo, filtroDispositivos } from "@/lib/biometrico/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
-import { auth } from "@/lib/auth";
 import { z } from "zod";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { cifrar, cifradoDisponible } from "@/lib/seguridad/cifrado";
@@ -49,10 +49,12 @@ const CAMPOS_PUBLICOS = {
 } as const;
 
 export async function GET() {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  // Antes bastaba con tener sesión: IP y usuario de cada reloj para cualquier cuenta.
+  const g = await requerirPermiso("asistencia.biometrico");
+  if (!g.ok) return g.response;
 
   const dispositivos = await prisma.dispositivoBiometrico.findMany({
+    where: filtroDispositivos(g.usuario),
     select: CAMPOS_PUBLICOS,
     orderBy: { createdAt: "asc" },
   });
@@ -68,6 +70,10 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const { nombre, marca, modelo, serie, ip, puerto, usuario, password, offsetMinutos, sucursalId } =
     parsed.data;
+
+  if (!alcanzaDispositivo(g.usuario, { sucursalId: sucursalId || null })) {
+    return NextResponse.json({ error: "Esa sucursal está fuera del alcance de su cuenta." }, { status: 403 });
+  }
 
   // Antes que guardar la contraseña en claro «por ahora», se rechaza el alta:
   // en un terminal de control de acceso esa credencial abre puertas.

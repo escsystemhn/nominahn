@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requerirSesion, puede } from "@/lib/auth/guard";
+import { requerirSesion, puede, requerirPermiso } from "@/lib/auth/guard";
+import { filtroEmpleados } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { audit, getClientInfo } from "@/lib/audit";
 import { z } from "zod";
@@ -28,6 +30,23 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   const { id } = await params;
 
+  // Una evaluación pertenece a la persona evaluada: fuera de su alcance responde igual que
+  // si no existiera, aunque alguno de los evaluadores sea de su sucursal. La propia no se acota.
+  const dueno = await prisma.evaluacion.findUnique({ where: { id }, select: { empleadoId: true } });
+  if (!dueno) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const esPropia = !!g.usuario.empleadoId && dueno.empleadoId === g.usuario.empleadoId;
+  if (!esPropia && !(await empleadoAlAlcance(g.usuario, dueno.empleadoId))) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+
+  // Sin permiso para consultar evaluaciones, sólo se ve la propia.
+  if (!puede(g.usuario, "talento.evaluaciones_ver") && !esPropia) {
+    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
+  }
+
+  // De una ajena se ve sólo a los evaluadores de su alcance, y sólo lo que calificaron.
+  const evaluador = esPropia ? {} : filtroEmpleados(g.usuario);
+
   const evaluacion = await prisma.evaluacion.findUnique({
     where: { id },
     include: {
@@ -38,31 +57,30 @@ export async function GET(_req: NextRequest, { params }: Params) {
         },
       },
       participantes: {
+        // El token es el enlace para calificar: quien lo tiene, califica en nombre de ese evaluador.
+        omit: { tokenAcceso: true },
+        where: { evaluador },
         include: {
           evaluador: { select: { id: true, primerNombre: true, primerApellido: true } },
           criteriosParticipante: { include: { competencia: { select: { id: true, nombre: true } } } },
         },
       },
-      criterios: { include: { competencia: { select: { id: true, nombre: true } } } },
+      criterios: {
+        where: { OR: [{ participanteId: null }, { participante: { evaluador } }] },
+        include: { competencia: { select: { id: true, nombre: true } } },
+      },
       campana: true,
     },
   });
 
   if (!evaluacion) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  // Sin permiso para consultar evaluaciones, sólo se ve la propia.
-  if (
-    !puede(g.usuario, "talento.evaluaciones_ver") &&
-    evaluacion.empleadoId !== g.usuario.empleadoId
-  ) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
-  }
-
   return NextResponse.json(evaluacion);
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
-  const g = await requerirSesion();
+  // Cambia la calificación, y de ella sale el bono: bastaba con tener sesión.
+  const g = await requerirPermiso("talento.evaluaciones_gestionar");
   if (!g.ok) return g.response;
 
   const { id } = await params;
@@ -71,7 +89,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { comentarios, fortalezas, mejoras, objetivos, desempeno, potencial, calificacion } = parsed.data;
 
   const actual = await prisma.evaluacion.findUnique({ where: { id } });
-  if (!actual) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!actual || !(await empleadoAlAlcance(g.usuario, actual.empleadoId))) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
 
   if (actual.estado === "FINALIZADA" || actual.estado === "CANCELADA") {
     return NextResponse.json({ error: "Evaluación no editable en estado " + actual.estado }, { status: 422 });

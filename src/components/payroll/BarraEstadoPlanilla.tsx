@@ -2,7 +2,7 @@ import { cn, formatDate } from "@/lib/utils";
 
 const PASOS = [
   { estado: "BORRADOR", titulo: "Borrador" },
-  { estado: "CALCULADA", titulo: "Calculada" },
+  { estado: "CALCULADA", titulo: "Confirmada" },
   { estado: "APROBADA", titulo: "Aprobada" },
   { estado: "PAGADA", titulo: "Pagada" },
 ] as const;

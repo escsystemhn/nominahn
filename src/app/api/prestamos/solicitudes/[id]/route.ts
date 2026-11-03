@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zFecha } from "@/lib/http/validar";
 import { tipoDeduccionPara } from "@/lib/payroll/prestamos-bd";
@@ -34,8 +35,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!parsed.ok) return parsed.response;
   const { accion, observacion, confirmarExceso, fechaInicio } = parsed.data;
 
-  const s = await prisma.solicitudPrestamo.findUnique({ where: { id } });
-  if (!s) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+  const s = await prisma.solicitudPrestamo.findUnique({
+    where: { id },
+    include: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+  });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!s || !alcanzaEmpleado(g.usuario, s.empleado)) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
   if (s.estado !== "PENDIENTE") return NextResponse.json({ error: "La solicitud ya fue resuelta" }, { status: 409 });
 
   if (accion === "rechazar") {

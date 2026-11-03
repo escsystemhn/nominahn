@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { filtroPlanillas } from "@/lib/payroll/alcance-planilla";
 import ReportesClient from "@/components/reports/ReportesClient";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { formatDate } from "@/lib/utils";
-import { etiquetaEstado } from "@/components/ui/EstadoBadge";
+import { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 
 export default async function ReportesPage({ searchParams }: { searchParams: Promise<{ reporte?: string; planillaId?: string }> }) {
@@ -24,7 +25,7 @@ export default async function ReportesPage({ searchParams }: { searchParams: Pro
     // el archivo del banco (que además exige que esté aprobada o pagada). Incluye
     // los borradores, que se revisan aquí antes de confirmarlos.
     prisma.planilla.findMany({
-      where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA", "PAGADA"] } },
+      where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA", "PAGADA"] }, ...filtroPlanillas(usuario) },
       select: { id: true, tipo: true, estado: true, fechaInicio: true, fechaFin: true },
       orderBy: { fechaFin: "desc" },
       take: 24,
@@ -34,7 +35,7 @@ export default async function ReportesPage({ searchParams }: { searchParams: Pro
   const planillas = planillasRaw.map((p) => ({
     id: p.id,
     dispersable: p.estado === "APROBADA" || p.estado === "PAGADA",
-    etiqueta: `${etiquetaEstado(p.tipo)}, ${formatDate(p.fechaInicio)} al ${formatDate(p.fechaFin)} (${etiquetaEstado(p.estado).toLowerCase()})`,
+    etiqueta: `${etiquetaEstado(p.tipo)}, ${formatDate(p.fechaInicio)} al ${formatDate(p.fechaFin)} (${etiquetaEstado(estadoDePlanilla(p.estado)).toLowerCase()})`,
   }));
 
   return (

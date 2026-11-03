@@ -14,6 +14,19 @@ import { tienePermiso } from "@/lib/auth/permisos";
 
 export type EstadoPlanilla = "BORRADOR" | "CALCULADA" | "APROBADA" | "PAGADA" | "ANULADA";
 
+const TEXTO_ESTADO: Record<EstadoPlanilla, string> = {
+  BORRADOR: "en borrador",
+  CALCULADA: "confirmada",
+  APROBADA: "aprobada",
+  PAGADA: "pagada",
+  ANULADA: "anulada",
+};
+
+/** El estado dentro de una frase: «La planilla está confirmada». */
+export function textoEstadoPlanilla(estado: string): string {
+  return TEXTO_ESTADO[estado as EstadoPlanilla] ?? estado.toLowerCase();
+}
+
 /**
  * Estados en los que el contenido financiero queda congelado.
  * Ninguna ruta debe modificar montos de una planilla en estos estados.
@@ -119,14 +132,14 @@ export function validarTransicion(
   opts: { motivo?: string | null } = {}
 ): ResultadoValidacion {
   if (actual === nuevo) {
-    return { ok: false, status: 422, error: `La planilla ya está en estado ${actual}` };
+    return { ok: false, status: 422, error: `La planilla ya está ${textoEstadoPlanilla(actual)}.` };
   }
 
   if (esEstadoTerminal(actual)) {
     return {
       ok: false,
       status: 409,
-      error: `La planilla está ${actual} y no admite más cambios de estado`,
+      error: `La planilla está ${textoEstadoPlanilla(actual)} y no admite más cambios.`,
     };
   }
 
@@ -138,7 +151,7 @@ export function validarTransicion(
     return {
       ok: false,
       status: 422,
-      error: `Transición ${actual} → ${nuevo} no permitida. Permitidas: ${permitidas.join(", ") || "ninguna"}`,
+      error: `Una planilla ${textoEstadoPlanilla(actual)} no puede pasar a ${textoEstadoPlanilla(nuevo)}.`,
     };
   }
 
@@ -150,7 +163,7 @@ export function validarTransicion(
     return {
       ok: false,
       status: 403,
-      error: `No tiene el permiso necesario (${requerido ?? "sin definir"}) para la transición ${actual} → ${nuevo}`,
+      error: `Su cuenta no tiene permiso para este paso (${requerido ?? "sin definir"}).`,
     };
   }
 
@@ -159,7 +172,7 @@ export function validarTransicion(
     return {
       ok: false,
       status: 422,
-      error: `La transición ${actual} → ${nuevo} exige un motivo justificado`,
+      error: "Este paso exige escribir el motivo.",
     };
   }
 

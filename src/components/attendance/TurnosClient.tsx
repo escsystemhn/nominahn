@@ -64,7 +64,7 @@ const vacio = {
 const nombreEmp = (e: EmpleadoTurno) => [e.primerNombre, e.segundoNombre, e.primerApellido, e.segundoApellido].filter(Boolean).join(" ");
 const hoy = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" });
 
-export default function TurnosClient({ puedeEditar, departamentos, sucursales }: { puedeEditar: boolean; departamentos: { id: string; nombre: string }[]; sucursales: { id: string; nombre: string }[] }) {
+export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departamentos, sucursales }: { puedeEditar: boolean; /** Los turnos valen para toda la empresa: asignarlos no es lo mismo que cambiarlos. */ puedeEditarCatalogo: boolean; departamentos: { id: string; nombre: string }[]; sucursales: { id: string; nombre: string }[] }) {
   const { confirmar } = useAvisos();
   const [turnos, setTurnos] = useState<Turno[] | null>(null);
   const [empleados, setEmpleados] = useState<EmpleadoTurno[]>([]);
@@ -138,7 +138,7 @@ export default function TurnosClient({ puedeEditar, departamentos, sucursales }:
       <PageHeader
         title="Horarios y turnos"
         description={`El turno decide desde qué hora se paga la hora extra, el almuerzo que se descuenta y la puntualidad. Sin asignación se usa ${porDefecto ? `el turno por omisión (${porDefecto.nombre})` : "el diurno de 8 horas"}.`}
-        actions={puedeEditar ? <button type="button" className="btn btn-primary" onClick={() => setEdicion({ ...vacio })}>Nuevo turno</button> : undefined}
+        actions={puedeEditarCatalogo ? <button type="button" className="btn btn-primary" onClick={() => setEdicion({ ...vacio })}>Nuevo turno</button> : undefined}
       />
 
       {aviso && <div role="status" className={`rounded-md border px-3 py-2 text-sm ${aviso.ok ? "border-green-200 bg-green-50 text-green-800" : "border-red-200 bg-red-50 text-red-800"}`}>{aviso.texto}</div>}
@@ -217,7 +217,7 @@ export default function TurnosClient({ puedeEditar, departamentos, sucursales }:
                     <td data-etiqueta="Tolerancia" className="num whitespace-nowrap">{t.toleranciaMinutos} min</td>
                     <td data-etiqueta="Empleados hoy" className="num">{t.empleadosHoy}</td>
                     <td data-accion className="text-right">
-                      {puedeEditar && (
+                      {puedeEditarCatalogo && (
                         <div className="flex justify-end gap-2">
                           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ ...t })}>Editar</button>
                           {t.empleadosHoy === 0 && <button type="button" className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50" onClick={() => void borrar(t)}>Borrar</button>}

@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroEventos } from "@/lib/biometrico/alcance";
 import type { Prisma } from "@prisma/client";
 
 const LIMITE_POR_DEFECTO = 100;
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
   const empleadoId = q.get("empleadoId");
   const pin = q.get("pin")?.trim();
 
-  const where: Prisma.MarcajeEventoWhereInput = {
+  const filtros: Prisma.MarcajeEventoWhereInput = {
     ...(dispositivoId ? { dispositivoId } : {}),
     ...(empleadoId ? { empleadoId } : {}),
     ...(pin ? { pin } : {}),
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
       ? { fechaLocal: { ...(desde ? { gte: desde } : {}), ...(hasta ? { lte: hasta } : {}) } }
       : {}),
   };
+  const where: Prisma.MarcajeEventoWhereInput = { AND: [filtros, filtroEventos(g.usuario)] };
 
   const limite = Math.min(Number(q.get("limite")) || LIMITE_POR_DEFECTO, LIMITE_MAXIMO);
   const salto = Math.max(Number(q.get("salto")) || 0, 0);

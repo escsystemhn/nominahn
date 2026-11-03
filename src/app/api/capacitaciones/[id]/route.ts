@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { filtroCapacitaciones, filtroCapacitacionesCompletas } from "@/lib/capacitaciones/alcance";
 import { nombreCompleto } from "@/lib/utils";
 import { z } from "zod";
 import { parsearBody, zMonto } from "@/lib/http/validar";
@@ -17,10 +19,12 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const g = await requerirPermiso("talento.capacitaciones");
   if (!g.ok) return g.response;
   const { id } = await params;
-  const cap = await prisma.capacitacion.findUnique({
-    where: { id },
+  // Fuera de su alcance responde igual que si no existiera; de las demás, sólo su gente.
+  const cap = await prisma.capacitacion.findFirst({
+    where: { AND: [{ id }, filtroCapacitaciones(g.usuario)] },
     include: {
       participantes: {
+        where: filtroPorEmpleado(g.usuario),
         include: { empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, codigo: true } } },
         orderBy: { createdAt: "asc" },
       },
@@ -48,6 +52,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = await parsearBody(req, schemaPatch);
   if (!parsed.ok) return parsed.response;
   const { estado, costoReal } = parsed.data;
+
+  // Fuera de su alcance responde igual que si no existiera (ver lib/capacitaciones/alcance.ts).
+  if (!(await prisma.capacitacion.count({ where: { AND: [{ id }, filtroCapacitaciones(g.usuario)] } }))) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  if (!(await prisma.capacitacion.count({ where: { AND: [{ id }, filtroCapacitacionesCompletas(g.usuario)] } }))) {
+    return NextResponse.json({ error: "Esta capacitación incluye personal fuera del alcance de su cuenta: sólo puede consultarla." }, { status: 403 });
+  }
 
   const cap = await prisma.capacitacion.update({
     where: { id },

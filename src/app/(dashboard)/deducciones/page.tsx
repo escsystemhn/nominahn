@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import DeduccionesClient from "@/components/payroll/DeduccionesClient";
 import SolicitudesPrestamoPanel from "@/components/payroll/SolicitudesPrestamoPanel";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
+import { conAlcance, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { cuotaDelPeriodo } from "@/lib/payroll/deducciones";
 import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import { aNumero } from "@/lib/payroll/money";
@@ -38,7 +39,7 @@ export default async function DeduccionesPage() {
   const [tipos, deduccionesEmpleados] = await Promise.all([
     prisma.tipoDeduccionConfig.findMany({ orderBy: { nombre: "asc" } }),
     prisma.deduccionEmpleado.findMany({
-      where: { activo: true },
+      where: { activo: true, AND: [filtroPorEmpleado(usuario)] },
       include: {
         empleado: {
           select: {
@@ -57,7 +58,7 @@ export default async function DeduccionesPage() {
   ]);
 
   const empleados = await prisma.empleado.findMany({
-    where: { estado: { in: [...ESTADOS_QUE_COBRAN] } },
+    where: conAlcance({ estado: { in: [...ESTADOS_QUE_COBRAN] } }, usuario),
     select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true },
     orderBy: { primerApellido: "asc" },
   });

@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { reabrirContrato } from "@/lib/empleados/contratos-bd";
 import { parsearBody, zFecha } from "@/lib/http/validar";
@@ -35,14 +36,15 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     include: {
       empleado: {
         select: {
-          id: true, codigo: true, identidad: true, primerNombre: true, segundoNombre: true,
+          id: true, sucursalId: true, departamentoId: true, codigo: true, identidad: true, primerNombre: true, segundoNombre: true,
           primerApellido: true, segundoApellido: true, estado: true,
           puesto: { select: { nombre: true } }, departamento: { select: { nombre: true } },
         },
       },
     },
   });
-  if (!liq) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!liq || !alcanzaEmpleado(g.usuario, liq.empleado)) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
   return NextResponse.json({ ...liq, acciones: accionesLiquidacion(liq.estado as EstadoLiquidacion, g.usuario.permisos ?? []) });
 }
 
@@ -57,8 +59,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!parsed.ok) return parsed.response;
   const { estado, motivo, fechaPago, reactivarEmpleado } = parsed.data;
 
-  const liq = await prisma.liquidacionFinal.findUnique({ where: { id } });
-  if (!liq) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+  const liq = await prisma.liquidacionFinal.findUnique({
+    where: { id },
+    include: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+  });
+  if (!liq || !alcanzaEmpleado(g.usuario, liq.empleado)) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
 
   const v = validarTransicionLiquidacion(liq.estado as EstadoLiquidacion, estado, g.usuario.permisos, motivo);
   if (!v.ok) return NextResponse.json({ error: v.error }, { status: v.status });

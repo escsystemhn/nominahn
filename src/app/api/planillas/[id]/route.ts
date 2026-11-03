@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sumarPor } from "@/lib/payroll/money";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
+import { accesoAPlanilla, rechazoDeAcceso } from "@/lib/payroll/alcance-planilla";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -60,6 +63,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   });
 
   if (!planilla) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const acceso = await accesoAPlanilla(prisma, g.usuario, id);
+  if (acceso === "ninguno") return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   // En planillas cerradas se contrasta el contenido actual contra el hash sellado
   // al cierre, de modo que una alteración hecha por fuera de la aplicación sea
@@ -67,6 +72,21 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const integridad = esEstadoCerrado(planilla.estado as EstadoPlanilla)
     ? verificarIntegridad(planilla.hashCalculo, planilla.detalles)
     : null;
+
+  if (acceso === "parcial") {
+    // Sólo las personas de su alcance, y los totales de esas personas: el de toda la
+    // planilla es lo que el alcance intenta no revelar.
+    const visibles = planilla.detalles.filter((d) => alcanzaEmpleado(g.usuario, d.empleado));
+    return NextResponse.json({
+      ...planilla,
+      detalles: visibles,
+      totalBruto: sumarPor(visibles, (d) => d.totalBruto),
+      totalDeducciones: sumarPor(visibles, (d) => d.totalDeducciones),
+      totalNeto: sumarPor(visibles, (d) => d.salarioNeto),
+      totalEmpleador: null,
+      integridad,
+    });
+  }
 
   return NextResponse.json({ ...planilla, integridad });
 }
@@ -95,6 +115,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: { detalles: { select: { empleadoId: true, totalBruto: true, totalDeducciones: true, salarioNeto: true } } },
   });
   if (!planilla) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  // Cambiar de estado actúa sobre todas sus personas: hay que alcanzarlas a todas.
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
 
   const estadoActual = planilla.estado as EstadoPlanilla;
 
@@ -289,6 +312,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     select: { estado: true, tipo: true, fechaInicio: true, fechaFin: true, totalNeto: true, _count: { select: { enviosSap: true } } },
   });
   if (!planilla) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   if (planilla.estado !== "BORRADOR") {
     return NextResponse.json({ error: "Sólo se descarta un borrador. Una planilla confirmada se anula." }, { status: 409 });
   }

@@ -146,9 +146,9 @@ export const CATALOGO = [
     permisos: [
       { codigo: "planillas.ver", etiqueta: "Consultar", descripcion: "Ver planillas y su detalle por empleado." },
       { codigo: "planillas.calcular", etiqueta: "Crear y calcular", descripcion: "Generar una planilla en borrador, recalcularla, descartarla y confirmarla." },
-      { codigo: "planillas.aprobar", etiqueta: "Aprobar", descripcion: "Dar por buena una planilla calculada.", sensible: true },
+      { codigo: "planillas.aprobar", etiqueta: "Aprobar", descripcion: "Dar por buena una planilla confirmada.", sensible: true },
       { codigo: "planillas.pagar", etiqueta: "Marcar como pagada", descripcion: "Registrar el pago de una planilla aprobada.", sensible: true },
-      { codigo: "planillas.anular", etiqueta: "Anular", descripcion: "Dejar sin efecto una planilla en borrador o calculada.", sensible: true },
+      { codigo: "planillas.anular", etiqueta: "Anular", descripcion: "Dejar sin efecto una planilla en borrador o confirmada.", sensible: true },
       {
         codigo: "planillas.reabrir",
         etiqueta: "Reabrir una planilla aprobada",

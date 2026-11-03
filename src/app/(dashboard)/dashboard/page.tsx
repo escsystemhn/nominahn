@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { filtroPlanillas, filtroPlanillasCompletas, totalesVisibles } from "@/lib/payroll/alcance-planilla";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import FilaEnlace from "@/components/ui/FilaEnlace";
 import { auth } from "@/lib/auth";
@@ -9,7 +10,7 @@ import { conAlcance, filtroEmpleados, filtroPorEmpleado, type UsuarioConAlcance 
 import { permisosPorResolver } from "@/lib/asistencia/solicitudes";
 import { sumarPor } from "@/lib/payroll/money";
 import PageHeader from "@/components/ui/PageHeader";
-import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
+import EstadoBadge, { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
 
 export const metadata = { title: "Inicio" };
 
@@ -76,13 +77,15 @@ export default async function DashboardPage() {
       apruebaPermisos ? prisma.permiso.count({ where: permisosPorResolver(alcance) }) : 0,
       calculaPlanillas || apruebaPlanillas || pagaPlanillas
         ? prisma.planilla.findMany({
-            where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA"] } },
+            // Sólo las que puede resolver: las que incluyen gente fuera de su alcance no le tocan.
+            where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA"] }, ...filtroPlanillasCompletas(alcance) },
             orderBy: { fechaFin: "desc" },
             select: { id: true, estado: true, totalNeto: true },
           })
         : [],
       vePlanillas
         ? prisma.planilla.findMany({
+            where: filtroPlanillas(alcance),
             orderBy: { createdAt: "desc" },
             take: 6,
             select: { id: true, tipo: true, fechaInicio: true, fechaFin: true, estado: true, totalNeto: true },
@@ -103,9 +106,12 @@ export default async function DashboardPage() {
         : [],
       veContratos ? prisma.contrato.count({ where: contratosPorVencer }) : 0,
       enviaSap
-        ? prisma.sapEnvioAsiento.findMany({ where: { estado: "ERROR" }, select: { planillaId: true }, orderBy: { updatedAt: "desc" } })
+        ? prisma.sapEnvioAsiento.findMany({ where: { estado: "ERROR", planilla: filtroPlanillasCompletas(alcance) }, select: { planillaId: true }, orderBy: { updatedAt: "desc" } })
         : [],
     ]);
+
+  // Con alcance limitado, los montos de las últimas son la suma de las personas que alcanza.
+  const visibles = await totalesVisibles(prisma, alcance, ultimas.map((p) => p.id));
 
   // Una sola: directo a ella. Varias: a la lista, ya filtrada.
   const destinoPlanillas = (estado: string, lista: Array<{ id: string }>) =>
@@ -312,10 +318,10 @@ export default async function DashboardPage() {
                           {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}
                         </td>
                         <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">
-                          {formatCurrency(p.totalNeto)}
+                          {formatCurrency(visibles?.get(p.id)?.totalNeto ?? p.totalNeto)}
                         </td>
                         <td data-etiqueta="Estado">
-                          <EstadoBadge valor={p.estado} />
+                          <EstadoBadge valor={estadoDePlanilla(p.estado)} />
                         </td>
                       </FilaEnlace>
                     ))}

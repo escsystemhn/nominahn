@@ -9,6 +9,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { accesoAPlanilla, rechazoDeAcceso } from "@/lib/payroll/alcance-planilla";
+import { textoEstadoPlanilla } from "@/lib/payroll/estado-planilla";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -20,6 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const g = await requerirPermiso("planillas.pagar");
   if (!g.ok) return g.response;
   const { id } = await params;
+  // El archivo paga a todas las personas de la planilla.
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   const sp = new URL(req.url).searchParams;
   const formatoId = sp.get("formatoId");
   if (!formatoId) return NextResponse.json({ error: "Elija el formato del banco" }, { status: 400 });
@@ -43,7 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!planilla) return NextResponse.json({ error: "Planilla no encontrada" }, { status: 404 });
   if (!formato || !formato.activo) return NextResponse.json({ error: "Formato no encontrado o desactivado" }, { status: 404 });
   if (!["APROBADA", "PAGADA"].includes(planilla.estado)) {
-    return NextResponse.json({ error: `La planilla está ${planilla.estado}: sólo se paga una planilla aprobada o pagada.` }, { status: 409 });
+    return NextResponse.json({ error: `La planilla está ${textoEstadoPlanilla(planilla.estado)}: sólo se paga una planilla aprobada o pagada.` }, { status: 409 });
   }
 
   const ymd = planilla.fechaFin.toISOString().slice(0, 10).replace(/-/g, "");

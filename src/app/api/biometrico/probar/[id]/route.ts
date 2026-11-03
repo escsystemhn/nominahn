@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { alcanzaDispositivo } from "@/lib/biometrico/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { driverPara } from "@/lib/biometrico/driver";
@@ -22,7 +23,9 @@ export async function POST(
   const { id } = await params;
 
   const dispositivo = await prisma.dispositivoBiometrico.findUnique({ where: { id } });
-  if (!dispositivo) return NextResponse.json({ error: "Dispositivo no encontrado" }, { status: 404 });
+  if (!dispositivo || !alcanzaDispositivo(g.usuario, dispositivo)) {
+    return NextResponse.json({ error: "Dispositivo no encontrado" }, { status: 404 });
+  }
 
   const inicio = Date.now();
   try {

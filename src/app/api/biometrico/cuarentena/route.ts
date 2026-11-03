@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroEventos } from "@/lib/biometrico/alcance";
 
 export async function GET(req: NextRequest) {
   const g = await requerirPermiso("asistencia.biometrico");
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   // lleva acumulado y desde cuándo — no la lista completa.
   const grupos = await prisma.marcajeEvento.groupBy({
     by: ["dispositivoId", "pin"],
-    where: { estado: "CUARENTENA", ...(dispositivoId ? { dispositivoId } : {}) },
+    where: { AND: [{ estado: "CUARENTENA", ...(dispositivoId ? { dispositivoId } : {}) }, filtroEventos(g.usuario)] },
     _count: { _all: true },
     _min: { ocurridoEn: true },
     _max: { ocurridoEn: true },

@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zFecha, zId } from "@/lib/http/validar";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
@@ -43,6 +45,7 @@ export async function GET(req: NextRequest) {
       where: {
         ...(empleadoId ? { empleadoId } : {}),
         ...(desde && hasta ? { fechaInicio: { lte: new Date(`${hasta}T00:00:00Z`) }, fechaFin: { gte: new Date(`${desde}T00:00:00Z`) } } : {}),
+        AND: [filtroPorEmpleado(g.usuario)],
       },
       orderBy: { fechaInicio: "desc" },
       take: 300,
@@ -79,8 +82,10 @@ export async function POST(req: NextRequest) {
   const dias = diasEntre(d.fechaInicio, d.fechaFin);
   if (dias > MAX_DIAS) return NextResponse.json({ error: `Una incapacidad no puede pasar de ${MAX_DIAS} días (Art. 71 del Reglamento del IHSS).` }, { status: 422 });
 
-  const empleado = await prisma.empleado.findUnique({ where: { id: d.empleadoId }, select: { id: true, salarioBase: true } });
-  if (!empleado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, d.empleadoId))) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
 
   // Dos certificados no pueden cubrir el mismo día: el descuento se duplicaría.
   const solapada = await prisma.incapacidad.findFirst({

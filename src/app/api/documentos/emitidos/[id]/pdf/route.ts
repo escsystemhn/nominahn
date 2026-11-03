@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirSesion, puede } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { pdfDeEmitido, ErrorDocumento } from "@/lib/documentos/emision";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -13,9 +14,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!g.ok) return g.response;
   const { id } = await params;
 
-  const doc = await prisma.documentoEmitido.findUnique({ where: { id }, select: { empleadoId: true } });
+  const doc = await prisma.documentoEmitido.findUnique({
+    where: { id },
+    select: { empleadoId: true, empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+  });
   if (!doc) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   const esPropio = !!g.usuario.empleadoId && g.usuario.empleadoId === doc.empleadoId;
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!esPropio && !alcanzaEmpleado(g.usuario, doc.empleado)) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
   if (!esPropio && !puede(g.usuario, "documentos.emitir")) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }

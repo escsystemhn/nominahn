@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { accesoAPlanilla, rechazoDeAcceso } from "@/lib/payroll/alcance-planilla";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { formatDate } from "@/lib/utils";
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!g.ok) return g.response;
 
   const { id } = await params;
+  // El asiento resume a todas las personas de la planilla.
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   const { searchParams } = new URL(req.url);
   const formato = (searchParams.get("formato") ?? "JSON").toUpperCase();
   const incluirProvisiones = searchParams.get("provisiones") !== "false";

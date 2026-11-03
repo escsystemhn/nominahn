@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { conAlcance, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zFecha, zId } from "@/lib/http/validar";
 import { hoyHN, fechaCalendario } from "@/lib/utils";
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
 
   const [empleados, asignaciones, porDefecto] = await Promise.all([
     prisma.empleado.findMany({
-      where: { estado: { not: "INACTIVO" } },
+      where: conAlcance({ estado: { not: "INACTIVO" } }, g.usuario),
       select: {
         id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
         departamento: { select: { id: true, nombre: true } }, sucursal: { select: { id: true, nombre: true } },
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
       orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
     }),
     prisma.asignacionTurno.findMany({
-      where: { desde: { lte: fecha }, OR: [{ hasta: null }, { hasta: { gte: fecha } }] },
+      where: { desde: { lte: fecha }, OR: [{ hasta: null }, { hasta: { gte: fecha } }], AND: [filtroPorEmpleado(g.usuario)] },
       orderBy: { desde: "desc" },
       select: { empleadoId: true, desde: true, turno: { select: { id: true, nombre: true, codigo: true } } },
     }),
@@ -71,13 +72,24 @@ export async function POST(req: NextRequest) {
   const turno = await prisma.turno.findUnique({ where: { id: d.turnoId }, select: { id: true, activo: true, nombre: true } });
   if (!turno || !turno.activo) return NextResponse.json({ error: "El turno no existe o está desactivado" }, { status: 404 });
 
+  // Un lote con alguien inexistente o fuera de su alcance se rechaza entero, sin aplicar nada.
+  if (d.empleadoIds?.length) {
+    const unicos = [...new Set(d.empleadoIds)];
+    const alcanzados = await prisma.empleado.count({ where: conAlcance({ id: { in: unicos } }, g.usuario) });
+    if (alcanzados !== unicos.length) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
+
+  // Un departamento o una sucursal ajenos no dejan a nadie: igual que si no existieran.
   const empleados = await prisma.empleado.findMany({
-    where: {
-      estado: { not: "INACTIVO" },
-      ...(d.empleadoIds?.length ? { id: { in: d.empleadoIds } } : {}),
-      ...(d.departamentoId ? { departamentoId: d.departamentoId } : {}),
-      ...(d.sucursalId ? { sucursalId: d.sucursalId } : {}),
-    },
+    where: conAlcance(
+      {
+        estado: { not: "INACTIVO" },
+        ...(d.empleadoIds?.length ? { id: { in: d.empleadoIds } } : {}),
+        ...(d.departamentoId ? { departamentoId: d.departamentoId } : {}),
+        ...(d.sucursalId ? { sucursalId: d.sucursalId } : {}),
+      },
+      g.usuario
+    ),
     select: { id: true },
   });
   if (empleados.length === 0) return NextResponse.json({ error: "Ningún empleado activo coincide con la selección" }, { status: 400 });

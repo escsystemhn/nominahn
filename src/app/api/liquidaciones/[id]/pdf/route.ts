@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { formatCurrency, formatDate, formatDateLong, nombreCompleto } from "@/lib/utils";
 import { pdfFiniquito, type ConceptoFiniquito } from "@/lib/documentos/pdf";
 import { leerFirmante } from "@/lib/documentos/firmante";
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     include: {
       empleado: {
         select: {
+          id: true, sucursalId: true, departamentoId: true,
           codigo: true, identidad: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
           sucursal: { select: { empresa: { select: { nombre: true, rtn: true, direccion: true, telefono: true, email: true } } } },
           puesto: { select: { nombre: true } },
@@ -33,7 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     },
   });
-  if (!liq) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!liq || !alcanzaEmpleado(g.usuario, liq.empleado)) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
 
   const firmante = await leerFirmante(prisma);
   const conceptos = (Array.isArray(liq.conceptos) ? liq.conceptos : []) as unknown as ConceptoFiniquito[];

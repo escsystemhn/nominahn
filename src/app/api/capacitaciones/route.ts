@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { filtroCapacitaciones } from "@/lib/capacitaciones/alcance";
 import { z } from "zod";
 import { parsearBody, zFecha, zMonto } from "@/lib/http/validar";
 import { TipoCapacitacion } from "@prisma/client";
@@ -19,7 +21,9 @@ export async function GET() {
   const g = await requerirPermiso("talento.capacitaciones");
   if (!g.ok) return g.response;
   const capacitaciones = await prisma.capacitacion.findMany({
-    include: { _count: { select: { participantes: true } } },
+    where: filtroCapacitaciones(g.usuario),
+    // El conteo es el de su alcance: el de toda la empresa revela a quién no alcanza.
+    include: { _count: { select: { participantes: { where: filtroPorEmpleado(g.usuario) } } } },
     orderBy: { fechaInicio: "desc" },
   });
   return NextResponse.json(capacitaciones);

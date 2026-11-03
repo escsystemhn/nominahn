@@ -260,7 +260,7 @@ export default function PlanillaActions({
             <button
               onClick={() => cambiarConMotivo("CALCULADA", {
                 titulo: "¿Reabrir la planilla?",
-                detalle: "Vuelve a Calculada y pierde su sello de cierre. Los empleados dejan de ver su comprobante hasta que se apruebe de nuevo. Las cuotas siguen cobradas: para cambiar importes, después vuélvala a borrador. Si ya tiene asiento en SAP no podrá volver a borrador, y para corregirla tendrá que anularla.",
+                detalle: "Vuelve a Confirmada y pierde su sello de cierre. Los empleados dejan de ver su comprobante hasta que se apruebe de nuevo. Las cuotas siguen cobradas: para cambiar importes, después vuélvala a borrador. Si ya tiene asiento en SAP no podrá volver a borrador, y para corregirla tendrá que anularla.",
                 etiquetaMotivo: "Motivo de la reapertura",
                 accion: "Reabrir planilla",
                 peligro: true,

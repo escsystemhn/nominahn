@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { conAlcance } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
   if (!g.ok) return g.response;
   const sucursalId = new URL(req.url).searchParams.get("sucursalId") ?? "";
   const empleados = await prisma.empleado.findMany({
-    where: { estado: { notIn: ["INACTIVO"] }, ...(sucursalId ? { sucursalId } : {}) },
+    where: conAlcance({ estado: { notIn: ["INACTIVO"] }, ...(sucursalId ? { sucursalId } : {}) }, g.usuario),
     select: {
       id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
       fechaNacimiento: true, sucursal: { select: { id: true, nombre: true } }, puesto: { select: { id: true, nombre: true } },
@@ -49,8 +51,8 @@ export async function PUT(req: NextRequest) {
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
   const { empleadoId, ...d } = parsed.data;
-  const existe = await prisma.empleado.findUnique({ where: { id: empleadoId }, select: { id: true } });
-  if (!existe) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await empleadoAlAlcance(g.usuario, empleadoId))) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
 
   const datos = {
     permiteTraslado: d.permiteTraslado,

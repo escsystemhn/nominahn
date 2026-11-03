@@ -1,12 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { conAlcance, filtroPorEmpleado, filtroSucursales } from "@/lib/auth/alcance";
+import { filtroEventos, filtroDispositivos } from "@/lib/biometrico/alcance";
 import BiometricoClient from "@/components/biometrico/BiometricoClient";
 
 export default async function BiometricoPage() {
-  await requerirPermisoPagina("asistencia.biometrico");
+  const usuario = await requerirPermisoPagina("asistencia.biometrico");
 
   const [dispositivos, sucursales, cuarentena, empleados, asignados] = await Promise.all([
     prisma.dispositivoBiometrico.findMany({
+      where: filtroDispositivos(usuario),
       // Explícito y no la fila entera: incluye `passwordCifrado`, y una
       // credencial de un terminal de control de acceso no baja al navegador.
       select: {
@@ -16,7 +19,7 @@ export default async function BiometricoPage() {
       orderBy: { createdAt: "asc" },
     }),
     prisma.sucursal.findMany({
-      where: { activa: true },
+      where: { AND: [{ activa: true }, filtroSucursales(usuario)] },
       select: { id: true, nombre: true },
       orderBy: { nombre: "asc" },
     }),
@@ -24,17 +27,18 @@ export default async function BiometricoPage() {
     // marcas: al operador le sirve el conteo, no la lista.
     prisma.marcajeEvento.groupBy({
       by: ["dispositivoId", "pin"],
-      where: { estado: "CUARENTENA" },
+      where: { AND: [{ estado: "CUARENTENA" }, filtroEventos(usuario)] },
       _count: { _all: true },
       _min: { ocurridoEn: true },
       _max: { ocurridoEn: true },
     }),
     prisma.empleado.findMany({
-      where: { estado: "ACTIVO" },
+      where: conAlcance({ estado: "ACTIVO" }, usuario),
       select: { id: true, codigo: true, primerNombre: true, primerApellido: true },
       orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
     }),
     prisma.empleadoPin.findMany({
+      where: filtroPorEmpleado(usuario),
       select: {
         pin: true,
         dispositivoId: true,

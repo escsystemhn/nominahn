@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { textoEstadoPlanilla } from "@/lib/payroll/estado-planilla";
+import { alcanceCubreUnidad, filtroPlanillas } from "@/lib/payroll/alcance-planilla";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
@@ -32,6 +34,7 @@ export async function GET() {
   if (!g.ok) return g.response;
 
   const planillas = await prisma.planilla.findMany({
+    where: filtroPlanillas(g.usuario),
     include: { empresa: { select: { nombre: true } } },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -60,6 +63,10 @@ export async function POST(req: NextRequest) {
   if (!verificado.ok) return NextResponse.json({ error: verificado.error }, { status: 400 });
   const alcance = verificado.alcance;
   const sucursal = alcance.sucursalId;
+  // Quien sólo alcanza una parte no puede generar la planilla de otra, ni la de toda la empresa.
+  if (!alcanceCubreUnidad(g.usuario, alcance)) {
+    return NextResponse.json({ error: "Esa unidad está fuera del alcance de su cuenta." }, { status: 403 });
+  }
 
   // ─── Unicidad del período ───────────────────────────────────────────────────
   // Una planilla ANULADA no ocupa su período: el flujo de corrección es anular y
@@ -83,7 +90,7 @@ export async function POST(req: NextRequest) {
       {
         error: yaExiste.estado === "BORRADOR"
           ? "Ya hay un borrador para este período y alcance: ábralo para revisarlo, recalcularlo o descartarlo."
-          : `Ya existe una planilla ${yaExiste.estado} para este período y alcance. Anúlala antes de volver a calcularla.`,
+          : `Ya existe una planilla ${textoEstadoPlanilla(yaExiste.estado)} para este período y alcance. Anúlela antes de volver a calcularla.`,
         planillaId: yaExiste.id,
       },
       { status: 409 }

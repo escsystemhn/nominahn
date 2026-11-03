@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { z } from "zod";
 import { parsearBody } from "@/lib/http/validar";
 import { EstadoDotacion } from "@prisma/client";
@@ -20,8 +21,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!parsed.ok) return parsed.response;
   const { estado, observacion } = parsed.data;
 
-  const existe = await prisma.asignacionDotacion.findUnique({ where: { id } });
-  if (!existe) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const existe = await prisma.asignacionDotacion.findUnique({
+    where: { id },
+    select: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+  });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!existe || !alcanzaEmpleado(g.usuario, existe.empleado)) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   const asignacion = await prisma.asignacionDotacion.update({
     where: { id },

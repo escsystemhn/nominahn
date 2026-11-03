@@ -10,6 +10,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { accesoAPlanilla, rechazoDeAcceso } from "@/lib/payroll/alcance-planilla";
+import { textoEstadoPlanilla } from "@/lib/payroll/estado-planilla";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
@@ -51,6 +53,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   if (!g.ok) return g.response;
 
   const { id } = await params;
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   const planilla = await prisma.planilla.findUnique({ where: { id }, select: { id: true, estado: true, hashCalculo: true } });
   if (!planilla) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
@@ -99,6 +103,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!g.ok) return g.response;
 
   const { id } = await params;
+  const rechazo = rechazoDeAcceso(await accesoAPlanilla(prisma, g.usuario, id));
+  if (rechazo) return rechazo;
   const parsed = await parsearBody(req, schemaPost);
   if (!parsed.ok) return parsed.response;
   const { accion } = parsed.data;
@@ -126,7 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     reversoDeId = asientoPrevio.id;
   } else {
     if (!["APROBADA", "PAGADA"].includes(planilla.estado)) {
-      return NextResponse.json({ error: `Sólo se envía una planilla aprobada o pagada (esta está ${planilla.estado}).` }, { status: 409 });
+      return NextResponse.json({ error: `Sólo se envía una planilla aprobada o pagada (esta está ${textoEstadoPlanilla(planilla.estado)}).` }, { status: 409 });
     }
     if (!planilla.hashCalculo) return NextResponse.json({ error: "La planilla no tiene huella de cierre." }, { status: 409 });
     if (asientoPrevio?.estado === "ENVIADO") {

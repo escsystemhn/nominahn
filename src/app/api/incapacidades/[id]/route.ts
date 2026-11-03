@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 
@@ -16,8 +17,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
 
-  const inc = await prisma.incapacidad.findUnique({ where: { id }, include: { prorrogas: { where: { anulada: false }, select: { id: true } } } });
-  if (!inc) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+  const inc = await prisma.incapacidad.findUnique({
+    where: { id },
+    include: {
+      prorrogas: { where: { anulada: false }, select: { id: true } },
+      empleado: { select: { id: true, sucursalId: true, departamentoId: true } },
+    },
+  });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!inc || !alcanzaEmpleado(g.usuario, inc.empleado)) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
   if (inc.anulada) return NextResponse.json({ error: "Ya estaba anulada" }, { status: 409 });
   if (inc.prorrogas.length) return NextResponse.json({ error: "Tiene prórrogas vigentes: anule primero las prórrogas." }, { status: 409 });
 

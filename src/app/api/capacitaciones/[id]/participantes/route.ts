@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
+import { filtroCapacitaciones } from "@/lib/capacitaciones/alcance";
 import { z } from "zod";
 import { parsearBody, zId } from "@/lib/http/validar";
 
@@ -29,6 +32,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!parsed.ok) return parsed.response;
   const { empleadoId } = parsed.data;
 
+  // Fuera de su alcance, el programa y el empleado responden igual que si no existieran.
+  if (!(await prisma.capacitacion.count({ where: { AND: [{ id }, filtroCapacitaciones(g.usuario)] } }))) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
+  if (!(await empleadoAlAlcance(g.usuario, empleadoId))) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
+
   try {
     const p = await prisma.participanteCapacitacion.create({
       data: { capacitacionId: id, empleadoId },
@@ -46,6 +57,15 @@ export async function PATCH(req: NextRequest) {
   const parsed = await parsearBody(req, schemaCalificar);
   if (!parsed.ok) return parsed.response;
   const { participanteId, asistio, aprobado, calificacion } = parsed.data;
+
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  const actual = await prisma.participanteCapacitacion.findUnique({
+    where: { id: participanteId },
+    select: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+  });
+  if (!actual || !alcanzaEmpleado(g.usuario, actual.empleado)) {
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  }
 
   const p = await prisma.participanteCapacitacion.update({
     where: { id: participanteId },

@@ -1,11 +1,12 @@
 import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import NineBoxClient from "./NineBoxClient";
 
 export const metadata = { title: "Matriz nine-box" };
 
 export default async function NineBoxPage() {
-  await requerirPermisoPagina("talento.evaluaciones_ver");
+  const usuario = await requerirPermisoPagina("talento.evaluaciones_ver");
 
   // Obtener evaluaciones FINALIZADAS con desempeño y potencial
   const evaluaciones = await prisma.evaluacion.findMany({
@@ -13,6 +14,7 @@ export default async function NineBoxPage() {
       estado: "FINALIZADA",
       desempeno: { not: null },
       potencial: { not: null },
+      AND: [filtroPorEmpleado(usuario)],
     },
     select: {
       id: true,

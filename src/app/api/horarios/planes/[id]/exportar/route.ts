@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { planConValidacion, ymd } from "@/lib/horarios/bd";
+import { recortarPlan, vistaDePlan } from "@/lib/horarios/alcance";
 import { aJson, aPdfPlan, aXlsxPlan, type DatosExportacion } from "@/lib/horarios/exportar";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,8 +13,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!g.ok) return g.response;
   const { id } = await params;
   const formato = (new URL(req.url).searchParams.get("formato") ?? "xlsx").toLowerCase();
-  const r = await planConValidacion(prisma, id);
-  if (!r) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
+  const vista = await vistaDePlan(prisma, g.usuario, id);
+  const completo = vista.acceso === "ninguno" ? null : await planConValidacion(prisma, id);
+  if (!completo) return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
+  const r = recortarPlan(completo, vista);
 
   const datos: DatosExportacion = {
     plan: { nombre: r.plan.nombre, desde: ymd(r.plan.desde), hasta: ymd(r.plan.hasta), estado: r.plan.estado },

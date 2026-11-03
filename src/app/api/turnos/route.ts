@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado, alcanceEsTotal } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 import { validarTurno } from "@/lib/asistencia/turnos-reglas";
@@ -19,8 +20,9 @@ export async function GET() {
   const hoy = hoyHN();
   const [turnos, vigentes] = await Promise.all([
     prisma.turno.findMany({ orderBy: [{ activo: "desc" }, { nombre: "asc" }] }),
+    // Cuenta sólo a la gente de su alcance: el catálogo es de toda la empresa, el conteo no.
     prisma.asignacionTurno.findMany({
-      where: { desde: { lte: hoy }, OR: [{ hasta: null }, { hasta: { gte: hoy } }] },
+      where: { desde: { lte: hoy }, OR: [{ hasta: null }, { hasta: { gte: hoy } }], AND: [filtroPorEmpleado(g.usuario)] },
       orderBy: { desde: "desc" },
       select: { empleadoId: true, turnoId: true },
     }),
@@ -38,6 +40,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const g = await requerirPermiso("asistencia.turnos");
   if (!g.ok) return g.response;
+  // Un turno vale para toda la empresa y decide su hora extra: cambiarlo afecta a gente
+  // que esta cuenta no alcanza, y el turno no tiene sucursal con la que acotarlo.
+  if (!alcanceEsTotal(g.usuario)) {
+    return NextResponse.json({ error: "Los turnos valen para toda la empresa: sólo los cambia una cuenta con alcance total." }, { status: 403 });
+  }
   const parsed = await parsearBody(req, schemaTurno);
   if (!parsed.ok) return parsed.response;
   const d = parsed.data;

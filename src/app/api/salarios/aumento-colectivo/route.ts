@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { conAlcance } from "@/lib/auth/alcance";
 import { z } from "zod";
 import { parsearBody, zPorcentaje, zMontoPositivo, zId } from "@/lib/http/validar";
 import { money, redondear } from "@/lib/payroll/money";
@@ -31,12 +32,16 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const { tipo, porcentaje, montoFijo, sucursalId, departamentoId, motivo } = parsed.data;
 
+  // Sólo los de su alcance: una sucursal ajena da cero empleados y no aumenta a nadie.
   const empleados = await prisma.empleado.findMany({
-    where: {
-      estado: { in: [...ESTADOS_QUE_COBRAN] },
-      ...(sucursalId ? { sucursalId } : {}),
-      ...(departamentoId ? { departamentoId } : {}),
-    },
+    where: conAlcance(
+      {
+        estado: { in: [...ESTADOS_QUE_COBRAN] },
+        ...(sucursalId ? { sucursalId } : {}),
+        ...(departamentoId ? { departamentoId } : {}),
+      },
+      g.usuario
+    ),
     select: { id: true, salarioBase: true },
   });
 

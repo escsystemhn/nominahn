@@ -23,6 +23,7 @@ const ESTADOS: Record<string, { label: string; tono: Tono }> = {
   // Planilla
   BORRADOR: { label: "Borrador", tono: "aviso" },
   CALCULADA: { label: "Calculada", tono: "marca" },
+  CONFIRMADA: { label: "Confirmada", tono: "marca" },
   APROBADA: { label: "Aprobada", tono: "aviso" },
   PAGADA: { label: "Pagada", tono: "ok" },
   ANULADA: { label: "Anulada", tono: "error" },
@@ -52,6 +53,16 @@ const PUNTO: Record<Tono, string> = {
   aviso: "bg-amber-500",
   error: "bg-red-600",
 };
+
+/**
+ * El estado de una planilla como lo lee la persona. En la base se sigue llamando
+ * CALCULADA, pero un borrador ya está calculado: lo que distingue este paso es que se
+ * confirmó, y el botón que lleva aquí dice «Confirmar planilla». Los décimos también
+ * usan CALCULADA, y allí sí es la palabra correcta: por eso no se cambia en la lista.
+ */
+export function estadoDePlanilla(estado: string): string {
+  return estado === "CALCULADA" ? "CONFIRMADA" : estado;
+}
 
 /** Texto legible para un estado, reutilizable fuera del badge. */
 export function etiquetaEstado(valor: string): string {

@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
+import { accesoAPlanilla } from "@/lib/payroll/alcance-planilla";
 import { resumenDeRevision } from "@/lib/payroll/revision-planilla";
 import { cargarRevision } from "@/lib/payroll/revision-planilla-bd";
 import BarraEstadoPlanilla from "@/components/payroll/BarraEstadoPlanilla";
@@ -35,6 +37,11 @@ export default async function DetallePlanillaPage({
 
   const { id } = await params;
   const sp = await searchParams;
+  // Sin nadie de su alcance responde que no existe. Con parte de la gente sólo consulta a esas personas.
+  const acceso = await accesoAPlanilla(prisma, usuario, id);
+  if (acceso === "ninguno") notFound();
+  const parcial = acceso === "parcial";
+  const enAlcance = filtroPorEmpleado(usuario);
   const opciones = await cargarOpcionesEstructura(prisma);
   // Filtro DENTRO de la planilla: por dónde estaba cada quien al pagarse.
   const alcance = normalizarAlcance({ ...sp, divisionId: opciones.conDivisiones ? sp.divisionId : null });
@@ -49,7 +56,7 @@ export default async function DetallePlanillaPage({
       division: unidad,
       departamento: unidad,
       detalles: {
-        where: filtroDetallesOrg(alcance),
+        where: { AND: [filtroDetallesOrg(alcance), enAlcance] },
         include: {
           sucursal: unidad,
           division: unidad,
@@ -78,9 +85,9 @@ export default async function DetallePlanillaPage({
     return u ? (u.name ?? u.email) : null;
   };
   // Se revisa mientras todavía se puede hacer algo al respecto: antes de confirmar y antes de aprobar.
-  const enRevision = planilla.estado === "BORRADOR" || planilla.estado === "CALCULADA";
+  const enRevision = !parcial && (planilla.estado === "BORRADOR" || planilla.estado === "CALCULADA");
   const { revision, anterior } = enRevision ? await cargarRevision(prisma, planilla) : { revision: null, anterior: null };
-  const totalLineas = hayFiltro ? await prisma.planillaDetalle.count({ where: { planillaId: id } }) : planilla.detalles.length;
+  const totalLineas = hayFiltro ? await prisma.planillaDetalle.count({ where: { planillaId: id, ...enAlcance } }) : planilla.detalles.length;
 
   // Enviar sólo tiene sentido con la planilla cerrada: antes de aprobarla, el
   // documento podría dejar de corresponder a lo que finalmente se paga.
@@ -94,7 +101,7 @@ export default async function DetallePlanillaPage({
 
   // El archivo para el banco lleva cuentas: sólo quien registra el pago, y
   // sólo con la planilla aprobada (no se paga un borrador).
-  const puedeArchivoBanco = ["APROBADA", "PAGADA"].includes(planilla.estado) && puede(usuario, "planillas.pagar");
+  const puedeArchivoBanco = !parcial && ["APROBADA", "PAGADA"].includes(planilla.estado) && puede(usuario, "planillas.pagar");
 
   type Detalle = NonNullable<typeof planilla>["detalles"][number];
   const otrasDeducciones = (d: Detalle) => sumarPor([d.cooperativa, d.prestamos, d.adelantos, d.otrosDeducciones], (x) => x);
@@ -134,12 +141,19 @@ export default async function DetallePlanillaPage({
   const puedeImprimir = planilla.estado !== "ANULADA" && puede(usuario, "reportes.ver");
   const divisionesEnPlanilla = new Set(planilla.detalles.map((d) => ubicacionDeLinea(d, opciones.conDivisiones).division?.id ?? null));
 
-  const resumen = [
-    { label: "Total bruto", valor: formatCurrency(planilla.totalBruto) },
-    { label: "Deducciones del empleado", valor: formatCurrency(planilla.totalDeducciones) },
-    { label: "Total neto a pagar", valor: formatCurrency(planilla.totalNeto), destacada: true },
-    { label: "Aportes patronales", valor: formatCurrency(planilla.totalEmpleador) },
-  ];
+  // Con acceso parcial, la suma de las personas que ve: el total de la planilla no le corresponde.
+  const resumen = parcial
+    ? [
+        { label: "Bruto de su alcance", valor: formatCurrency(sumarPor(planilla.detalles, (d) => d.totalBruto)) },
+        { label: "Deducciones de su alcance", valor: formatCurrency(sumarPor(planilla.detalles, (d) => d.totalDeducciones)) },
+        { label: "Neto de su alcance", valor: formatCurrency(sumarPor(planilla.detalles, (d) => d.salarioNeto)), destacada: true },
+      ]
+    : [
+        { label: "Total bruto", valor: formatCurrency(planilla.totalBruto) },
+        { label: "Deducciones del empleado", valor: formatCurrency(planilla.totalDeducciones) },
+        { label: "Total neto a pagar", valor: formatCurrency(planilla.totalNeto), destacada: true },
+        { label: "Aportes patronales", valor: formatCurrency(planilla.totalEmpleador) },
+      ];
 
   return (
     <div className="space-y-6">
@@ -156,7 +170,7 @@ export default async function DetallePlanillaPage({
         actions={
           <>
             {planilla.estado === "ANULADA" && <EstadoBadge valor={planilla.estado} className="mr-2 text-sm" />}
-            <PlanillaActions
+            {!parcial && <PlanillaActions
               planillaId={planilla.id}
               estado={planilla.estado}
               puedeCalcular={puede(usuario, "planillas.calcular")}
@@ -169,7 +183,7 @@ export default async function DetallePlanillaPage({
               empleados={totalLineas}
               neto={formatCurrency(planilla.totalNeto)}
               revision={revision ? resumenDeRevision(revision) : undefined}
-            />
+            />}
           </>
         }
       />
@@ -181,6 +195,13 @@ export default async function DetallePlanillaPage({
           aprobada={{ por: firmante(planilla.aprobadoPor), el: planilla.cerradaAt }}
           pagada={{ por: firmante(planilla.pagadoPor), el: planilla.fechaPago }}
         />
+      )}
+
+      {parcial && (
+        <div role="status" className="rounded-lg border border-gray-300 bg-gray-50 p-4 text-sm text-gray-800">
+          Esta planilla incluye personal fuera del alcance de su cuenta. Aquí ve sólo a las personas de su alcance, con
+          sus totales, y no puede aprobarla, pagarla ni anularla.
+        </div>
       )}
 
       {planilla.estado === "BORRADOR" && (
@@ -215,7 +236,7 @@ export default async function DetallePlanillaPage({
         </div>
       )}
 
-      {veContabilidad && (
+      {veContabilidad && !parcial && (
         <SapEstadoPlanilla planillaId={planilla.id} estadoPlanilla={planilla.estado} puedeEnviar={puedeEnviarSap} />
       )}
 

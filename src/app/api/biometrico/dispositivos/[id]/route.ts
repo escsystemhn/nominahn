@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { alcanzaDispositivo } from "@/lib/biometrico/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { z } from "zod";
@@ -39,6 +40,16 @@ export async function PATCH(
   if (!parsed.ok) return parsed.response;
   const { nombre, marca, modelo, serie, ip, puerto, usuario, password, offsetMinutos,
     sucursalId, activo } = parsed.data;
+
+  // Fuera de su alcance responde igual que si no existiera.
+  const actual = await prisma.dispositivoBiometrico.findUnique({ where: { id }, select: { sucursalId: true } });
+  if (!actual || !alcanzaDispositivo(g.usuario, actual)) {
+    return NextResponse.json({ error: "Dispositivo no encontrado" }, { status: 404 });
+  }
+  // Ni llevárselo a una sucursal que no alcanza, ni dejarlo sin sucursal.
+  if (sucursalId !== undefined && !alcanzaDispositivo(g.usuario, { sucursalId: sucursalId || null })) {
+    return NextResponse.json({ error: "Esa sucursal está fuera del alcance de su cuenta." }, { status: 403 });
+  }
 
   if (password && !cifradoDisponible()) {
     return NextResponse.json(
@@ -82,6 +93,12 @@ export async function DELETE(
   if (!g.ok) return g.response;
 
   const { id } = await params;
+
+  // Borrar un reloj se lleva en cascada sus PIN y sus marcas.
+  const actual = await prisma.dispositivoBiometrico.findUnique({ where: { id }, select: { sucursalId: true } });
+  if (!actual || !alcanzaDispositivo(g.usuario, actual)) {
+    return NextResponse.json({ error: "Dispositivo no encontrado" }, { status: 404 });
+  }
 
   await prisma.dispositivoBiometrico.delete({ where: { id } });
 

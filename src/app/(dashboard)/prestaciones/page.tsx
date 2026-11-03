@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { conAlcance, filtroSucursales } from "@/lib/auth/alcance";
 import { nombreCompleto } from "@/lib/utils";
 import PrestacionesClient from "@/components/payroll/PrestacionesClient";
 
@@ -11,14 +12,14 @@ export default async function PrestacionesPage({ searchParams }: { searchParams:
 
   const [empleados, sucursales] = await Promise.all([
     prisma.empleado.findMany({
-      where: { estado: { in: ["ACTIVO", "VACACIONES", "PERMISO", "SUSPENDIDO"] } },
+      where: conAlcance({ estado: { in: ["ACTIVO", "VACACIONES", "PERMISO", "SUSPENDIDO"] } }, usuario),
       select: {
         id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
         fechaIngreso: true, salarioBase: true,
       },
       orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
     }),
-    prisma.sucursal.findMany({ where: { activa: true }, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
+    prisma.sucursal.findMany({ where: { AND: [{ activa: true }, filtroSucursales(usuario)] }, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
   ]);
 
   return (

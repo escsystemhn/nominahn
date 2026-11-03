@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { alcanceEsTotal, filtroSucursales } from "@/lib/auth/alcance";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
@@ -26,7 +27,7 @@ export async function GET() {
   if (!g.ok) return g.response;
   const [reglas, puestos] = await Promise.all([
     leerReglas(prisma),
-    prisma.puesto.findMany({ where: { activo: true }, select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } }, orderBy: { nombre: "asc" } }),
+    prisma.puesto.findMany({ where: { activo: true, departamento: { sucursal: filtroSucursales(g.usuario) } }, select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } }, orderBy: { nombre: "asc" } }),
   ]);
   return NextResponse.json({ reglas, puestos: puestos.map((p) => ({ id: p.id, nombre: etiquetaPuesto(p) })) });
 }
@@ -34,6 +35,9 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const g = await requerirPermiso("asistencia.turnos");
   if (!g.ok) return g.response;
+  if (!alcanceEsTotal(g.usuario)) {
+    return NextResponse.json({ error: "Estas reglas valen para toda la empresa: sólo las cambia una cuenta con alcance total." }, { status: 403 });
+  }
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
   const anterior = await leerReglas(prisma);

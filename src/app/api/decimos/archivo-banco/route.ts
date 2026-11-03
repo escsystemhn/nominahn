@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { nombreCompleto, hoyHN } from "@/lib/utils";
 import { generarArchivoBanco } from "@/lib/payroll/archivo-banco";
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   const [filas, formato] = await Promise.all([
     prisma.liquidacionDecimo.findMany({
-      where: { tipo, anio, estado: { in: ["CALCULADA", "PAGADA"] }, ...(sucursalId ? { empleado: { sucursalId } } : {}) },
+      where: { tipo, anio, estado: { in: ["CALCULADA", "PAGADA"] }, AND: [sucursalId ? { empleado: { sucursalId } } : {}, filtroPorEmpleado(g.usuario)] },
       select: {
         montoPagado: true,
         empleado: { select: { codigo: true, identidad: true, banco: true, cuentaBancaria: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true } },

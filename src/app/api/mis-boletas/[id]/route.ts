@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirSesion, puede } from "@/lib/auth/guard";
 import { templateBoletaPago } from "@/lib/email/send";
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     include: {
       empleado: {
         select: {
-          id: true, codigo: true, identidad: true,
+          id: true, codigo: true, identidad: true, sucursalId: true, departamentoId: true,
           primerNombre: true, segundoNombre: true,
           primerApellido: true, segundoApellido: true,
         },
@@ -34,7 +35,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!detalle) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   const esPropia = !!g.usuario.empleadoId && detalle.empleadoId === g.usuario.empleadoId;
-  const esAdmin = puede(g.usuario, "planillas.ver");
+  const vePlanillas = puede(g.usuario, "planillas.ver");
+  const esAdmin = vePlanillas && alcanzaEmpleado(g.usuario, detalle.empleado);
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!esPropia && vePlanillas && !esAdmin) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   if (!esPropia && !esAdmin) {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }

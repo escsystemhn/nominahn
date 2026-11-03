@@ -7,7 +7,7 @@ import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import Link from "next/link";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoVacio from "@/components/ui/EstadoVacio";
-import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
+import EstadoBadge, { etiquetaEstado, estadoDePlanilla } from "@/components/ui/EstadoBadge";
 import SaludFamilia from "@/components/employees/SaludFamilia";
 import ContratosEmpleado from "@/components/employees/ContratosEmpleado";
 
@@ -334,7 +334,7 @@ export default async function FichaEmpleadoPage({
                       <td data-etiqueta="Deducciones" className="num whitespace-nowrap text-gray-500">{formatCurrency(Number(d.totalDeducciones))}</td>
                       <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(d.salarioNeto))}</td>
                       <td data-etiqueta="Estado">
-                        <EstadoBadge valor={d.planilla.estado} />
+                        <EstadoBadge valor={estadoDePlanilla(d.planilla.estado)} />
                       </td>
                       <td data-accion className="whitespace-nowrap text-center">
                         <a href={`/api/mis-boletas/${d.id}?modo=ver`} target="_blank" rel="noopener noreferrer"

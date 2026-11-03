@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requerirSesion, puede } from "@/lib/auth/guard";
+import { alcanzaEmpleado, filtroEmpleados, alcanceEsTotal } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -29,8 +31,26 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   const { id } = await params;
 
+  /**
+   * Una evaluación que no existe da una lista vacía, y eso mismo da una fuera de su
+   * alcance. Quien evalúa sigue viendo su propia fila, con la que envía el formulario;
+   * en la propia evaluación se ve a todos, y en una ajena, a los evaluadores de su alcance.
+   */
+  const yo = g.usuario.empleadoId;
+  const evaluacion = await prisma.evaluacion.findUnique({ where: { id }, select: { empleadoId: true } });
+  const esPropia = !!yo && evaluacion?.empleadoId === yo;
+  // Sin permiso de consultar evaluaciones sólo queda la propia: una cuenta sin perfil tiene alcance total.
+  const alcanzada = !!evaluacion && puede(g.usuario, "talento.evaluaciones_ver") && (await empleadoAlAlcance(g.usuario, evaluacion.empleadoId));
+  const miFila = yo ? [{ evaluadorId: yo }] : [];
+  // Con alcance total no se acota: un filtro vacío dentro de un OR no significa «todos».
+  const visibles = esPropia || (alcanzada && alcanceEsTotal(g.usuario))
+    ? {}
+    : { OR: alcanzada ? [{ evaluador: filtroEmpleados(g.usuario) }, ...miFila] : miFila };
+
   const participantes = await prisma.evaluacionParticipante.findMany({
-    where: { evaluacionId: id },
+    where: { evaluacionId: id, ...visibles },
+    // El token es el enlace para calificar: quien lo tiene, califica en nombre de ese evaluador.
+    omit: { tokenAcceso: true },
     include: {
       evaluador: { select: { id: true, primerNombre: true, primerApellido: true, fotoPerfil: true } },
       criteriosParticipante: { include: { competencia: { select: { id: true, nombre: true } } } },
@@ -55,8 +75,19 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const participante = await prisma.evaluacionParticipante.findFirst({
     where: { id: participanteId, evaluacionId: id },
+    include: {
+      evaluador: { select: { id: true, sucursalId: true, departamentoId: true } },
+      evaluacion: { select: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } } },
+    },
   });
   if (!participante) return NextResponse.json({ error: "Participante no encontrado" }, { status: 404 });
+
+  // Su propio formulario lo envía siempre. En nombre de otro, sólo si alcanza al evaluado
+  // y a ese evaluador: lo demás responde igual que si el participante no existiera.
+  const esSuFormulario = !!g.usuario.empleadoId && participante.evaluadorId === g.usuario.empleadoId;
+  if (!esSuFormulario && !(alcanzaEmpleado(g.usuario, participante.evaluacion.empleado) && alcanzaEmpleado(g.usuario, participante.evaluador))) {
+    return NextResponse.json({ error: "Participante no encontrado" }, { status: 404 });
+  }
 
   if (participante.estado === "COMPLETADO") {
     return NextResponse.json({ error: "Ya fue completada por este evaluador" }, { status: 409 });

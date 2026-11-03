@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { filtroPlanillas } from "@/lib/payroll/alcance-planilla";
 import { prisma } from "@/lib/prisma";
 import { puede, requerirSesion } from "@/lib/auth/guard";
 import { conAlcance } from "@/lib/auth/alcance";
 import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
 import { coincide, palabrasDeBusqueda } from "@/lib/texto-busqueda";
 import { formatDate, nombreCompleto } from "@/lib/utils";
-import { etiquetaEstado } from "@/components/ui/EstadoBadge";
+import { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
 
 const POR_GRUPO = 6;
 /** Las planillas se filtran aquí mismo: bastan las más recientes, no toda la historia. */
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
   const planillas = puede(g.usuario, "planillas.ver")
     ? (
         await prisma.planilla.findMany({
+          where: filtroPlanillas(g.usuario),
           select: { id: true, tipo: true, estado: true, fechaInicio: true, fechaFin: true },
           orderBy: { fechaFin: "desc" },
           take: PLANILLAS_A_REVISAR,
@@ -49,14 +51,14 @@ export async function GET(req: NextRequest) {
       )
         .filter((p) => {
           // También por el nombre del mes y el año, que es como se recuerda una planilla.
-          const texto = `planilla ${etiquetaEstado(p.tipo)} ${etiquetaEstado(p.estado)} ${formatDate(p.fechaInicio)} ${formatDate(p.fechaFin)} ${MESES[p.fechaFin.getUTCMonth()]} ${p.fechaFin.getUTCFullYear()}`;
+          const texto = `planilla ${etiquetaEstado(p.tipo)} ${etiquetaEstado(estadoDePlanilla(p.estado))} ${formatDate(p.fechaInicio)} ${formatDate(p.fechaFin)} ${MESES[p.fechaFin.getUTCMonth()]} ${p.fechaFin.getUTCFullYear()}`;
           return coincide(texto, palabras);
         })
         .slice(0, POR_GRUPO)
         .map((p) => ({
           id: p.id,
           titulo: `Planilla ${etiquetaEstado(p.tipo).toLowerCase()}`,
-          detalle: `Del ${formatDate(p.fechaInicio)} al ${formatDate(p.fechaFin)}, ${etiquetaEstado(p.estado).toLowerCase()}`,
+          detalle: `Del ${formatDate(p.fechaInicio)} al ${formatDate(p.fechaFin)}, ${etiquetaEstado(estadoDePlanilla(p.estado)).toLowerCase()}`,
           href: `/planillas/${p.id}`,
         }))
     : [];

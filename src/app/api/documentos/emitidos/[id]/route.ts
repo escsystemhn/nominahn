@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 
@@ -15,8 +16,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
-  const doc = await prisma.documentoEmitido.findUnique({ where: { id }, select: { id: true, folio: true, anulado: true } });
-  if (!doc) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  const doc = await prisma.documentoEmitido.findUnique({
+    where: { id },
+    select: { id: true, folio: true, anulado: true, empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+  });
+  // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
+  if (!doc || !alcanzaEmpleado(g.usuario, doc.empleado)) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   if (doc.anulado) return NextResponse.json({ error: "Ya estaba anulado" }, { status: 409 });
   await prisma.documentoEmitido.update({ where: { id }, data: { anulado: true } });
   const { ip, userAgent } = getClientInfo(req);

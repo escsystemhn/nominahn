@@ -10,6 +10,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
+import { alcanzaEmpleado, filtroPorEmpleado } from "@/lib/auth/alcance";
+import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
+import { alcanzaDispositivo } from "@/lib/biometrico/alcance";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { agregarEventosPendientes } from "@/lib/asistencia/agregar";
 import { z } from "zod";
@@ -21,7 +24,7 @@ export async function GET(req: NextRequest) {
   const dispositivoId = new URL(req.url).searchParams.get("dispositivoId") ?? undefined;
 
   const pines = await prisma.empleadoPin.findMany({
-    where: dispositivoId ? { dispositivoId } : {},
+    where: { AND: [dispositivoId ? { dispositivoId } : {}, filtroPorEmpleado(g.usuario)] },
     include: {
       empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true } },
       dispositivo: { select: { id: true, nombre: true } },
@@ -46,12 +49,24 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
   const { dispositivoId, pin, empleadoId } = parsed.data;
 
-  const [dispositivo, empleado] = await Promise.all([
-    prisma.dispositivoBiometrico.findUnique({ where: { id: dispositivoId }, select: { id: true } }),
-    prisma.empleado.findUnique({ where: { id: empleadoId }, select: { id: true } }),
+  const [dispositivo, empleadoAlcanzado, pinActual] = await Promise.all([
+    prisma.dispositivoBiometrico.findUnique({ where: { id: dispositivoId }, select: { id: true, sucursalId: true } }),
+    empleadoAlAlcance(g.usuario, empleadoId),
+    prisma.empleadoPin.findUnique({
+      where: { dispositivoId_pin: { dispositivoId, pin } },
+      select: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } },
+    }),
   ]);
-  if (!dispositivo) return NextResponse.json({ error: "Dispositivo no encontrado" }, { status: 404 });
-  if (!empleado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Fuera de su alcance responde igual que si no existiera. El equipo cuenta porque
+  // asignar un PIN adopta sus marcas en cuarentena, que pueden ser de otra sucursal.
+  if (!dispositivo || !alcanzaDispositivo(g.usuario, dispositivo)) {
+    return NextResponse.json({ error: "Dispositivo no encontrado" }, { status: 404 });
+  }
+  if (!empleadoAlcanzado) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  // Reasignar un PIN ajeno le quitaría sus marcas futuras a quien hoy lo tiene.
+  if (pinActual && !alcanzaEmpleado(g.usuario, pinActual.empleado)) {
+    return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
+  }
 
   // El vínculo y la adopción de los eventos huérfanos van juntos: si se guardara
   // el PIN y fallara el reproceso, quedarían marcas en cuarentena con un PIN que

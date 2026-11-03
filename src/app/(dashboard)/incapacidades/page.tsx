@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
+import { conAlcance } from "@/lib/auth/alcance";
 import { nombreCompleto } from "@/lib/utils";
 import IncapacidadesClient from "@/components/attendance/IncapacidadesClient";
 
@@ -8,7 +9,7 @@ export const metadata = { title: "Incapacidades" };
 export default async function IncapacidadesPage() {
   const usuario = await requerirPermisoPagina("asistencia.incapacidades");
   const empleados = await prisma.empleado.findMany({
-    where: { estado: { not: "INACTIVO" } },
+    where: conAlcance({ estado: { not: "INACTIVO" } }, usuario),
     select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, genero: true },
     orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
   });

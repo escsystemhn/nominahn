@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { filtroSucursales } from "@/lib/auth/alcance";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
@@ -36,11 +37,15 @@ export async function GET(req: NextRequest) {
   if (!g.ok) return g.response;
   const sucursalId = new URL(req.url).searchParams.get("sucursalId") ?? "";
   if (!sucursalId) return NextResponse.json({ error: "Indique la sucursal" }, { status: 400 });
+  // Fuera de su alcance responde igual que si no existiera.
+  if (!(await prisma.sucursal.count({ where: { AND: [{ id: sucursalId }, filtroSucursales(g.usuario)] } }))) {
+    return NextResponse.json({ error: "Sucursal no encontrada" }, { status: 404 });
+  }
 
   const [franjas, horario, puestos] = await Promise.all([
     prisma.coberturaSucursal.findMany({ where: { sucursalId, activo: true }, orderBy: [{ puestoId: "asc" }, { desde: "asc" }] }),
     prisma.horarioAtencion.findMany({ where: { sucursalId }, orderBy: { dia: "asc" } }),
-    prisma.puesto.findMany({ where: { activo: true }, select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } }, orderBy: { nombre: "asc" } }),
+    prisma.puesto.findMany({ where: { activo: true, departamento: { sucursal: filtroSucursales(g.usuario) } }, select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } }, orderBy: { nombre: "asc" } }),
   ]);
   return NextResponse.json({
     franjas: franjas.map((f) => ({ ...f, dias: f.dias.split(",").map(Number).filter(Boolean) })),
@@ -55,7 +60,7 @@ export async function PUT(req: NextRequest) {
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
   const d = parsed.data;
-  const sucursal = await prisma.sucursal.findUnique({ where: { id: d.sucursalId }, select: { id: true } });
+  const sucursal = await prisma.sucursal.findFirst({ where: { AND: [{ id: d.sucursalId }, filtroSucursales(g.usuario)] }, select: { id: true } });
   if (!sucursal) return NextResponse.json({ error: "Sucursal no encontrada" }, { status: 404 });
 
   await prisma.$transaction(async (tx) => {

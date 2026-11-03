@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { requerirSesion, puede } from "@/lib/auth/guard";
+import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { directorioUploads, nombreArchivoValido, tipoContenido } from "@/lib/uploads";
 
 /**
@@ -18,6 +19,9 @@ import { directorioUploads, nombreArchivoValido, tipoContenido } from "@/lib/upl
  * expedientes y el propio empleado. El CV de un candidato lo bajan además
  * quienes llevan el reclutamiento. Un archivo sin registro asociado —adjunto de
  * política— queda restringido a los roles de expediente.
+ *
+ * ALCANCE, ADEMÁS DEL PERMISO: el archivo de un empleado fuera del alcance de la
+ * cuenta responde igual que uno inexistente. Lo propio siempre se puede ver.
  */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ nombre: string }> }) {
   const g = await requerirSesion();
@@ -29,42 +33,55 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ nom
     return NextResponse.json({ error: "Nombre de archivo inválido" }, { status: 400 });
   }
 
+  // TODOS los registros que citan el archivo, no el primero: `archivoUrl` lo escribe
+  // quien registra el certificado, y citar en uno propio el archivo de otro empleado
+  // no debe servir para bajarlo.
+  const dueno = { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } };
+  const [certificados, documentos] = await Promise.all([
+    prisma.incapacidad.findMany({ where: { archivoUrl: { contains: nombre } }, select: dueno }),
+    prisma.documento.findMany({ where: { archivoUrl: { contains: nombre } }, select: dueno }),
+  ]);
+  const esSuyo = (empleadoId: string) => !!g.usuario.empleadoId && empleadoId === g.usuario.empleadoId;
+
+  // Lo que recibe esta cuenta cuando pide un archivo que no existe. Quien puede bajar
+  // archivos de otros recibe 404; a los demás, cualquier archivo ajeno les da 403.
+  const comoSiNoExistiera = () =>
+    puede(g.usuario, "empleados.pii") || puede(g.usuario, "asistencia.incapacidades") || puede(g.usuario, "empleados.salud")
+      ? NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
+      : NextResponse.json({ error: "Permiso insuficiente" }, { status: 403 });
+
+  if ([...certificados, ...documentos].some(({ empleado }) => !esSuyo(empleado.id) && !alcanzaEmpleado(g.usuario, empleado))) {
+    return comoSiNoExistiera();
+  }
+
   // Un certificado de incapacidad es dato de salud: no basta con ver datos
   // personales. Lo bajan quien gestiona incapacidades, quien ve fichas
   // médicas y el propio empleado.
-  const certificado = await prisma.incapacidad.findFirst({
-    where: { archivoUrl: { contains: nombre } },
-    select: { empleadoId: true },
-  });
-  if (certificado) {
+  const esCertificado = certificados.length > 0;
+  if (esCertificado) {
     const permitido =
       puede(g.usuario, "asistencia.incapacidades") ||
       puede(g.usuario, "empleados.salud") ||
-      (!!g.usuario.empleadoId && certificado.empleadoId === g.usuario.empleadoId);
+      certificados.some(({ empleado }) => esSuyo(empleado.id));
     if (!permitido) return NextResponse.json({ error: "Permiso insuficiente" }, { status: 403 });
   }
 
   // El currículo de un candidato lo baja quien lleva el reclutamiento, aunque
   // no vea datos personales de los empleados.
-  const curriculo = certificado
+  const curriculo = esCertificado
     ? null
     : await prisma.candidato.findFirst({ where: { cvUrl: { contains: nombre } }, select: { id: true } });
   if (curriculo && !puede(g.usuario, "talento.reclutamiento") && !puede(g.usuario, "empleados.pii")) {
     return NextResponse.json({ error: "Permiso insuficiente" }, { status: 403 });
   }
 
-  const esAdmin = !!certificado || !!curriculo || puede(g.usuario, "empleados.pii");
+  const esAdmin = esCertificado || !!curriculo || puede(g.usuario, "empleados.pii");
   if (!esAdmin) {
+    // Sin registro no hay dueño: es lo mismo que un nombre que no existe.
+    if (documentos.length === 0) return comoSiNoExistiera();
+
     // El documento debe estar registrado Y pertenecer a quien lo pide.
-    const documento = await prisma.documento.findFirst({
-      where: { archivoUrl: { contains: nombre } },
-      select: { empleadoId: true },
-    });
-
-    const esPropio =
-      !!documento && !!g.usuario.empleadoId && documento.empleadoId === g.usuario.empleadoId;
-
-    if (!esPropio) {
+    if (!documentos.some(({ empleado }) => esSuyo(empleado.id))) {
       return NextResponse.json({ error: "Permiso insuficiente" }, { status: 403 });
     }
   }

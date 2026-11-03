@@ -1,4 +1,5 @@
 import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { conAlcance, filtroSucursales } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { etiquetaPuesto } from "@/lib/organizacion/estructura";
 import SkillGapClient from "./SkillGapClient";
@@ -10,12 +11,13 @@ export default async function SkillGapPage({
 }: {
   searchParams: Promise<{ puestoId?: string; empleadoId?: string }>;
 }) {
-  await requerirPermisoPagina("talento.evaluaciones_ver");
+  const usuario = await requerirPermisoPagina("talento.evaluaciones_ver");
 
   const sp = await searchParams;
 
+  // Cada puesto se muestra con su sucursal: sólo los de las que alcanza.
   const puestos = await prisma.puesto.findMany({
-    where: { activo: true },
+    where: { activo: true, departamento: { sucursal: filtroSucursales(usuario) } },
     select: { id: true, nombre: true, departamento: { select: { nombre: true, sucursal: { select: { nombre: true } } } } },
     orderBy: { nombre: "asc" },
   });
@@ -44,11 +46,14 @@ export default async function SkillGapPage({
       };
 
       const empleados = await prisma.empleado.findMany({
-        where: {
-          puestoId: sp.puestoId,
-          estado: "ACTIVO",
-          ...(sp.empleadoId ? { id: sp.empleadoId } : {}),
-        },
+        where: conAlcance(
+          {
+            puestoId: sp.puestoId,
+            estado: "ACTIVO",
+            ...(sp.empleadoId ? { id: sp.empleadoId } : {}),
+          },
+          usuario
+        ),
         select: { id: true, primerNombre: true, primerApellido: true, codigo: true },
       });
 
