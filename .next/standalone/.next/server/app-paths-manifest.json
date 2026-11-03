@@ -78,6 +78,7 @@
   "/api/configuracion/sap/prueba/route": "app/api/configuracion/sap/prueba/route.js",
   "/api/configuracion/sap/route": "app/api/configuracion/sap/route.js",
   "/api/configuracion/sap/sucursales/route": "app/api/configuracion/sap/sucursales/route.js",
+  "/api/configuracion/sucursales/[id]/route": "app/api/configuracion/sucursales/[id]/route.js",
   "/api/configuracion/sucursales/route": "app/api/configuracion/sucursales/route.js",
   "/api/cron/biometrico/route": "app/api/cron/biometrico/route.js",
   "/api/cron/evaluaciones/route": "app/api/cron/evaluaciones/route.js",

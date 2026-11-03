@@ -1,0 +1,3 @@
+(()=>{"use strict";module.exports=[6033,e=>{var a=e.i(62810);e.s(["z",0,a])},40561,e=>{var a=e.i(62810);e.s(["z",0,a])},725,e=>{var a=e.i(73100);e.s(["z",0,function(e){if(e.empleadosVigentes>0){let a;return`No se puede desactivar: tiene ${a=e.empleadosVigentes,`${a} ${1===a?"empleado":"empleados"}`}. Trasl\xe1delos o deles de baja primero.`}return 0===e.otrasActivas?"No se puede desactivar: es la única sucursal activa.":null},"d",0,function(e,s){return s.some(s=>(0,a.$)(s.nombre)===(0,a.$)(e.nombre))?`Ya existe una sucursal llamada \xab${e.nombre}\xbb.`:s.some(s=>(0,a.$)(s.codigo)===(0,a.$)(e.codigo))?`Ya existe una sucursal con el c\xf3digo \xab${e.codigo}\xbb.`:null}])}]})();
+
+//# sourceMappingURL=_0xn_de94kqwb5._.js.map

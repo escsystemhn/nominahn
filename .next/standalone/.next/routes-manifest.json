@@ -184,6 +184,14 @@
       "namedRegex": "^/api/configuracion/puestos/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/configuracion/sucursales/[id]",
+      "regex": "^/api/configuracion/sucursales/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/sucursales/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/api/documentos/emitidos/[id]",
       "regex": "^/api/documentos/emitidos/([^/]+?)(?:/)?$",
       "routeKeys": {

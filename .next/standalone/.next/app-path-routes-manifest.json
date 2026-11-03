@@ -78,6 +78,7 @@
   "/api/configuracion/sap/prueba/route": "/api/configuracion/sap/prueba",
   "/api/configuracion/sap/route": "/api/configuracion/sap",
   "/api/configuracion/sap/sucursales/route": "/api/configuracion/sap/sucursales",
+  "/api/configuracion/sucursales/[id]/route": "/api/configuracion/sucursales/[id]",
   "/api/configuracion/sucursales/route": "/api/configuracion/sucursales",
   "/api/cron/biometrico/route": "/api/cron/biometrico",
   "/api/cron/evaluaciones/route": "/api/cron/evaluaciones",
