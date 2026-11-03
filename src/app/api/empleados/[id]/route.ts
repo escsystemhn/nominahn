@@ -8,6 +8,8 @@ import { hoyHN } from "@/lib/utils";
 import { z } from "zod";
 import { parsearBody, zId, zFecha, zMontoPositivo, zMontoAnulable, zCorreoOpcional } from "@/lib/http/validar";
 import { money, redondear } from "@/lib/payroll/money";
+import { revisarCambioEstado } from "@/lib/empleados/baja";
+import { cerrarContratoVigente } from "@/lib/empleados/contratos-bd";
 import { EstadoEmpleado, Prisma, TipoContrato, TipoPlanilla } from "@prisma/client";
 
 // ALLOWLIST de campos editables. Zod descarta cualquier clave que no esté aquí,
@@ -96,6 +98,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       evaluaciones: { orderBy: { createdAt: "desc" }, take: 6 },
       documentos: { orderBy: { createdAt: "desc" } },
       planillasDetalle: {
+        // Un borrador no es un pago, y sus líneas se rehacen al recalcular.
+        where: { planilla: { estado: { not: "BORRADOR" } } },
         orderBy: { createdAt: "desc" },
         take: 12,
         include: { planilla: { select: { tipo: true, fechaFin: true, estado: true } } },
@@ -115,7 +119,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const empleadoActual = await prisma.empleado.findUnique({
     where: { id },
-    select: { salarioBase: true, estado: true, sucursalId: true, departamentoId: true, puestoId: true, ihssMontoFijo: true },
+    select: {
+      salarioBase: true, estado: true, sucursalId: true, departamentoId: true, puestoId: true, ihssMontoFijo: true,
+      fechaIngreso: true, fechaSalida: true, tipoContrato: true,
+      contratos: { where: { activo: true }, select: { id: true }, take: 1 },
+    },
   });
   if (!empleadoActual) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
@@ -123,6 +131,25 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!parsed.ok) return parsed.response;
   // `motivo` no es columna; el resto (`data`) ya está acotado por el allowlist.
   const { salarioBase, motivo, ...data } = parsed.data;
+
+  const revision = revisarCambioEstado({
+    estadoActual: empleadoActual.estado,
+    estadoNuevo: data.estado,
+    salidaActual: empleadoActual.fechaSalida,
+    salidaNueva: data.fechaSalida,
+    ingreso: data.fechaIngreso ?? empleadoActual.fechaIngreso,
+  });
+  if (revision.error) return NextResponse.json({ error: revision.error }, { status: 400 });
+  if (revision.limpiarSalida) data.fechaSalida = null;
+
+  // Con un contrato vigente, cambiar el tipo aquí lo contradiría: el cambio se
+  // registra como un contrato nuevo, que deja el anterior en el historial.
+  if (data.tipoContrato !== undefined && data.tipoContrato !== empleadoActual.tipoContrato && empleadoActual.contratos.length > 0) {
+    return NextResponse.json(
+      { error: "Este empleado tiene un contrato vigente. Para cambiar el tipo, registre un contrato nuevo en la pestaña Contrato laboral." },
+      { status: 409 }
+    );
+  }
 
   // Sucursal, departamento y puesto deben encajar. Sólo se comprueba si alguno
   // CAMBIA: el formulario reenvía los tres en cada guardado, y un registro
@@ -209,6 +236,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     empleado = await prisma.$transaction(async (tx) => {
       if (historial) await tx.historialSalario.create({ data: historial });
+      if (revision.seDaDeBaja && revision.salida) await cerrarContratoVigente(tx, id, revision.salida);
       return tx.empleado.update({ where: { id }, data });
     });
   } catch (e) {
@@ -263,9 +291,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   // Baja lógica con la fecha del día en Honduras: `fechaSalida` es una columna
   // de calendario y se compara contra los períodos de planilla.
   const fechaSalida = hoyHN();
-  await prisma.empleado.update({
-    where: { id },
-    data: { estado: "INACTIVO", fechaSalida },
+  await prisma.$transaction(async (tx) => {
+    await tx.empleado.update({ where: { id }, data: { estado: "INACTIVO", fechaSalida } });
+    if (actual.estado !== "INACTIVO") await cerrarContratoVigente(tx, id, fechaSalida);
   });
 
   const { ip, userAgent } = getClientInfo(req);

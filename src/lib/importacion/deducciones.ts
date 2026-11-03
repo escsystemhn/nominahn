@@ -37,6 +37,8 @@ export interface FilaDeduccion {
   tipoDeduccionId: string;
   monto: string;
   cuotasMeses: number | null;
+  /** Se cobra cada planilla, sin fin: no lleva saldo (Cuotas = 0). */
+  recurrente: boolean;
   fechaInicio: string;
   fechaFin: string | null;
   activo: boolean;
@@ -72,6 +74,8 @@ export interface DeduccionExistente {
   fechaInicio: string; // ISO, clave natural
   monto: string;
   cuotasMeses: number | null;
+  /** Sin cuotas ni saldo: se cobra cada planilla. */
+  esRecurrente: boolean;
   cuotasPagadas: number;
   fechaFin: string | null;
   activo: boolean;
@@ -105,7 +109,7 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosDeducc
     }),
     db.deduccionEmpleado.findMany({
       select: {
-        id: true, empleadoId: true, tipoDeduccionId: true, fechaInicio: true, monto: true,
+        id: true, empleadoId: true, tipoDeduccionId: true, fechaInicio: true, monto: true, saldo: true,
         cuotasMeses: true, cuotasPagadas: true, fechaFin: true, activo: true, observacion: true,
       },
     }),
@@ -151,6 +155,7 @@ export async function cargarCatalogos(db: PrismaClient): Promise<CatalogosDeducc
       fechaInicio: dia(d.fechaInicio),
       monto: d.monto.toString(),
       cuotasMeses: d.cuotasMeses,
+      esRecurrente: d.cuotasMeses === null && d.saldo === null,
       cuotasPagadas: d.cuotasPagadas,
       fechaFin: d.fechaFin ? dia(d.fechaFin) : null,
       activo: d.activo,
@@ -275,9 +280,11 @@ export function validar(
 
     // ─── Cuotas y resto ─────────────────────────────────────────────────────
     let cuotasMeses: number | null = null;
+    let recurrente = false;
     if (tiene("cuotas_meses") && !v.vacia(celda(celdas, "cuotas_meses"))) {
-      const r = v.entero(celda(celdas, "cuotas_meses"), { min: 1, max: 600 });
+      const r = v.entero(celda(celdas, "cuotas_meses"), { min: 0, max: 600 });
       if (!r.ok) anota("Cuotas", r.error);
+      else if (r.valor === 0) recurrente = true;
       else cuotasMeses = r.valor;
     }
 
@@ -330,6 +337,16 @@ export function validar(
         continue;
       }
       accion = "ACTUALIZAR";
+
+      // Un archivo sin la columna Cuotas no dice nada de la forma de cobro.
+      if (!tiene("cuotas_meses")) recurrente = existente.esRecurrente;
+      if (recurrente !== existente.esRecurrente) {
+        if (existente.cuotasPagadas > 0) {
+          anota("Cuotas", `Esta deducción ya tiene ${existente.cuotasPagadas} cuota(s) cobrada(s): su forma de cobro no puede cambiarse por importación.`);
+        } else {
+          cambios.push("Forma de cobro");
+        }
+      }
 
       const montoNuevo = rMonto.valor;
       const montoCambia = !montoNuevo.equals(money(existente.monto));
@@ -402,6 +419,7 @@ export function validar(
       tipoDeduccionId: tipo.id,
       monto: rMonto.valor.toFixed(2),
       cuotasMeses,
+      recurrente,
       fechaInicio: rInicio.valor.toISOString(),
       fechaFin: fechaFin ? fechaFin.toISOString() : null,
       activo,
@@ -440,7 +458,7 @@ export async function aplicar(
           monto: fila.monto,
           // Igual que POST /api/empleados/[id]/deducciones: el saldo arranca en
           // el monto total y lo va reduciendo cada amortización de planilla.
-          saldo: fila.monto,
+          saldo: fila.recurrente ? null : fila.monto,
           cuotasMeses: fila.cuotasMeses,
           fechaInicio: new Date(fila.fechaInicio),
           fechaFin: fila.fechaFin ? new Date(fila.fechaFin) : null,
@@ -459,9 +477,9 @@ export async function aplicar(
       };
       // El monto sólo se toca cuando la validación lo permitió (sin cuotas
       // cobradas), y entonces el saldo vuelve a partir del total.
-      if (fila.cambios.some((c) => c.startsWith("Monto"))) {
+      if (fila.cambios.some((c) => c.startsWith("Monto") || c === "Forma de cobro")) {
         datos.monto = fila.monto;
-        datos.saldo = fila.monto;
+        datos.saldo = fila.recurrente ? null : fila.monto;
       }
       await tx.deduccionEmpleado.update({ where: { id: fila.deduccionId! }, data: datos });
       actualizados++;

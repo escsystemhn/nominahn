@@ -13,6 +13,7 @@ import { requerirPermiso, puede } from "@/lib/auth/guard";
 import { filtroEmpleados } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { generarCsv, cabecerasDescarga, delimitadorPedido } from "@/lib/importacion/csv";
+import { cabecerasXlsx, plantillaXlsx } from "@/lib/importacion/xlsx";
 import {
   COLUMNAS_DEDUCCION,
   columnasVisibles,
@@ -38,6 +39,9 @@ export async function GET(req: NextRequest) {
     // La plantilla no incluye las columnas informativas: pedirle al usuario que
     // rellene un "Saldo" que el sistema va a ignorar sólo genera confusión.
     const paraLlenar = columnas.filter((c) => !c.soloLectura);
+    if (searchParams.get("formato") === "xlsx") {
+      return new NextResponse(new Uint8Array(await plantillaXlsx(paraLlenar)), { headers: cabecerasXlsx("plantilla_deducciones.xlsx") });
+    }
     const csv = generarCsv(etiquetas(paraLlenar), [filaEjemplo(paraLlenar)], delimitador);
     return new NextResponse(csv, { headers: cabecerasDescarga("plantilla_deducciones.csv") });
   }
@@ -88,7 +92,8 @@ export async function GET(req: NextRequest) {
     tipo_deduccion_codigo: (d) => d.tipoDeduccion.codigo,
     tipo_deduccion_nombre: (d) => d.tipoDeduccion.nombre,
     monto: (d) => d.monto.toFixed(2),
-    cuotas_meses: (d) => (d.cuotasMeses !== null ? String(d.cuotasMeses) : ""),
+    // 0 = cada planilla: al volver a importarlo sigue siendo recurrente.
+    cuotas_meses: (d) => (d.cuotasMeses !== null ? String(d.cuotasMeses) : d.saldo === null ? "0" : ""),
     fecha_inicio: (d) => formatDate(d.fechaInicio),
     fecha_fin: (d) => (d.fechaFin ? formatDate(d.fechaFin) : ""),
     activo: (d) => (d.activo ? "Si" : "No"),

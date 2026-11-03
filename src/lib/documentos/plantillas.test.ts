@@ -57,6 +57,11 @@ describe("contexto y resolución", () => {
     expect(construirContexto({ ...base, empleado: { ...base.empleado, genero: "Masculino" } })["empleado.tratamiento"]).toBe("el señor");
   });
 
+  it("la fecha de fin del contrato sale en letras, o vacía si no tiene", () => {
+    expect(construirContexto({ ...base, contrato: { fechaFin: f("2026-12-31") } })["contrato.fechaFin"]).toBe("31 de diciembre de 2026");
+    expect(construirContexto({ ...base, contrato: null })["contrato.fechaFin"]).toBe("");
+  });
+
   it("salario en número y en letras, turno sobre contrato, destinatario por omisión", () => {
     const c = construirContexto(base);
     expect(c["empleado.salarioMensual"]).toBe("L 13,250.00");

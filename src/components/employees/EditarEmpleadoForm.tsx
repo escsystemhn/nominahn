@@ -67,7 +67,16 @@ interface Props {
   puestos: Array<{ id: string; nombre: string; departamentoId: string; activo: boolean }>;
   supervisores: Array<{ id: string; nombre: string }>;
   centrosCosto: Array<{ id: string; codigo: string; nombre: string }>;
+  /** Con uno vigente, el tipo cambia registrando un contrato nuevo, no aquí. */
+  tieneContratoVigente: boolean;
 }
+
+const TIPOS_CONTRATO: Record<FormData["tipoContrato"], string> = {
+  INDEFINIDO: "Indefinido",
+  TEMPORAL: "Temporal",
+  PRUEBA: "Período de Prueba",
+  SERVICIO: "Servicios",
+};
 
 const fieldClass =
   "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500";
@@ -126,6 +135,7 @@ export default function EditarEmpleadoForm({
   puestos,
   supervisores,
   centrosCosto,
+  tieneContratoVigente,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -144,6 +154,7 @@ export default function EditarEmpleadoForm({
     handleSubmit,
     control,
     setValue,
+    setError,
     formState: { errors, dirtyFields },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -155,6 +166,7 @@ export default function EditarEmpleadoForm({
   const sucursalId = useWatch({ control, name: "sucursalId" });
   const departamentoId = useWatch({ control, name: "departamentoId" });
   const salarioBase = useWatch({ control, name: "salarioBase" });
+  const estado = useWatch({ control, name: "estado" });
   const divisionesSucursal = divisiones.filter((v) => v.sucursalId === sucursalId);
   const deptsFiltrados = departamentos.filter((d) =>
     (!sucursalId || d.sucursalId === sucursalId) && (!divisionId || d.divisionId === divisionId)
@@ -170,6 +182,13 @@ export default function EditarEmpleadoForm({
   const salarioCambio = Number(salarioBase) !== Number(valoresIniciales.salarioBase);
 
   async function onSubmit(data: FormData) {
+    // Sólo al dar de baja: un registro antiguo sin fecha debe poder seguir
+    // corrigiéndose. El API comprueba lo mismo.
+    if (data.estado === "INACTIVO" && !data.fechaSalida && (dirtyFields.estado || dirtyFields.fechaSalida)) {
+      setError("fechaSalida", { message: "Indique la fecha de salida: sin ella no se le pagarían los días trabajados del último período." });
+      return;
+    }
+
     // Sólo los campos tocados. El API responde 400 "Sin cambios" con un body
     // vacío, así que ese caso se resuelve aquí sin ir al servidor.
     const cambios: Record<string, unknown> = {};
@@ -332,8 +351,22 @@ export default function EditarEmpleadoForm({
             <Field label="Fecha de Ingreso *" error={errors.fechaIngreso?.message}>
               <input {...register("fechaIngreso")} type="date" className={fieldClass} />
             </Field>
-            <Field label="Estado *" error={errors.estado?.message}>
-              <select {...register("estado")} className={fieldClass}>
+            <Field
+              label="Estado *"
+              error={errors.estado?.message}
+              hint="Vacaciones y Permiso siguen cobrando. Suspendido e Inactivo no entran en planilla."
+            >
+              <select
+                {...register("estado", {
+                  // Al reincorporarlo, la salida anterior ya no vale.
+                  onChange: (e) => {
+                    if (valoresIniciales.estado === "INACTIVO" && e.target.value !== "INACTIVO") {
+                      setValue("fechaSalida", "", { shouldDirty: true });
+                    }
+                  },
+                })}
+                className={fieldClass}
+              >
                 <option value="ACTIVO">Activo</option>
                 <option value="VACACIONES">Vacaciones</option>
                 <option value="PERMISO">Permiso</option>
@@ -341,15 +374,30 @@ export default function EditarEmpleadoForm({
                 <option value="INACTIVO">Inactivo</option>
               </select>
             </Field>
-            <Field label="Tipo de Contrato *" error={errors.tipoContrato?.message}>
-              <select {...register("tipoContrato")} className={fieldClass}>
-                <option value="INDEFINIDO">Indefinido</option>
-                <option value="TEMPORAL">Temporal</option>
-                <option value="PRUEBA">Período de Prueba</option>
-                <option value="SERVICIO">Servicios</option>
-              </select>
+            <Field
+              label="Tipo de Contrato *"
+              error={errors.tipoContrato?.message}
+              hint={tieneContratoVigente ? "Para cambiarlo, registre un contrato nuevo en la pestaña Contrato laboral del expediente." : undefined}
+            >
+              {tieneContratoVigente ? (
+                <>
+                  <input type="hidden" {...register("tipoContrato")} />
+                  <input
+                    readOnly
+                    aria-label="Tipo de contrato"
+                    value={TIPOS_CONTRATO[valoresIniciales.tipoContrato]}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 bg-gray-50"
+                  />
+                </>
+              ) : (
+                <select {...register("tipoContrato")} className={fieldClass}>
+                  {Object.entries(TIPOS_CONTRATO).map(([valor, etiqueta]) => (
+                    <option key={valor} value={valor}>{etiqueta}</option>
+                  ))}
+                </select>
+              )}
             </Field>
-            <Field label="Fecha de Salida" error={errors.fechaSalida?.message}>
+            <Field label={estado === "INACTIVO" ? "Fecha de Salida *" : "Fecha de Salida"} error={errors.fechaSalida?.message}>
               <input {...register("fechaSalida")} type="date" className={fieldClass} />
             </Field>
             <Field label="Salario Base (L.) *" error={errors.salarioBase?.message}>

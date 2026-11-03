@@ -34,7 +34,7 @@ const CAMPOS = {
   createdAt: true,
   sucursalesIds: true,
   perfil: { select: { id: true, codigo: true, nombre: true, alcance: true, activo: true } },
-  empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true } },
+  empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true, estado: true } },
 } as const;
 
 const crearSchema = z.object({

@@ -22,6 +22,9 @@ export interface ColumnaCsv {
   readonly ejemplo?: string;
 }
 
+/** Lo que completa las rutas /api/importar y /api/exportar. */
+export type RecursoImportacion = "empleados" | "deducciones" | "horas-extra";
+
 /** Qué se permite hacer con las filas del archivo. */
 export type ModoImportacion = "CREAR" | "ACTUALIZAR" | "CREAR_O_ACTUALIZAR";
 
@@ -59,7 +62,7 @@ export interface FilaPrevisualizada {
 /** Lo que devuelve la fase de validación. */
 export interface InformeValidacion {
   loteId: string | null;
-  tipo: "EMPLEADOS" | "DEDUCCIONES";
+  tipo: "EMPLEADOS" | "DEDUCCIONES" | "HORAS_EXTRA";
   nombreArchivo: string;
   totalFilas: number;
   totalCrear: number;

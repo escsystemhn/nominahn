@@ -119,6 +119,8 @@ export async function sendEmail({
  * `Decimal` y decide cómo presentarlos; aquí no se hace aritmética.
  */
 export interface DatosBoleta {
+  /** Para revisar una planilla sin confirmar: se marca para que no pase por un comprobante. */
+  borrador?: boolean;
   empresa: string;
   empresaRtn: string;
   nombreEmpleado: string;
@@ -179,6 +181,7 @@ export function templateBoletaPago(d: DatosBoleta): string {
 </style>
 </head>
 <body>
+${d.borrador ? '<p style="border:2px solid #B91C1C;color:#B91C1C;font-weight:bold;padding:8px;text-align:center">BORRADOR: planilla sin confirmar. No es un comprobante de pago.</p>' : ""}
 <h1>${esc(d.empresa)}</h1>
 <p class="sub">RTN ${esc(d.empresaRtn)} &middot; Comprobante de pago de salario</p>
 

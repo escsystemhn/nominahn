@@ -14,15 +14,18 @@
 
 import { useState } from "react";
 import AsistenteImportacion from "./AsistenteImportacion";
+import type { RecursoImportacion } from "@/lib/importacion/tipos";
 
 interface Props {
-  recurso: "empleados" | "deducciones";
+  recurso: RecursoImportacion;
   puedeExportar: boolean;
   puedeImportar: boolean;
   /** Filtros activos, que se anexan a la descarga. */
   filtros?: Record<string, string | undefined>;
   /** Advierte de que el archivo llevará datos personales. */
   incluyePII?: boolean;
+  /** Aclara qué lleva la exportación, si no es lo que se ve en pantalla. */
+  notaExportar?: string;
   ayudaImportacion: string;
   tituloImportacion: string;
 }
@@ -33,6 +36,7 @@ export default function BarraDatos({
   puedeImportar,
   filtros,
   incluyePII,
+  notaExportar,
   ayudaImportacion,
   tituloImportacion,
 }: Props) {
@@ -97,15 +101,28 @@ export default function BarraDatos({
                   </a>
                   <div className="border-t border-gray-100 my-1" />
                   <a
+                    href={`/api/exportar/${recurso}?plantilla=1&formato=xlsx`}
+                    onClick={() => setMenu(false)}
+                    className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <span className="font-medium">Plantilla de Excel</span>
+                    <span className="block text-xs text-gray-500">
+                      Vacía, con las columnas listas y una hoja de instrucciones.
+                    </span>
+                  </a>
+                  <a
                     href={`/api/exportar/${recurso}?plantilla=1`}
                     onClick={() => setMenu(false)}
                     className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                   >
-                    <span className="font-medium">Plantilla vacía</span>
+                    <span className="font-medium">Plantilla CSV</span>
                     <span className="block text-xs text-gray-500">
-                      Sólo las cabeceras y una fila de ejemplo.
+                      Para llenarla en otro programa.
                     </span>
                   </a>
+                  {notaExportar && (
+                    <p className="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">{notaExportar}</p>
+                  )}
                   {incluyePII && (
                     <p className="px-4 py-2 text-xs text-amber-700 bg-amber-50 border-t border-amber-100">
                       El archivo incluirá identidad, salario y cuenta bancaria. La descarga queda

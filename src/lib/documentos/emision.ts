@@ -46,7 +46,7 @@ export async function contextoDe(db: Db, empleadoId: string, destinatario?: stri
       puesto: { select: { nombre: true } },
       departamento: { select: { nombre: true } },
       sucursal: { select: { nombre: true, direccion: true, empresa: { select: { nombre: true, rtn: true, direccion: true, telefono: true } } } },
-      contratos: { where: { activo: true }, orderBy: { fechaInicio: "desc" }, take: 1, select: { fechaInicio: true, jornada: true, horario: true } },
+      contratos: { where: { activo: true }, orderBy: { fechaInicio: "desc" }, take: 1, select: { fechaInicio: true, fechaFin: true, jornada: true, horario: true } },
     },
   });
   if (!emp) throw new ErrorDocumento(404, "Empleado no encontrado");

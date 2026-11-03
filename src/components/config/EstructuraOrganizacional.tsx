@@ -10,6 +10,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import EstadoBadge from "@/components/ui/EstadoBadge";
+import { Modal, Campo } from "@/components/ui/ModalForm";
 import { SIN_DIVISION, etiquetaDepartamento } from "@/lib/organizacion/estructura";
 import { rangoSalarialValido } from "@/lib/organizacion/puestos";
 import { formatCurrency } from "@/lib/utils";
@@ -389,29 +390,6 @@ export default function EstructuraOrganizacional({ empresaId, sucursales, divisi
 }
 
 // ─── Formularios ──────────────────────────────────────────────────────────────
-
-function Modal({ titulo, error, cargando, puedeGuardar, textoGuardar = "Guardar", onCerrar, onGuardar, children }: {
-  titulo: string; error: string | null; cargando: boolean; puedeGuardar: boolean; textoGuardar?: string;
-  onCerrar: () => void; onGuardar: () => void; children: React.ReactNode;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={titulo}>
-      <div className="panel w-full max-w-md space-y-4 p-5 shadow-xl">
-        <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
-        <div className="space-y-3">{children}</div>
-        {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" className="btn btn-ghost" onClick={onCerrar}>Cancelar</button>
-          <button type="button" className="btn btn-primary" disabled={cargando || !puedeGuardar} onClick={onGuardar}>{cargando ? "Guardando…" : textoGuardar}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Campo({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
-  return <label className="block text-sm"><span className="font-medium text-gray-800">{etiqueta}</span><div className="mt-1">{children}</div></label>;
-}
 
 function useGuardar(onListo: () => void) {
   const [cargando, setCargando] = useState(false);

@@ -2,6 +2,9 @@ import { prisma } from "@/lib/prisma";
 import DeduccionesClient from "@/components/payroll/DeduccionesClient";
 import SolicitudesPrestamoPanel from "@/components/payroll/SolicitudesPrestamoPanel";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
+import { cuotaDelPeriodo } from "@/lib/payroll/deducciones";
+import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
+import { aNumero } from "@/lib/payroll/money";
 
 // Genérica a propósito: en runtime `...t` conserva todos los campos, pero con un
 // parámetro no genérico (y su índice `[key: string]: unknown`) TypeScript perdía
@@ -54,7 +57,7 @@ export default async function DeduccionesPage() {
   ]);
 
   const empleados = await prisma.empleado.findMany({
-    where: { estado: "ACTIVO" },
+    where: { estado: { in: [...ESTADOS_QUE_COBRAN] } },
     select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true },
     orderBy: { primerApellido: "asc" },
   });
@@ -64,6 +67,7 @@ export default async function DeduccionesPage() {
     ...d,
     monto: Number(d.monto),
     saldo: d.saldo !== null ? Number(d.saldo) : null,
+    cuotaPeriodo: aNumero(cuotaDelPeriodo(d)),
     tipoDeduccion: serializeTipo(d.tipoDeduccion),
   }));
 

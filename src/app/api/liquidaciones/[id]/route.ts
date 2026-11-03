@@ -12,6 +12,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
+import { reabrirContrato } from "@/lib/empleados/contratos-bd";
 import { parsearBody, zFecha } from "@/lib/http/validar";
 import { validarTransicionLiquidacion, accionesLiquidacion, type EstadoLiquidacion } from "@/lib/payroll/estado-prestaciones";
 import { hoyHN } from "@/lib/utils";
@@ -73,6 +74,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const actualizada = await prisma.$transaction(async (tx) => {
     const r = await tx.liquidacionFinal.update({ where: { id }, data });
     if (estado === "ANULADA" && reactivarEmpleado) {
+      const empleado = await tx.empleado.findUnique({ where: { id: liq.empleadoId }, select: { fechaSalida: true } });
+      if (empleado?.fechaSalida) await reabrirContrato(tx, liq.empleadoId, empleado.fechaSalida);
       await tx.empleado.update({ where: { id: liq.empleadoId }, data: { estado: "ACTIVO", fechaSalida: null } });
     }
     return r;

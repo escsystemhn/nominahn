@@ -90,7 +90,7 @@ export const CATALOGO = [
       },
       {
         codigo: "empleados.importar",
-        etiqueta: "Importar desde CSV",
+        etiqueta: "Importar desde Excel o CSV",
         descripcion: "Alta y actualización masiva de empleados desde un archivo.",
         sensible: true,
       },
@@ -133,7 +133,7 @@ export const CATALOGO = [
       },
       {
         codigo: "deducciones.importar",
-        etiqueta: "Importar desde CSV",
+        etiqueta: "Importar desde Excel o CSV",
         descripcion: "Asignación masiva de deducciones desde un archivo.",
         sensible: true,
       },
@@ -145,7 +145,7 @@ export const CATALOGO = [
     descripcion: "Cálculo, aprobación y pago de la nómina",
     permisos: [
       { codigo: "planillas.ver", etiqueta: "Consultar", descripcion: "Ver planillas y su detalle por empleado." },
-      { codigo: "planillas.calcular", etiqueta: "Crear y calcular", descripcion: "Generar una planilla y recalcularla mientras esté en borrador." },
+      { codigo: "planillas.calcular", etiqueta: "Crear y calcular", descripcion: "Generar una planilla en borrador, recalcularla, descartarla y confirmarla." },
       { codigo: "planillas.aprobar", etiqueta: "Aprobar", descripcion: "Dar por buena una planilla calculada.", sensible: true },
       { codigo: "planillas.pagar", etiqueta: "Marcar como pagada", descripcion: "Registrar el pago de una planilla aprobada.", sensible: true },
       { codigo: "planillas.anular", etiqueta: "Anular", descripcion: "Dejar sin efecto una planilla en borrador o calculada.", sensible: true },
@@ -201,7 +201,7 @@ export const CATALOGO = [
     descripcion: "Marcajes, permisos laborales y reloj biométrico",
     permisos: [
       { codigo: "asistencia.ver", etiqueta: "Consultar marcajes", descripcion: "Ver entradas, salidas y ausencias." },
-      { codigo: "asistencia.gestionar", etiqueta: "Registrar y corregir", descripcion: "Crear o ajustar marcajes manualmente." },
+      { codigo: "asistencia.gestionar", etiqueta: "Registrar y corregir", descripcion: "Crear o ajustar marcajes manualmente, e importar horas extra desde un archivo." },
       { codigo: "asistencia.aprobar_permisos", etiqueta: "Aprobar permisos", descripcion: "Aprobar o rechazar solicitudes de vacaciones y permisos." },
       { codigo: "asistencia.biometrico", etiqueta: "Reloj biométrico", descripcion: "Administrar dispositivos y lanzar sincronizaciones." },
       { codigo: "asistencia.turnos", etiqueta: "Horarios y turnos", descripcion: "Definir turnos y asignarlos. Cambia desde qué hora se paga la hora extra.", sensible: true },

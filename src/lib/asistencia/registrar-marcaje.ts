@@ -37,7 +37,7 @@ export interface DatosMarcaje {
    */
   minutosDescanso?: number;
   /**
-   * Si es `false`, no se pisa un marcaje que ya existe con `fuente = MANUAL`.
+   * Si es `false`, no se pisa un marcaje que ya existe con `fuente = MANUAL` o `PLANTILLA`.
    *
    * Lo usa la ingesta del reloj: cuando un supervisor corrige a mano el día de
    * alguien —porque olvidó marcar la salida, típicamente— la siguiente
@@ -153,7 +153,7 @@ export async function registrarMarcaje(
     where: { empleadoId_fecha: { empleadoId, fecha } },
   });
 
-  if (existente && !sobrescribirManual && existente.fuente === "MANUAL") {
+  if (existente && !sobrescribirManual && (existente.fuente === "MANUAL" || existente.fuente === "PLANTILLA")) {
     return {
       ok: true,
       marcaje: existente,

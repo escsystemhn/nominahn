@@ -68,6 +68,55 @@ describe("cuotaDelPeriodo — la última cuota no sobrecobra", () => {
   });
 });
 
+describe("cuotaDelPeriodo — un total en cuotas se reparte", () => {
+  /** Cobra hasta agotar, como lo haría la planilla, y devuelve cada cobro. */
+  function cobros(d: DeduccionVigente): number[] {
+    const hechos: number[] = [];
+    let actual = d;
+    for (let i = 0; i < 100; i++) {
+      const r = aplicarDeducciones([actual]);
+      if (r.amortizaciones.length === 0) break;
+      const a = r.amortizaciones[0];
+      hechos.push(n(a.montoAplicado));
+      if (a.desactivar) break;
+      actual = { ...actual, saldo: a.saldo, cuotasPagadas: a.cuotasPagadas };
+    }
+    return hechos;
+  }
+
+  it("REGRESIÓN: 6,000 en 6 cuotas son 1,000 por planilla, no 6,000 en la primera", () => {
+    expect(cobros(prestamo({ monto: 6000, saldo: 6000, cuotasMeses: 6 }))).toEqual([1000, 1000, 1000, 1000, 1000, 1000]);
+  });
+
+  it("los centavos del redondeo no se pierden: la última cuota cierra el saldo", () => {
+    const hechos = cobros(prestamo({ monto: 1000, saldo: 1000, cuotasMeses: 3 }));
+    expect(hechos).toEqual([333.33, 333.34, 333.33]);
+    expect(n(money(hechos.reduce((s, x) => s + x, 0)).toDecimalPlaces(2))).toBe(1000);
+  });
+
+  it("una sola cuota o un descuento único se cobran enteros", () => {
+    expect(cobros(prestamo({ monto: 500, saldo: 500, cuotasMeses: 1 }))).toEqual([500]);
+    expect(cobros(prestamo({ monto: 500, saldo: 500, cuotasMeses: null }))).toEqual([500]);
+  });
+
+  it("un préstamo con cuota acordada sigue cobrando esa cuota", () => {
+    expect(cobros(prestamo())).toEqual([400, 400, 200]);
+  });
+
+  it("una recurrente cobra su monto, sin importar lo anterior", () => {
+    expect(n(cuotaDelPeriodo(prestamo({ monto: 250, saldo: null, cuotasMeses: null, cuotasPagadas: 7 })))).toBe(250);
+  });
+
+  it("al devolver una cuota por anular la planilla, el reparto se recalcula igual", () => {
+    // Pagó 1 de 6 (saldo 5,000); se anula y vuelve a 6,000: otra vez 1,000.
+    const revertido = revertirAmortizacion(
+      { saldo: money(5000), cuotasPagadas: 1, activo: true },
+      { deduccionId: "d1", montoAplicado: 1000, llevaSaldo: true, desactivo: false }
+    );
+    expect(n(cuotaDelPeriodo(prestamo({ monto: 6000, saldo: revertido.saldo, cuotasMeses: 6, cuotasPagadas: revertido.cuotasPagadas })))).toBe(1000);
+  });
+});
+
 // ─── AMORTIZACIÓN ────────────────────────────────────────────────────────────
 
 describe("aplicarDeducciones — amortización", () => {

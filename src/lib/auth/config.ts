@@ -6,6 +6,7 @@ import { audit, getClientInfo } from "@/lib/audit";
 import { estaBloqueado, registrarFallo, limpiar, CONFIG_LOGIN_IP } from "./rate-limit";
 import type { UserRole, AlcanceDatos } from "@prisma/client";
 import { permisosEfectivos } from "./permisos";
+import { cuentaCerradaPorBaja } from "./administradores";
 import { ipParaLimite } from "@/lib/http/ip";
 import { SESION } from "./middleware-config";
 
@@ -60,9 +61,12 @@ export const authConfig: NextAuthConfig = {
           ? await bcrypt.compare(String(credentials.password), user.password)
           : false;
 
+        // Un empleado dado de baja pierde el acceso (ver `cuentaCerradaPorBaja`).
+        const cerrada = !!user && passwordOk && (await cuentaCerradaPorBaja(user, user.empleado?.estado));
+
         // Un usuario inactivo se trata como credencial inválida (no se distingue,
         // para no filtrar qué cuentas existen).
-        if (!user || !user.activo || !passwordOk) {
+        if (!user || !user.activo || !passwordOk || cerrada) {
           const r = registrarFallo(email);
           // Un acierto no lo limpia: si no, una cuenta propia válida bastaría
           // para reiniciar el cupo entre ráfagas contra cuentas ajenas.
@@ -71,7 +75,7 @@ export const authConfig: NextAuthConfig = {
             accion: "LOGIN", tabla: "User", registroId: email, usuarioEmail: email,
             valorNuevo: {
               exito: false,
-              motivo: !user ? "USUARIO_INEXISTENTE" : !user.activo ? "USUARIO_INACTIVO" : "PASSWORD_INCORRECTA",
+              motivo: !user ? "USUARIO_INEXISTENTE" : !user.activo ? "USUARIO_INACTIVO" : cerrada ? "EMPLEADO_INACTIVO" : "PASSWORD_INCORRECTA",
               intentosRestantes: r.intentosRestantes,
             },
             ip, userAgent,
@@ -137,17 +141,19 @@ export const authConfig: NextAuthConfig = {
         const actual = await prisma.user.findUnique({
           where: { id: token.sub },
           select: {
+            id: true,
             activo: true,
             role: true,
             sucursalesIds: true,
             debeCambiarPassword: true,
-            empleado: { select: { id: true, departamentoId: true } },
+            empleado: { select: { id: true, departamentoId: true, estado: true } },
             perfil: { select: { permisos: true, activo: true, alcance: true } },
           },
         });
 
         // Usuario borrado o desactivado → se invalida la sesión (logout forzado).
         if (!actual || !actual.activo) return null;
+        if (await cuentaCerradaPorBaja(actual, actual.empleado?.estado)) return null;
 
         // Se refresca el rol por si cambió (ascenso/descenso de permisos), y con
         // él los permisos y el alcance: es lo que hace que quitar un permiso o

@@ -15,9 +15,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { alcanzaEmpleado } from "@/lib/auth/alcance";
-import { decodificar } from "@/lib/importacion/csv";
 import { cargarCatalogos, validar, type ComprobadorAlcance } from "@/lib/importacion/empleados";
 import { crearLote, leerArchivo, MAX_FILAS_ARCHIVO } from "@/lib/importacion/lote";
+import { ACEPTA_PLANTILLA, textoDeArchivo } from "@/lib/importacion/xlsx";
 import type { InformeValidacion, ModoImportacion } from "@/lib/importacion/tipos";
 
 const MODOS: ModoImportacion[] = ["CREAR", "ACTUALIZAR", "CREAR_O_ACTUALIZAR"];
@@ -33,13 +33,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "La petición no trae un archivo válido." }, { status: 400 });
   }
 
-  const archivo = await leerArchivo(form);
+  const archivo = await leerArchivo(form, "archivo", ACEPTA_PLANTILLA);
   if (!archivo.ok) return NextResponse.json({ error: archivo.error }, { status: 400 });
 
   const modoBruto = String(form.get("modo") ?? "CREAR_O_ACTUALIZAR") as ModoImportacion;
   const modo: ModoImportacion = MODOS.includes(modoBruto) ? modoBruto : "CREAR_O_ACTUALIZAR";
 
-  const texto = decodificar(archivo.bytes);
+  const lectura = await textoDeArchivo(archivo.nombre, archivo.bytes);
+  if (!lectura.ok) return NextResponse.json({ error: lectura.error }, { status: 400 });
+  const texto = lectura.texto;
   const catalogos = await cargarCatalogos(prisma);
 
   // El alcance de datos acompaña a la importación: quien sólo alcanza su

@@ -1,6 +1,8 @@
 /** Préstamos en autoservicio: lo que necesita la base. */
 
 import type { PrismaClient, Prisma } from "@prisma/client";
+import { cuotaDelPeriodo } from "./deducciones";
+import { aNumero } from "./money";
 import { limiteDescuento, type LimiteDescuento, type TipoPlanilla } from "./prestamos";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -12,7 +14,7 @@ export async function limiteDeEmpleado(db: Db, empleadoId: string): Promise<{ li
     db.salarioMinimo.findFirst({ where: { activo: true }, orderBy: { anio: "desc" }, select: { monto: true } }),
     db.deduccionEmpleado.findMany({
       where: { empleadoId, activo: true, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO"] } } },
-      select: { monto: true },
+      select: { monto: true, saldo: true, cuotasMeses: true, cuotasPagadas: true },
     }),
   ]);
   if (!emp) throw new Error("Empleado no encontrado");
@@ -26,7 +28,8 @@ export async function limiteDeEmpleado(db: Db, empleadoId: string): Promise<{ li
       salarioMensual,
       salarioMinimo: Number(salMin.monto),
       tipoPlanilla,
-      cuotasVigentesPeriodo: vigentes.reduce((s, d) => s + Number(d.monto), 0),
+      // Lo que de verdad se descuenta: `monto` puede ser el total de la deuda.
+      cuotasVigentesPeriodo: vigentes.reduce((s, d) => s + aNumero(cuotaDelPeriodo(d)), 0),
     }),
   };
 }

@@ -24,7 +24,7 @@ export default async function UsuariosPage() {
         createdAt: true,
         sucursalesIds: true,
         perfil: { select: { id: true, nombre: true, alcance: true, activo: true } },
-        empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true } },
+        empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true, estado: true } },
       },
       orderBy: [{ activo: "desc" }, { name: "asc" }],
     }),

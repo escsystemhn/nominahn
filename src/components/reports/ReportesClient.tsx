@@ -26,7 +26,7 @@ interface Props {
 /** Reportes que operan sobre UNA planilla concreta, no sobre un rango de fechas. */
 const REQUIEREN_PLANILLA = new Set(["nomina-banco"]);
 /** Reportes que pueden acotarse a una planilla; sin elegirla, usan las fechas. */
-const ACEPTAN_PLANILLA = new Set(["planilla-detallada", "resumen-planilla"]);
+const ACEPTAN_PLANILLA = new Set(["planilla-detallada", "resumen-planilla", "ihss-historico", "isr-dmr"]);
 
 const reportes = [
   { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Deducciones por empleado, agrupadas por sucursal, división y departamento con subtotales", categoria: "Planillas" },
@@ -84,6 +84,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visor, setVisor] = useState<Visor | null>(null);
+  const [porDivision, setPorDivision] = useState(false);
   const [filtros, setFiltros] = useState({
     fechaDesde: "",
     fechaHasta: "",
@@ -127,7 +128,9 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
     // La planilla sólo viaja a los reportes que la usan: los demás trabajan por fechas.
     const { planillaId, ...resto } = filtros;
     const usaPlanilla = REQUIEREN_PLANILLA.has(reporteId) || (ACEPTAN_PLANILLA.has(reporteId) && planillaId);
-    const params = new URLSearchParams({ reporteId, ...resto, ...(usaPlanilla ? { planillaId } : {}), formato });
+    // Sólo cambia lo que se imprime: en pantalla se sigue viendo el árbol completo.
+    const separar = reporteId === "planilla-detallada" && conDivisiones && porDivision && formato !== "JSON";
+    const params = new URLSearchParams({ reporteId, ...resto, ...(usaPlanilla ? { planillaId } : {}), ...(separar ? { porDivision: "1" } : {}), formato });
     return `/api/reportes?${params.toString()}`;
   }
 
@@ -224,7 +227,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
           </div>
           <div className="col-span-2 md:col-span-1">
             <label htmlFor="rep-planilla" className="mb-1 block text-xs font-medium text-gray-700">
-              Planilla <span className="font-normal text-gray-400">(reportes de planilla y archivo del banco)</span>
+              Planilla <span className="font-normal text-gray-400">(reportes de planilla, IHSS histórica, DMR y archivo del banco)</span>
             </label>
             <select id="rep-planilla" {...campo("planillaId")} className="input">
               <option value="">{planillas.length ? "Todas, según las fechas" : "No hay planillas vigentes"}</option>
@@ -267,6 +270,12 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
                 {categoria === "Todos" && <span className="text-xs text-gray-400">{r.categoria}</span>}
               </div>
               <p className="mt-0.5 text-xs text-gray-500">{conDivisiones ? r.descripcion : r.descripcion.replace("sucursal, división y departamento", "sucursal y departamento")}</p>
+              {r.id === "planilla-detallada" && conDivisiones && (
+                <label className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-gray-700">
+                  <input type="checkbox" checked={porDivision} onChange={(e) => setPorDivision(e.target.checked)} />
+                  Imprimir cada división en hoja aparte (PDF y Excel)
+                </label>
+              )}
             </div>
             <div className="flex items-center gap-1.5">
               <button type="button" onClick={() => ver(r.id)} disabled={ocupado !== null} className="btn btn-primary btn-sm">

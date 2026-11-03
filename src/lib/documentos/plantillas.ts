@@ -46,6 +46,7 @@ export const VARIABLES: { grupo: string; variables: VariableDoc[] }[] = [
     grupo: "Contrato",
     variables: [
       { clave: "contrato.fechaInicio", etiqueta: "Fecha de inicio" },
+      { clave: "contrato.fechaFin", etiqueta: "Fecha de fin" },
       { clave: "contrato.jornada", etiqueta: "Jornada" },
       { clave: "contrato.horario", etiqueta: "Horario" },
       { clave: "contrato.lugar", etiqueta: "Lugar de trabajo" },
@@ -148,7 +149,7 @@ export interface DatosContexto {
     sucursal?: string | null;
     sucursalDireccion?: string | null;
   };
-  contrato?: { fechaInicio?: Date | null; jornada?: string | null; horario?: string | null } | null;
+  contrato?: { fechaInicio?: Date | null; fechaFin?: Date | null; jornada?: string | null; horario?: string | null } | null;
   /** Texto del turno vigente, si hay: «Diurna, de lunes a viernes de 08:00 a 17:00». */
   turno?: { jornada: string; horario: string } | null;
   empresa: { nombre: string; rtn?: string | null; direccion?: string | null; telefono?: string | null };
@@ -201,6 +202,7 @@ export function construirContexto(d: DatosContexto): Record<string, string> {
     "empleado.nacionalidad": nacionalidadConcordada(e.nacionalidad, e.genero),
     "empleado.direccion": e.direccion ?? "",
     "contrato.fechaInicio": fechaLarga(d.contrato?.fechaInicio ?? e.fechaIngreso),
+    "contrato.fechaFin": d.contrato?.fechaFin ? fechaLarga(d.contrato.fechaFin) : "",
     "contrato.jornada": d.turno?.jornada || d.contrato?.jornada || "",
     "contrato.horario": d.turno?.horario || d.contrato?.horario || "",
     "contrato.lugar": [e.sucursal, e.sucursalDireccion].filter(Boolean).join(", "),

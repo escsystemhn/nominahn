@@ -15,6 +15,13 @@ import { z } from "zod";
 import { parsearBody } from "@/lib/http/validar";
 import { EstadoPlanilla as EstadoPlanillaEnum } from "@prisma/client";
 import { encolarPorTransicion, procesarEnSegundoPlano } from "@/lib/sap/envio";
+import {
+  aplicarCobros,
+  calcularLineas,
+  devolverCobros,
+  escribirLineas,
+  type CalculoPlanilla,
+} from "@/lib/payroll/calculo-planilla-bd";
 
 const schemaPatch = z
   .object({
@@ -145,54 +152,71 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Nada que actualizar" }, { status: 400 });
   }
 
-  // ─── Anulación: devolver lo amortizado ──────────────────────────────────────
-  // Al anular hay que deshacer lo que esta planilla cobró de préstamos y
-  // adelantos. Sin esto, el flujo de corrección del sistema —anular y
-  // reemitir— volvía a consumir las cuotas y el préstamo se amortizaba de más.
+  const vuelveABorrador = estado === "BORRADOR" && estadoActual !== "BORRADOR";
+
+  // Volver a borrador cambiaría importes que SAP ya tiene: ese camino es anular,
+  // que genera el reverso.
+  if (vuelveABorrador) {
+    const enSap = await prisma.sapEnvioAsiento.count({ where: { planillaId: id, estado: { in: ["PENDIENTE", "ENVIANDO", "ENVIADO"] } } });
+    if (enSap > 0) {
+      return NextResponse.json({ error: "Esta planilla ya tiene un asiento en SAP: anúlela para generar el reverso." }, { status: 409 });
+    }
+  }
+
+  // ─── Confirmar un borrador ──────────────────────────────────────────────────
+  // Se recalcula por última vez, porque cobra con los datos de ahora. Si el
+  // resultado ya no es el que se revisó, no se confirma a ciegas: se actualiza el
+  // borrador y se pide revisarlo otra vez.
+  let calculo: CalculoPlanilla | null = null;
+  if (estado === "CALCULADA" && estadoActual === "BORRADOR") {
+    const r = await calcularLineas(planilla);
+    if (!r.ok) return NextResponse.json(r.cuerpo, { status: r.status });
+
+    if (calcularHashPlanilla(r.detalles) !== calcularHashPlanilla(planilla.detalles)) {
+      await prisma.$transaction((tx) => escribirLineas(tx, id, r), { timeout: 30000 });
+      const { ip, userAgent } = getClientInfo(req);
+      await audit({
+        accion: "UPDATE",
+        tabla: "Planilla",
+        registroId: id,
+        usuarioId,
+        usuarioEmail: usuarioEmail ?? undefined,
+        valorAnterior: { totalNeto: planilla.totalNeto },
+        valorNuevo: { totalNeto: r.totales.totalNeto, recalculada: true, motivo: "Los datos cambiaron antes de confirmar" },
+        ip,
+        userAgent,
+      });
+      return NextResponse.json(
+        {
+          error: "Los datos cambiaron desde que se calculó este borrador, así que se actualizó y no se confirmó. Revíselo y confirme de nuevo.",
+          recalculada: true,
+        },
+        { status: 409 }
+      );
+    }
+    calculo = r;
+  }
+
+  // ─── Devolver lo cobrado ────────────────────────────────────────────────────
+  // Al anular o volver a borrador hay que deshacer lo que esta planilla cobró de
+  // préstamos y adelantos, y liberar sus bonos. Sin esto, corregirla y confirmarla
+  // de nuevo volvía a consumir las cuotas y el préstamo se amortizaba de más.
   //
-  // La reversión va en la MISMA transacción que el cambio de estado: una
-  // planilla no puede quedar anulada con sus amortizaciones sin devolver.
+  // Va en la MISMA transacción que el cambio de estado, igual que el cobro: una
+  // planilla no puede cambiar de estado con sus cobros a medias. Un borrador no
+  // cobró nada, así que no hay qué devolver.
+  const devuelve = vuelveABorrador || (estado === "ANULADA" && estadoActual !== "BORRADOR");
   let deduccionesRevertidas = 0;
   let envioSapId: string | null = null;
   let motivoSap: string | null = null;
 
   const actualizada = await prisma.$transaction(async (tx) => {
-    if (estado === "ANULADA") {
-      const pendientes = await tx.amortizacionPlanilla.findMany({
-        where: { planillaId: id, revertidaAt: null },
-        select: { id: true, deduccionId: true, montoAplicado: true, llevaSaldo: true, desactivo: true },
-      });
-
-      if (pendientes.length > 0) {
-        // Inverso exacto de lo que aplicó el cálculo. Se devuelve el DELTA, no
-        // se restaura un estado previo: así la reversión es correcta aunque
-        // otra planilla posterior haya cobrado cuotas del mismo préstamo.
-        // Espeja `revertirAmortizacion()` de lib/payroll/deducciones.ts, donde
-        // esta aritmética está probada.
-        await tx.$executeRaw`
-          UPDATE "DeduccionEmpleado" d
-             SET "cuotasPagadas" = GREATEST(0, d."cuotasPagadas" - 1),
-                 "saldo"         = CASE WHEN v.lleva_saldo
-                                        THEN COALESCE(d."saldo", 0) + v.monto
-                                        ELSE d."saldo" END,
-                 "activo"        = CASE WHEN v.desactivo THEN true ELSE d."activo" END,
-                 "updatedAt"     = NOW()
-            FROM (SELECT * FROM UNNEST(
-                    ${pendientes.map((p) => p.deduccionId)}::text[],
-                    ${pendientes.map((p) => p.montoAplicado.toFixed(2))}::numeric[],
-                    ${pendientes.map((p) => p.llevaSaldo)}::boolean[],
-                    ${pendientes.map((p) => p.desactivo)}::boolean[]
-                  ) AS t(id, monto, lleva_saldo, desactivo)) v
-           WHERE d."id" = v.id`;
-
-        // Sellar impide devolver dos veces el mismo importe.
-        await tx.amortizacionPlanilla.updateMany({
-          where: { id: { in: pendientes.map((p) => p.id) } },
-          data: { revertidaAt: new Date() },
-        });
-
-        deduccionesRevertidas = pendientes.length;
-      }
+    if (calculo) {
+      await escribirLineas(tx, id, calculo);
+      await aplicarCobros(tx, id, calculo);
+    }
+    if (devuelve) {
+      deduccionesRevertidas = await devolverCobros(tx, id, { conservarRegistro: estado === "ANULADA" });
     }
 
     const actualizadaTx = await tx.planilla.update({ where: { id }, data });
@@ -239,6 +263,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // Queda constancia de cuántas deducciones se devolvieron: es dinero del
       // trabajador y debe poder conciliarse contra el rastro.
       deduccionesRevertidas: deduccionesRevertidas || undefined,
+      cuotasCobradas: calculo ? calculo.amortizaciones.length : undefined,
+      bonosAplicados: calculo ? calculo.bonos.length : undefined,
       sap: envioSapId ? { envioId: envioSapId, motivo: motivoSap } : motivoSap ? { motivo: motivoSap } : undefined,
     },
     ip,
@@ -246,4 +272,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   });
 
   return NextResponse.json({ ...actualizada, deduccionesRevertidas, sapEnvioId: envioSapId });
+}
+
+/**
+ * Descartar un borrador. Se borra de verdad porque todavía no es un documento: no
+ * cobró nada ni salió del sistema. Una planilla confirmada se anula, no se borra, y
+ * los triggers lo impiden además a partir de que se aprueba.
+ */
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const g = await requerirPermiso("planillas.calcular");
+  if (!g.ok) return g.response;
+
+  const { id } = await params;
+  const planilla = await prisma.planilla.findUnique({
+    where: { id },
+    select: { estado: true, tipo: true, fechaInicio: true, fechaFin: true, totalNeto: true, _count: { select: { enviosSap: true } } },
+  });
+  if (!planilla) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+  if (planilla.estado !== "BORRADOR") {
+    return NextResponse.json({ error: "Sólo se descarta un borrador. Una planilla confirmada se anula." }, { status: 409 });
+  }
+  if (planilla._count.enviosSap > 0) {
+    return NextResponse.json({ error: "Este borrador tiene envíos a SAP en su historial: anúlelo en vez de descartarlo." }, { status: 409 });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.planillaDetalle.deleteMany({ where: { planillaId: id } });
+    await tx.planilla.delete({ where: { id } });
+  });
+
+  const { ip, userAgent } = getClientInfo(req);
+  await audit({
+    accion: "DELETE",
+    tabla: "Planilla",
+    registroId: id,
+    usuarioId: g.usuario.id,
+    usuarioEmail: g.usuario.email ?? undefined,
+    valorAnterior: { estado: planilla.estado, tipo: planilla.tipo, fechaInicio: planilla.fechaInicio, fechaFin: planilla.fechaFin, totalNeto: planilla.totalNeto },
+    ip,
+    userAgent,
+  });
+
+  return NextResponse.json({ ok: true });
 }

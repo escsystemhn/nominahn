@@ -15,11 +15,11 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import type { InformeValidacion, ModoImportacion, ResultadoImportacion } from "@/lib/importacion/tipos";
+import type { InformeValidacion, ModoImportacion, RecursoImportacion, ResultadoImportacion } from "@/lib/importacion/tipos";
 
 interface Props {
-  /** "empleados" o "deducciones": completa las rutas de la API. */
-  recurso: "empleados" | "deducciones";
+  /** Completa las rutas de la API. */
+  recurso: RecursoImportacion;
   titulo: string;
   /** Se muestra en el primer paso, antes de elegir archivo. */
   ayuda: string;
@@ -146,12 +146,17 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
             <div className="space-y-5">
               <p className="text-sm text-gray-600">{ayuda}</p>
 
-              <a
-                href={`/api/exportar/${recurso}?plantilla=1`}
-                className="inline-flex items-center gap-2 text-sm text-blue-700 hover:text-blue-900 font-medium"
-              >
-                ↓ Descargar plantilla con las columnas y un ejemplo
-              </a>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <a
+                  href={`/api/exportar/${recurso}?plantilla=1&formato=xlsx`}
+                  className="inline-flex items-center gap-2 text-blue-700 hover:text-blue-900 font-medium"
+                >
+                  ↓ Descargar plantilla de Excel, con instrucciones
+                </a>
+                <a href={`/api/exportar/${recurso}?plantilla=1`} className="text-gray-500 hover:text-gray-800">
+                  o en CSV
+                </a>
+              </div>
 
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium text-gray-700 mb-2">
@@ -183,7 +188,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                 <input
                   ref={inputArchivo}
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   disabled={cargando}
                   onChange={(e) => {
                     const archivo = e.target.files?.[0];
@@ -192,8 +197,8 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                   className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-700 file:text-white file:text-sm file:font-medium hover:file:bg-blue-800 file:cursor-pointer"
                 />
                 <p className="text-xs text-gray-400 mt-3">
-                  Archivo .csv, hasta 5 MB. Se acepta separado por comas o por punto y coma,
-                  y guardado desde Excel en cualquier codificación.
+                  Archivo de Excel (.xlsx) o .csv, hasta 5 MB. El CSV puede venir separado por comas
+                  o por punto y coma, y guardado en cualquier codificación.
                 </p>
               </div>
 

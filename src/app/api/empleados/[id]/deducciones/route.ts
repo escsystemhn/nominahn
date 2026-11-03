@@ -27,13 +27,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!parsed.ok) return parsed.response;
   const { tipoDeduccionId, monto, cuotasMeses, fechaInicio, observacion } = parsed.data;
 
+  // Sin cuotas se cobra una vez. Con N, `monto` es el total a repartir (ver
+  // `cuotaDelPeriodo`). Con 0, se cobra cada planilla: sin saldo y sin fin.
+  const recurrente = cuotasMeses === 0;
+
   const deduccion = await prisma.deduccionEmpleado.create({
     data: {
       empleadoId: id,
       tipoDeduccionId,
       monto,
-      saldo: monto,
-      cuotasMeses: cuotasMeses ?? null,
+      saldo: recurrente ? null : monto,
+      cuotasMeses: recurrente ? null : (cuotasMeses ?? null),
       fechaInicio,
       observacion,
     },

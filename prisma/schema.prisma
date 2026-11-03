@@ -449,6 +449,7 @@ model PerfilAcceso {
 enum TipoImportacion {
   EMPLEADOS
   DEDUCCIONES
+  HORAS_EXTRA
 }
 
 enum EstadoLote {
@@ -708,7 +709,7 @@ model Marcaje {
   esAusencia         Boolean   @default(false)
   esDiaLibre         Boolean   @default(false)
   observacion        String?
-  fuente             String    @default("BIOMETRICO") // BIOMETRICO | MANUAL
+  fuente             String    @default("BIOMETRICO") // BIOMETRICO | MANUAL | PLANTILLA
   dispositivoId      String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt

@@ -32,7 +32,7 @@ interface Usuario {
   createdAt: string;
   sucursalesIds: string[];
   perfil: { id: string; nombre: string; alcance: Alcance; activo: boolean } | null;
-  empleado: { id: string; codigo: string; primerNombre: string; primerApellido: string } | null;
+  empleado: { id: string; codigo: string; primerNombre: string; primerApellido: string; estado: string } | null;
 }
 
 interface Props {
@@ -293,6 +293,11 @@ export default function UsuariosClient({
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs">
                         {u.empleado ? `${u.empleado.codigo} · ${u.empleado.primerNombre} ${u.empleado.primerApellido}` : "—"}
+                        {u.empleado?.estado === "INACTIVO" && (
+                          <span className="block text-amber-700" title="La cuenta no puede entrar, salvo que sea la única que puede administrar accesos.">
+                            Dado de baja: sin acceso
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs">
                         {u.ultimoAcceso ? formatDateTime(u.ultimoAcceso) : "Nunca"}

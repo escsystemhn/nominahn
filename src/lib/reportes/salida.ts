@@ -16,10 +16,10 @@ import * as pdfmakeModulo from "pdfmake";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
 // La lectura de celdas y filas tiene una sola definición, compartida con el
 // visor del navegador (que no puede importar este archivo por exceljs y pdfmake).
-import { valorCelda, columnasNumericas, metaFila, contarDetalles, type TipoCelda, type MetaFila } from "./salida-celdas";
+import { valorCelda, columnasNumericas, metaFila, contarDetalles, type HojaReporte, type TipoCelda, type MetaFila } from "./salida-celdas";
 
 export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles } from "./salida-celdas";
-export type { TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
+export type { HojaReporte, TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
 
 /**
  * pdfmake 0.3 exporta UNA instancia (module.exports = new pdfmake()). Según cómo
@@ -44,6 +44,8 @@ export interface ReporteTabla {
    * es plana y una fila que empieza por «TOTAL» se trata como total.
    */
   filas?: MetaFila[];
+  /** Para imprimir por partes. Con hojas, el PDF y el Excel las usan en vez de `datos`. */
+  hojas?: HojaReporte[];
 }
 
 // ─── Celdas ───────────────────────────────────────────────────────────────────
@@ -52,6 +54,18 @@ export interface ReporteTabla {
 export function nombreHoja(titulo: string): string {
   const limpio = titulo.replace(/[[\]:*?/\\]/g, " ").replace(/\s+/g, " ").trim();
   return (limpio || "Reporte").slice(0, 31);
+}
+
+/** Excel no admite dos pestañas con el mismo nombre, y dos sucursales pueden tener una «Administración». */
+function nombreHojaUnico(nombre: string, usados: Set<string>): string {
+  const base = nombreHoja(nombre);
+  let propuesto = base;
+  for (let n = 2; usados.has(propuesto.toLowerCase()); n++) {
+    const sufijo = ` (${n})`;
+    propuesto = base.slice(0, 31 - sufijo.length) + sufijo;
+  }
+  usados.add(propuesto.toLowerCase());
+  return propuesto;
 }
 
 const FORMATO_EXCEL: Record<Exclude<TipoCelda, "texto">, string> = {
@@ -69,8 +83,30 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "NominaHN";
   wb.created = r.generado;
-  const ws = wb.addWorksheet(nombreHoja(r.titulo), { views: [{ state: "frozen", ySplit: 4 }] });
-  const columnas = Math.max(1, r.cabeceras.length);
+
+  if (r.hojas?.length) {
+    const usados = new Set<string>();
+    for (const h of r.hojas) {
+      const ws = escribirHoja(wb, nombreHojaUnico(h.pestana, usados), r, h, h.nombre);
+      // Cada pestaña se imprime a lo ancho de la página, repitiendo sus cabeceras.
+      ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "4:4" };
+    }
+  } else {
+    escribirHoja(wb, nombreHoja(r.titulo), r, r);
+  }
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+function escribirHoja(
+  wb: ExcelJS.Workbook,
+  nombre: string,
+  r: Pick<ReporteTabla, "titulo" | "generado" | "filtros">,
+  tabla: Pick<ReporteTabla, "cabeceras" | "datos" | "filas">,
+  subtitulo?: string
+): ExcelJS.Worksheet {
+  const ws = wb.addWorksheet(nombre, { views: [{ state: "frozen", ySplit: 4 }] });
+  const columnas = Math.max(1, tabla.cabeceras.length);
   const ultima = ws.getColumn(columnas).letter;
 
   ws.mergeCells(`A1:${ultima}1`);
@@ -78,11 +114,17 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   ws.getCell("A1").font = { bold: true, size: 14, color: { argb: "FF0D2B38" } };
 
   ws.mergeCells(`A2:${ultima}2`);
-  ws.getCell("A2").value = [`Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`, `${contarDetalles(r.datos, r.filas)} registros`, ...r.filtros].join(" · ");
+  ws.getCell("A2").value = [`Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`, `${contarDetalles(tabla.datos, tabla.filas)} registros`, ...r.filtros].join(" · ");
   ws.getCell("A2").font = { size: 9, color: { argb: "FF637580" } };
 
+  if (subtitulo) {
+    ws.mergeCells(`A3:${ultima}3`);
+    ws.getCell("A3").value = subtitulo;
+    ws.getCell("A3").font = { bold: true, size: 11, color: { argb: "FF0D2B38" } };
+  }
+
   const cabecera = ws.getRow(4);
-  cabecera.values = r.cabeceras;
+  cabecera.values = tabla.cabeceras;
   cabecera.font = { bold: true, color: { argb: "FFFFFFFF" } };
   cabecera.alignment = { vertical: "middle" };
   cabecera.height = 20;
@@ -90,11 +132,11 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
     cabecera.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0D2B38" } };
   }
 
-  const numericas = columnasNumericas(r.cabeceras, r.datos);
-  const anchos = r.cabeceras.map((h) => h.length);
+  const numericas = columnasNumericas(tabla.cabeceras, tabla.datos);
+  const anchos = tabla.cabeceras.map((h) => h.length);
 
-  r.datos.forEach((fila, f) => {
-    const meta = metaFila(fila, r.filas?.[f]);
+  tabla.datos.forEach((fila, f) => {
+    const meta = metaFila(fila, tabla.filas?.[f]);
     const row = ws.addRow(
       fila.map((texto, i) => {
         const v = valorCelda(texto);
@@ -107,7 +149,7 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
       const v = valorCelda(texto);
       if (numericas[i] && v.tipo !== "texto") row.getCell(i + 1).numFmt = FORMATO_EXCEL[v.tipo];
     });
-    if (r.filas) {
+    if (tabla.filas) {
       // Sangría de la primera celda y agrupación plegable: al cerrar una
       // sucursal quedan a la vista su encabezado y su subtotal.
       row.getCell(1).alignment = { indent: meta.nivel * 2 };
@@ -130,9 +172,9 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   });
   // El autofiltro de una tabla agrupada separaría encabezados y subtotales de
   // sus filas: sólo en las tablas planas.
-  if (!r.filas) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + r.datos.length, column: columnas } };
+  if (!tabla.filas) ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + tabla.datos.length, column: columnas } };
 
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  return ws;
 }
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
@@ -172,74 +214,95 @@ const TENUE = "#637580";
 /** Fondo del encabezado de grupo por nivel: sucursal, división, departamento. */
 const FONDO_GRUPO_PDF = ["#DCE6EA", "#E9EFF2", "#F3F6F8"];
 
-export async function aPdf(r: ReporteTabla): Promise<Buffer> {
-  prepararFuentes();
-  const numericas = columnasNumericas(r.cabeceras, r.datos);
-  const apaisado = r.cabeceras.length > 6;
-  const tamano = r.cabeceras.length > 9 ? 7 : 8;
+/**
+ * La tabla de una parte del reporte. `rotulo` va dentro de la cabecera de la tabla
+ * para que se repita en cada página: una división larga ocupa varias hojas, y una
+ * hoja suelta debe poder decir de cuál es.
+ */
+function tablaPdf(t: Pick<ReporteTabla, "cabeceras" | "datos" | "filas">, tamano: number, rotulo?: string): Content {
+  if (t.datos.length === 0) return { text: "Sin registros para los filtros elegidos.", fontSize: 9, color: TENUE, italics: true };
 
-  const encabezado: TableCell[] = r.cabeceras.map((h, i) => ({
+  const numericas = columnasNumericas(t.cabeceras, t.datos);
+
+  const encabezado: TableCell[] = t.cabeceras.map((h, i) => ({
     text: h,
     bold: true,
     color: "#FFFFFF",
     fillColor: TINTA,
     fontSize: tamano,
     alignment: numericas[i] ? "right" : "left",
-    margin: [4, 4, 4, 4],
+    margin: [4, 1, 4, 1],
   }));
 
-  const cuerpo: TableCell[][] = r.datos.map((fila, f) => {
-    const m = metaFila(fila, r.filas?.[f]);
-    const sangria = r.filas ? m.nivel * 10 : 0;
+  const cuerpo: TableCell[][] = t.datos.map((fila, f) => {
+    const m = metaFila(fila, t.filas?.[f]);
+    const sangria = t.filas ? m.nivel * 10 : 0;
     if (m.tipo === "grupo") {
       // El encabezado de un grupo ocupa la fila entera: un nombre largo no
       // queda apretado en la primera columna.
       const fondo = FONDO_GRUPO_PDF[Math.min(m.nivel, FONDO_GRUPO_PDF.length - 1)];
       return [
-        { text: String(fila[0] ?? ""), colSpan: r.cabeceras.length, bold: true, color: TINTA, fontSize: tamano, fillColor: fondo, margin: [4 + sangria, 3, 4, 3] },
-        ...r.cabeceras.slice(1).map(() => ({})),
+        { text: String(fila[0] ?? ""), colSpan: t.cabeceras.length, bold: true, color: TINTA, fontSize: tamano, fillColor: fondo, margin: [4 + sangria, 0, 4, 0] },
+        ...t.cabeceras.slice(1).map(() => ({})),
       ];
     }
     const resaltada = m.tipo === "subtotal" || m.tipo === "total";
-    return r.cabeceras.map((_, i) => ({
+    return t.cabeceras.map((_, i) => ({
       text: String(fila[i] ?? ""),
       fontSize: tamano,
       bold: resaltada,
       alignment: numericas[i] ? "right" : "left",
       // En una tabla agrupada las bandas alternas competirían con los grupos.
-      fillColor: m.tipo === "total" ? "#EBF0F2" : m.tipo === "subtotal" ? "#F1F5F7" : !r.filas && f % 2 === 1 ? PAPEL : undefined,
-      margin: [4 + (i === 0 ? sangria : 0), 3, 4, 3],
+      fillColor: m.tipo === "total" ? "#EBF0F2" : m.tipo === "subtotal" ? "#F1F5F7" : !t.filas && f % 2 === 1 ? PAPEL : undefined,
+      margin: [4 + (i === 0 ? sangria : 0), 0, 4, 0],
     }));
   });
 
-  const meta = [
-    `Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`,
-    `${contarDetalles(r.datos, r.filas)} registros`,
-    ...r.filtros,
-  ].join("  ·  ");
+  const filaRotulo: TableCell[] | null = rotulo
+    ? [
+        { text: rotulo, colSpan: t.cabeceras.length, bold: true, color: TINTA, fontSize: tamano + 3, margin: [0, 0, 0, 2] },
+        ...t.cabeceras.slice(1).map(() => ({})),
+      ]
+    : null;
 
-  const contenido: Content[] = [
-    { text: r.titulo, fontSize: 14, bold: true, color: TINTA, margin: [0, 0, 0, 2] },
-    { text: meta, fontSize: 8, color: TENUE, margin: [0, 0, 0, 10] },
-    r.datos.length === 0
-      ? { text: "Sin registros para los filtros elegidos.", fontSize: 9, color: TENUE, italics: true }
-      : {
-          table: {
-            headerRows: 1,
-            widths: r.cabeceras.map((_, i) => (i === 0 || (!numericas[i] && i === 1) ? "*" : "auto")),
-            body: [encabezado, ...cuerpo],
-          },
-          layout: {
-            hLineWidth: (i: number, nodo: { table: { body: unknown[] } }) => (i === 0 || i === nodo.table.body.length ? 0.8 : 0.4),
-            vLineWidth: () => 0,
-            hLineColor: () => LINEA,
-            paddingLeft: () => 0,
-            paddingRight: () => 0,
-            paddingTop: () => 0,
-            paddingBottom: () => 0,
-          },
-        },
-  ];
+  return {
+    table: {
+      headerRows: filaRotulo ? 2 : 1,
+      widths: t.cabeceras.map((_, i) => (i === 0 || (!numericas[i] && i === 1) ? "*" : "auto")),
+      body: [...(filaRotulo ? [filaRotulo] : []), encabezado, ...cuerpo],
+    },
+    layout: {
+      hLineWidth: (i: number, nodo: { table: { body: unknown[] } }) => (i === 0 || i === nodo.table.body.length ? 0.8 : 0.4),
+      vLineWidth: () => 0,
+      hLineColor: () => LINEA,
+      paddingLeft: () => 0,
+      paddingRight: () => 0,
+      paddingTop: () => 3,
+      paddingBottom: () => 3,
+    },
+  };
+}
+
+export async function aPdf(r: ReporteTabla): Promise<Buffer> {
+  prepararFuentes();
+  const partes: Array<Pick<ReporteTabla, "cabeceras" | "datos" | "filas"> & { nombre?: string }> = r.hojas?.length ? r.hojas : [r];
+  const columnas = Math.max(...partes.map((p) => p.cabeceras.length));
+  const apaisado = columnas > 6;
+  const tamano = columnas > 9 ? 7 : 8;
+
+  const contenido: Content[] = partes.flatMap((p, i) => {
+    const meta = [
+      `Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`,
+      `${contarDetalles(p.datos, p.filas)} registros`,
+      ...r.filtros,
+    ].join("  ·  ");
+    const bloque: Content[] = [
+      { text: r.titulo, fontSize: 14, bold: true, color: TINTA, margin: [0, 0, 0, 2], ...(i > 0 ? { pageBreak: "before" as const } : {}) },
+      { text: meta, fontSize: 8, color: TENUE, margin: [0, 0, 0, 10] },
+      tablaPdf(p, tamano, p.nombre),
+    ];
+    return bloque;
+  });
 
   const definicion: TDocumentDefinitions = {
     pageSize: "LETTER",

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { money } from "@/lib/payroll/money";
-import { tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "./planilla-estructura";
+import { hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "./planilla-estructura";
 import type { Ubicacion } from "@/lib/organizacion/estructura";
 
 const CONF = { id: "conf", nombre: "NOMINA CONFIDENCIAL" };
@@ -28,6 +28,58 @@ const LINEAS = [
   linea("MARIA MEDINA", TGU, "Administracion", 17000),
   linea("GONZALO CARIAS", TGU, "Ventas", 16000),
 ];
+
+describe("cada división en su hoja", () => {
+  const hojas = hojasPorDivision(LINEAS);
+
+  it("una hoja por división y una última con el resumen", () => {
+    expect(hojas.map((h) => h.nombre)).toEqual([
+      "NOMINA CONFIDENCIAL / PAGSA MAYOREO",
+      "NOMINA CONFIDENCIAL / PAGSA TEGUCIGALPA",
+      "Resumen de toda la planilla",
+    ]);
+    expect(hojas.map((h) => h.pestana)).toEqual(["PAGSA MAYOREO", "PAGSA TEGUCIGALPA", "Resumen"]);
+  });
+
+  it("cada hoja lleva sólo su gente, por departamento, y cierra con su total", () => {
+    const h = hojas[0];
+    expect(h.datos.map((f) => f[0])).toEqual([
+      "Administracion", "CARLOS MEJIA", "JUAN PEREZ", "Subtotal Administracion",
+      "Ventas", "FIDEL BULNES", "Subtotal Ventas",
+      "TOTAL PAGSA MAYOREO",
+    ]);
+    expect(h.datos.at(-1)![1]).toBe("3 empleado(s)");
+    expect(txt(h.datos.at(-1)![9])).toBe(txt("L 53,000.00"));
+    expect(h.filas.at(-1)).toEqual({ tipo: "total", nivel: 0 });
+  });
+
+  it("nadie se queda fuera ni sale dos veces", () => {
+    const empleados = hojas.slice(0, -1).flatMap((h) => h.datos.filter((_, i) => h.filas[i].tipo === "detalle").map((f) => f[0]));
+    expect(empleados.sort()).toEqual(LINEAS.map((l) => l.nombre).sort());
+  });
+
+  it("el resumen conserva el total general", () => {
+    const ultima = hojas.at(-1)!;
+    expect(ultima.datos.at(-1)![0]).toBe("TOTAL GENERAL");
+    expect(txt(ultima.datos.at(-1)![4])).toBe(txt("L 108,000.00"));
+  });
+
+  it("los sin división salen en su propia hoja", () => {
+    const sinDivision = { ...linea("ANA PAZ", MAY, "Ventas", 1000), ubicacion: { sucursal: CONF, division: null, departamento: { id: "x", nombre: "Ventas" } } };
+    expect(hojasPorDivision([...LINEAS, sinDivision]).map((h) => h.pestana)).toEqual(["PAGSA MAYOREO", "PAGSA TEGUCIGALPA", "Sin división", "Resumen"]);
+  });
+
+  it("una sucursal sin divisiones ocupa una hoja, y una sola hoja no lleva resumen", () => {
+    const sola = { ...linea("ANA PAZ", MAY, "Ventas", 1000), ubicacion: { sucursal: TGU, division: null, departamento: { id: "x", nombre: "Ventas" } } };
+    const r = hojasPorDivision([sola]);
+    expect(r.map((h) => h.nombre)).toEqual(["PAGSA TEGUCIGALPA"]);
+    expect(r[0].datos.at(-1)![0]).toBe("TOTAL PAGSA TEGUCIGALPA");
+  });
+
+  it("sin líneas no hay hojas", () => {
+    expect(hojasPorDivision([])).toEqual([]);
+  });
+});
 
 describe("planilla detallada agrupada", () => {
   const t = tablaPlanillaDetallada(LINEAS);

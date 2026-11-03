@@ -7,6 +7,7 @@ import { audit, getClientInfo } from "@/lib/audit";
 import { z } from "zod";
 import { zCorreoOpcional, zMontoAnulable } from "@/lib/http/validar";
 import { validarUbicacionEmpleado } from "@/lib/organizacion/estructura-bd";
+import { crearContratoInicial } from "@/lib/empleados/contratos-bd";
 
 const createSchema = z.object({
   primerNombre: z.string().min(1),
@@ -217,6 +218,8 @@ export async function POST(req: NextRequest) {
       usuarioEmail: g.usuario.email ?? undefined,
     },
   });
+
+  await crearContratoInicial(prisma, empleado.id);
 
   const { ip, userAgent } = getClientInfo(req);
   await audit({

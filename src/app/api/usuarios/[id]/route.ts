@@ -19,8 +19,9 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { z } from "zod";
-import { permisosEfectivos, tienePermiso } from "@/lib/auth/permisos";
-import { validarCambioUsuario, PERMISO_LLAVE } from "@/lib/auth/politica-usuarios";
+import { contarAdministradores } from "@/lib/auth/administradores";
+import { permisosEfectivos } from "@/lib/auth/permisos";
+import { validarCambioUsuario } from "@/lib/auth/politica-usuarios";
 
 const CAMPOS = {
   id: true,
@@ -32,7 +33,7 @@ const CAMPOS = {
   ultimoAcceso: true,
   sucursalesIds: true,
   perfil: { select: { id: true, codigo: true, nombre: true, alcance: true, activo: true } },
-  empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true } },
+  empleado: { select: { id: true, codigo: true, primerNombre: true, primerApellido: true, estado: true } },
 } as const;
 
 const schema = z.object({
@@ -202,20 +203,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   });
 
   return NextResponse.json({ usuario: { id, activo: false } });
-}
-
-/**
- * Cuántas cuentas ACTIVAS distintas de `excluyendo` pueden gestionar usuarios.
- *
- * Se cuenta sobre los permisos EFECTIVOS —perfil si lo hay, si no el mapa del
- * rol—, no sobre una columna: contar sólo los SUPER_ADMIN daría cero en una
- * instalación que ya reparte la administración por perfiles, y bloquearía
- * cambios perfectamente legítimos.
- */
-async function contarAdministradores(excluyendo: string): Promise<number> {
-  const candidatos = await prisma.user.findMany({
-    where: { activo: true, id: { not: excluyendo } },
-    select: { role: true, perfil: { select: { permisos: true, activo: true } } },
-  });
-  return candidatos.filter((u) => tienePermiso(permisosEfectivos(u), PERMISO_LLAVE)).length;
 }

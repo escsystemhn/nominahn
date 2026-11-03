@@ -21,7 +21,7 @@ const ESTADOS: Record<string, { label: string; tono: Tono }> = {
   ACTIVA: { label: "Activa", tono: "ok" },
   INACTIVA: { label: "Inactiva", tono: "neutro" },
   // Planilla
-  BORRADOR: { label: "Borrador", tono: "neutro" },
+  BORRADOR: { label: "Borrador", tono: "aviso" },
   CALCULADA: { label: "Calculada", tono: "marca" },
   APROBADA: { label: "Aprobada", tono: "aviso" },
   PAGADA: { label: "Pagada", tono: "ok" },
@@ -35,6 +35,10 @@ const ESTADOS: Record<string, { label: string; tono: Tono }> = {
   // Plan de horarios
   PUBLICADO: { label: "Publicado", tono: "ok" },
   ARCHIVADO: { label: "Archivado", tono: "neutro" },
+  // Contrato
+  VIGENTE: { label: "Vigente", tono: "ok" },
+  VENCIDO: { label: "Vencido", tono: "aviso" },
+  TERMINADO: { label: "Terminado", tono: "neutro" },
   // Tipo de planilla
   MENSUAL: { label: "Mensual", tono: "neutro" },
   QUINCENAL: { label: "Quincenal", tono: "neutro" },

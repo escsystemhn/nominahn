@@ -12,7 +12,7 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { filtroEmpleados, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { filtroDetallesOrg, filtroEmpleadosOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
-import { tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "@/lib/reportes/planilla-estructura";
+import { hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "@/lib/reportes/planilla-estructura";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
 import { nombreCompleto, formatCurrency, formatDate, calcularAniosTrabajados } from "@/lib/utils";
 import {
@@ -23,7 +23,7 @@ import {
 } from "@/lib/payroll/calculos-hn";
 import { calcularDecimo, ventanaDevengo, type TipoDecimo } from "@/lib/payroll/decimos";
 import { aNumero, minimo, sumar, sumarPor, money, redondear, CERO, type Money } from "@/lib/payroll/money";
-import { aXlsx, aPdf, contarDetalles, metaFila, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
+import { aXlsx, aPdf, contarDetalles, metaFila, type HojaReporte, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
 import { reportePuntualidad, MAX_DIAS_REPORTE } from "@/lib/asistencia/tardanzas";
 import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
 
@@ -38,6 +38,11 @@ export async function GET(req: NextRequest) {
   const formato = normalizarFormato(searchParams.get("formato"));
   // Obligatoria en «nomina-banco»; en los reportes de planilla, acota a una sola.
   const planillaId = searchParams.get("planillaId") || undefined;
+  // Un borrador sólo sale si se elige esa planilla: sumado a un período contaría
+  // dinero que todavía no se ha confirmado. Y una anulada nunca: no se pagó.
+  const planillasDelReporte: Prisma.PlanillaWhereInput = planillaId
+    ? { id: planillaId, estado: { not: "ANULADA" } }
+    : { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] } };
 
   // Alcance organizacional pedido (Sucursal → División → Departamento). La
   // división sólo cuenta si el administrador habilitó ese nivel.
@@ -54,6 +59,7 @@ export async function GET(req: NextRequest) {
   // reportes agrupados por estructura.
   let datos: string[][] = [];
   let filas: MetaFila[] | undefined;
+  let hojas: HojaReporte[] | undefined;
   let titulo = "Reporte NominaHN";
   let cabeceras: string[] = [];
 
@@ -87,9 +93,7 @@ export async function GET(req: NextRequest) {
       e.tipoPlanilla,
     ]);
   } else if (reporteId === "planilla-detallada" || reporteId === "resumen-planilla") {
-    // Una planilla anulada no se pagó: antes se sumaba igual que las vigentes.
-    const wherePl: Prisma.PlanillaWhereInput = { estado: { not: "ANULADA" } };
-    if (planillaId) wherePl.id = planillaId;
+    const wherePl: Prisma.PlanillaWhereInput = { ...planillasDelReporte };
     if (desde) wherePl.fechaInicio = { gte: new Date(desde) };
     if (hasta) wherePl.fechaFin = { lte: new Date(hasta) };
 
@@ -138,6 +142,9 @@ export async function GET(req: NextRequest) {
     const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas) : tablaPlanillaDetallada(lineas);
     titulo = reporteId === "resumen-planilla" ? `Resumen de Planilla por ${niveles}` : `Planilla Detallada por ${niveles}`;
     ({ cabeceras, datos, filas } = tabla);
+    if (reporteId === "planilla-detallada" && conDivisiones && searchParams.get("porDivision") === "1") {
+      hojas = hojasPorDivision(lineas);
+    }
   } else if (reporteId === "ihss-planilla") {
     titulo = "Planilla IHSS (EM + IVM)";
     cabeceras = ["Empleado", "N° IHSS", "Salario", "Base Cotiz.", "EM Empl.", "IVM Empl.", "EM Patr.", "IVM Patr.", "Aporte Estado", "Total"];
@@ -175,8 +182,8 @@ export async function GET(req: NextRequest) {
     titulo = "Planilla IHSS Histórica (EM + IVM)";
     cabeceras = ["Empleado", "N° IHSS", "EM Empl.", "IVM Empl.", "EM Patr.", "IVM Patr.", "Aporte Estado", "Total"];
 
-    // Detalles de planillas del período (excluye borradores/anuladas).
-    const wherePl: Prisma.PlanillaWhereInput = { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] } };
+    // Detalles de planillas del período.
+    const wherePl: Prisma.PlanillaWhereInput = { ...planillasDelReporte };
     if (desde || hasta) {
       wherePl.fechaFin = {
         ...(desde ? { gte: new Date(desde) } : {}),
@@ -513,7 +520,7 @@ export async function GET(req: NextRequest) {
     cabeceras = ["Empleado", "RTN", "Ingreso Anual Proyectado", "Deducción Mensual", "Base Mensual", "Retención ISR Mes"];
     const lineas = await prisma.planillaDetalle.findMany({
       where: {
-        planilla: { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] }, fechaFin: { gte: new Date(desde), lte: new Date(hasta) } },
+        planilla: { ...planillasDelReporte, fechaFin: { gte: new Date(desde), lte: new Date(hasta) } },
         ...filtroDet,
       },
       select: {
@@ -716,10 +723,14 @@ export async function GET(req: NextRequest) {
     if (dep) filtros.push(`Departamento: ${dep.nombre}`);
   }
   if (planillaId && reporteId !== "nomina-banco") {
-    const pl = await prisma.planilla.findUnique({ where: { id: planillaId }, select: { fechaInicio: true, fechaFin: true } });
+    const pl = await prisma.planilla.findUnique({ where: { id: planillaId }, select: { fechaInicio: true, fechaFin: true, estado: true } });
     if (pl) filtros.push(`Planilla del ${formatDate(pl.fechaInicio)} al ${formatDate(pl.fechaFin)}`);
+    if (pl?.estado === "BORRADOR") {
+      titulo = `${titulo} (BORRADOR)`;
+      filtros.push("BORRADOR: planilla sin confirmar");
+    }
   }
-  const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros, ...(filas ? { filas } : {}) };
+  const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros, ...(filas ? { filas } : {}), ...(hojas ? { hojas } : {}) };
 
   // La tabla tal cual, para verla dentro de la aplicación antes de exportar.
   if (formato === "JSON") {
@@ -741,7 +752,8 @@ export async function GET(req: NextRequest) {
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${nombreBase}_${marca}.pdf"`,
+        // `modo=ver` lo abre en el navegador, listo para imprimir, en vez de descargarlo.
+        "Content-Disposition": `${searchParams.get("modo") === "ver" ? "inline" : "attachment"}; filename="${nombreBase}_${marca}.pdf"`,
       },
     });
   }

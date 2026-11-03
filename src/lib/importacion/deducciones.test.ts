@@ -9,6 +9,7 @@ const PRESTAMO_VIGENTE: DeduccionExistente = {
   fechaInicio: "2026-01-01",
   monto: "3000",
   cuotasMeses: 10,
+  esRecurrente: false,
   cuotasPagadas: 0,
   fechaFin: null,
   activo: true,
@@ -70,6 +71,30 @@ const correr = (
 
 const errores = (r: ReturnType<typeof validar>) => r.incidencias.filter((i) => i.severidad === "ERROR");
 const avisos = (r: ReturnType<typeof validar>) => r.incidencias.filter((i) => i.severidad === "AVISO");
+
+describe("forma de cobro", () => {
+  const CUOTA_CERO = "Codigo Empleado,Codigo Deduccion,Monto,Cuotas,Fecha Inicio";
+
+  it("Cuotas = 0 es una deducción de cada planilla, sin saldo", () => {
+    const r = correr(`${CUOTA_CERO}\nEMP-0001,COOP,150,0,01/09/2026`);
+    expect(errores(r)).toEqual([]);
+    expect(r.filas[0]).toMatchObject({ cuotasMeses: null, recurrente: true });
+  });
+
+  it("Cuotas en blanco sigue siendo un descuento único", () => {
+    expect(correr(`${CUOTA_CERO}\nEMP-0001,COOP,150,,01/09/2026`).filas[0]).toMatchObject({ cuotasMeses: null, recurrente: false });
+  });
+
+  it("cambiar la forma de cobro se muestra, si no se ha cobrado nada", () => {
+    const r = correr(`${CUOTA_CERO}\nEMP-0001,PRESTAMO,3000,0,01/01/2026`);
+    expect(r.filas[0].cambios).toContain("Forma de cobro");
+  });
+
+  it("no se cambia la forma de cobro de lo ya amortizado", () => {
+    const r = correr(`${CUOTA_CERO}\nEMP-0002,PRESTAMO,3000,0,01/02/2026`);
+    expect(errores(r)[0].mensaje).toContain("forma de cobro");
+  });
+});
 
 describe("altas", () => {
   it("acepta una deducción nueva y arranca el saldo con el monto", () => {

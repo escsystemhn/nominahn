@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { formatDate, hoyHN, fechaCalendario } from "@/lib/utils";
-import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import AsistenciaClient from "@/components/attendance/AsistenciaClient";
+import BarraDatos from "@/components/importacion/BarraDatos";
 import PageHeader from "@/components/ui/PageHeader";
 
 export const metadata = { title: "Asistencia" };
@@ -11,7 +12,7 @@ export default async function AsistenciaPage({
 }: {
   searchParams: Promise<{ fecha?: string; sucursalId?: string }>;
 }) {
-  await requerirPermisoPagina("asistencia.ver");
+  const usuario = await requerirPermisoPagina("asistencia.ver");
 
   const sp = await searchParams;
   // Por defecto, HOY EN HONDURAS. `toISOString()` daba el día en UTC: pasadas
@@ -78,6 +79,17 @@ export default async function AsistenciaPage({
       <PageHeader
         title="Control de asistencia"
         description={`Marcajes del ${formatDate(fecha)}: entradas, salidas, almuerzo y horas extra.`}
+        actions={
+          <BarraDatos
+            recurso="horas-extra"
+            puedeExportar={puede(usuario, "asistencia.ver")}
+            puedeImportar={puede(usuario, "asistencia.gestionar")}
+            filtros={{ fecha: fechaStr, sucursalId: sp.sucursalId }}
+            notaExportar="Se exportan las horas extra de todo el mes de la fecha elegida."
+            tituloImportacion="Importar horas extra"
+            ayudaImportacion="Cada fila dice cuántas horas hizo un empleado un día, según su recargo: 25 %, 50 %, 75 % o 100 %. Ponga sólo las cantidades: el sistema calcula el costo. Cada fila reemplaza las horas de ese día, así que subir el mismo archivo otra vez no las duplica."
+          />
+        }
       />
 
       {/* Resumen del día: una franja con divisores, sin semáforo de colores. */}

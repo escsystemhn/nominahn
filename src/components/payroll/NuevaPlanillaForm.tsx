@@ -191,19 +191,22 @@ export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, de
         <p className="mb-1 font-medium">¿Qué se calculará automáticamente?</p>
         <ul className="space-y-0.5 text-xs">
           <li>• Salario base proporcional según días trabajados</li>
-          <li>• Horas extra del período (desde marcajes biométricos)</li>
+          <li>• Horas extra del período (del reloj, de la carga manual o de la plantilla)</li>
           <li>• IHSS, RAP, AFP e ISR progresivo, con los parámetros de ley configurados</li>
           <li>• Impuesto Vecinal, descuento por ausencias (doble)</li>
           <li>• Préstamos, cooperativa y otras deducciones activas</li>
           <li>• Provisiones: 13vo, 14vo, Vacaciones</li>
           <li>• Aportaciones patronales: IHSS, RAP, INFOP y Fondo de Reserva Laboral</li>
         </ul>
+        <p className="mt-2 text-xs font-medium">
+          Queda en borrador: podrá revisarla y recalcularla, y no se cobra ninguna cuota hasta confirmarla.
+        </p>
       </div>
 
       <div className="flex gap-3 pt-2">
         <button type="button" onClick={() => router.back()} className="btn btn-secondary flex-1">Cancelar</button>
         <button type="submit" disabled={loading} className="btn btn-primary flex-1">
-          {loading ? "Calculando planilla…" : "Calcular planilla"}
+          {loading ? "Calculando planilla…" : "Generar borrador"}
         </button>
       </div>
     </form>

@@ -10,6 +10,8 @@ import { prisma } from "@/lib/prisma";
 import { requerirSesion } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zMontoPositivo } from "@/lib/http/validar";
+import { cuotaDelPeriodo } from "@/lib/payroll/deducciones";
+import { aNumero } from "@/lib/payroll/money";
 import { evaluarSolicitud } from "@/lib/payroll/prestamos";
 import { limiteDeEmpleado, tipoDeduccionPara } from "@/lib/payroll/prestamos-bd";
 
@@ -49,7 +51,7 @@ export async function GET() {
   ]);
 
   return NextResponse.json({
-    vigentes,
+    vigentes: vigentes.map((v) => ({ ...v, cuota: aNumero(cuotaDelPeriodo(v)) })),
     solicitudes,
     limite: lim.limite,
     tipoPlanilla: lim.tipoPlanilla,

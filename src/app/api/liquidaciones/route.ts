@@ -3,6 +3,7 @@ import { CausaTerminacion } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
+import { cerrarContratoVigente } from "@/lib/empleados/contratos-bd";
 import { parsearBody, zId } from "@/lib/http/validar";
 import {
   calcularLiquidacion,
@@ -255,6 +256,7 @@ export async function POST(req: NextRequest) {
       where: { id: empleadoId },
       data: { estado: "INACTIVO", fechaSalida },
     });
+    await cerrarContratoVigente(tx, empleadoId, fechaSalida);
 
     return creada;
   }, { timeout: 30000 });

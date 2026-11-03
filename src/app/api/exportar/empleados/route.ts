@@ -23,6 +23,7 @@ import { requerirPermiso, puede } from "@/lib/auth/guard";
 import { conAlcance } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { generarCsv, cabecerasDescarga, delimitadorPedido } from "@/lib/importacion/csv";
+import { cabecerasXlsx, plantillaXlsx } from "@/lib/importacion/xlsx";
 import {
   COLUMNAS_EMPLEADO,
   columnasVisibles,
@@ -51,6 +52,9 @@ export async function GET(req: NextRequest) {
   // Cabeceras y una fila de muestra. Es el punto de partida de una carga inicial
   // y, de paso, documenta el formato de fechas y enumerados sin abrir el manual.
   if (searchParams.get("plantilla") === "1") {
+    if (searchParams.get("formato") === "xlsx") {
+      return new NextResponse(new Uint8Array(await plantillaXlsx(columnas)), { headers: cabecerasXlsx("plantilla_empleados.xlsx") });
+    }
     const csv = generarCsv(etiquetas(columnas), [filaEjemplo(columnas)], delimitador);
     return new NextResponse(csv, { headers: cabecerasDescarga("plantilla_empleados.csv") });
   }

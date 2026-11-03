@@ -21,9 +21,10 @@ export default async function ReportesPage() {
     prisma.departamento.findMany({ select: { id: true, nombre: true, sucursalId: true, divisionId: true }, orderBy: { nombre: "asc" } }),
     prisma.empresa.findMany({ select: { id: true, nombre: true } }),
     // Planillas vigentes: para acotar los reportes de planilla a una sola y para
-    // el archivo del banco (que además exige que esté aprobada o pagada).
+    // el archivo del banco (que además exige que esté aprobada o pagada). Incluye
+    // los borradores, que se revisan aquí antes de confirmarlos.
     prisma.planilla.findMany({
-      where: { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] } },
+      where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA", "PAGADA"] } },
       select: { id: true, tipo: true, estado: true, fechaInicio: true, fechaFin: true },
       orderBy: { fechaFin: "desc" },
       take: 24,

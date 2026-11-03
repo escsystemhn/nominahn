@@ -4,6 +4,7 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { z } from "zod";
 import { parsearBody, zPorcentaje, zMontoPositivo, zId } from "@/lib/http/validar";
 import { money, redondear } from "@/lib/payroll/money";
+import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import { audit, getClientInfo } from "@/lib/audit";
 
 // El aumento afecta el salario de MUCHOS empleados a la vez: un valor basura aquí
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   const empleados = await prisma.empleado.findMany({
     where: {
-      estado: "ACTIVO",
+      estado: { in: [...ESTADOS_QUE_COBRAN] },
       ...(sucursalId ? { sucursalId } : {}),
       ...(departamentoId ? { departamentoId } : {}),
     },

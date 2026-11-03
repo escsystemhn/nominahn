@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { formatCurrency, formatDate, nombreCompleto } from "@/lib/utils";
 import PlanillaActions from "@/components/payroll/PlanillaActions";
 import ComprobanteAcciones from "@/components/payroll/ComprobanteAcciones";
@@ -103,6 +104,18 @@ export default async function DetallePlanillaPage({
   };
   const COLUMNAS = 11;
 
+  // Imprime lo que se está viendo: la misma planilla, con el filtro de arriba si lo hay.
+  const urlImprimir = (separar: boolean) => {
+    const q = new URLSearchParams({ reporteId: "planilla-detallada", planillaId: planilla.id, formato: "PDF", modo: "ver" });
+    if (alcance.sucursalId) q.set("sucursalId", alcance.sucursalId);
+    if (alcance.divisionId) q.set("divisionId", alcance.divisionId);
+    if (alcance.departamentoId) q.set("departamentoId", alcance.departamentoId);
+    if (separar) q.set("porDivision", "1");
+    return `/api/reportes?${q.toString()}`;
+  };
+  const puedeImprimir = planilla.estado !== "ANULADA" && puede(usuario, "reportes.ver");
+  const divisionesEnPlanilla = new Set(planilla.detalles.map((d) => ubicacionDeLinea(d, opciones.conDivisiones).division?.id ?? null));
+
   const resumen = [
     { label: "Total bruto", valor: formatCurrency(planilla.totalBruto) },
     { label: "Deducciones del empleado", valor: formatCurrency(planilla.totalDeducciones) },
@@ -125,10 +138,21 @@ export default async function DetallePlanillaPage({
         actions={
           <>
             <EstadoBadge valor={planilla.estado} className="mr-2 text-sm" />
-            <PlanillaActions planillaId={planilla.id} estado={planilla.estado} />
+            <PlanillaActions planillaId={planilla.id} estado={planilla.estado} puedeCalcular={puede(usuario, "planillas.calcular")} />
           </>
         }
       />
+
+      {planilla.estado === "BORRADOR" && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Esta planilla está en borrador.</p>
+          <p className="mt-1">
+            Todavía no se ha cobrado ninguna cuota ni se ha marcado ningún bono, y los empleados no ven su comprobante.
+            Revise las líneas y los <Link href="/reportes" className="font-medium underline underline-offset-2">reportes</Link>.
+            Si corrige horas, deducciones o salarios, use Recalcular. Cuando esté correcta, Confirmar planilla.
+          </p>
+        </div>
+      )}
 
       <section aria-label="Totales de la planilla">
         <div className="grid grid-cols-2 divide-y divide-gray-200 border-b border-gray-200 lg:grid-cols-4 lg:divide-x lg:divide-y-0">
@@ -160,6 +184,14 @@ export default async function DetallePlanillaPage({
         {hayFiltro && (
           <span className="text-sm text-gray-500">
             {planilla.detalles.length} de {totalLineas} empleados
+          </span>
+        )}
+        {puedeImprimir && (
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            <a href={urlImprimir(false)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">Imprimir planilla</a>
+            {divisionesEnPlanilla.size > 1 && (
+              <a href={urlImprimir(true)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">Imprimir cada división en hoja aparte</a>
+            )}
           </span>
         )}
       </form>

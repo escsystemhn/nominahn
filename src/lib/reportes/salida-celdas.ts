@@ -56,6 +56,17 @@ export interface MetaFila {
   nivel: number;
 }
 
+/** Parte de un reporte que se imprime aparte: en el PDF empieza en otra página y en Excel es otra pestaña. */
+export interface HojaReporte {
+  /** Se imprime bajo el título: «Sucursal / División». */
+  nombre: string;
+  /** Nombre corto para la pestaña de Excel. */
+  pestana: string;
+  cabeceras: string[];
+  datos: string[][];
+  filas: MetaFila[];
+}
+
 /**
  * Tipo y nivel de una fila: los que declara el reporte, o —en los reportes
  * planos, que no declaran nada— «total» si empieza por TOTAL y si no «detalle».

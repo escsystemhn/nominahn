@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
-import { formatCurrency, formatDate, nombreCompleto, calcularAniosTrabajados, iniciales } from "@/lib/utils";
+import { formatCurrency, formatDate, hoyHN, nombreCompleto, calcularAniosTrabajados, iniciales } from "@/lib/utils";
 import { calcularDiasVacaciones } from "@/lib/payroll/calculos-hn";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import Link from "next/link";
 import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
 import SaludFamilia from "@/components/employees/SaludFamilia";
+import ContratosEmpleado from "@/components/employees/ContratosEmpleado";
 
 
 export default async function FichaEmpleadoPage({
@@ -34,13 +35,15 @@ export default async function FichaEmpleadoPage({
       sucursal: true,
       departamento: true,
       puesto: true,
-      contratos: { orderBy: { createdAt: "desc" } },
+      contratos: { orderBy: { fechaInicio: "desc" } },
       permisos: { orderBy: { fechaInicio: "desc" } },
       deducciones: { include: { tipoDeduccion: true }, where: { activo: true } },
       historialSalarios: { orderBy: { fechaCambio: "desc" } },
       evaluaciones: { orderBy: { createdAt: "desc" }, take: 6 },
       documentos: { orderBy: { createdAt: "desc" } },
       planillasDetalle: {
+        // Un borrador no es un pago, y sus líneas se rehacen al recalcular.
+        where: { planilla: { estado: { not: "BORRADOR" } } },
         orderBy: { createdAt: "desc" },
         take: 12,
         include: { planilla: { select: { tipo: true, fechaFin: true, estado: true } } },
@@ -175,9 +178,9 @@ export default async function FichaEmpleadoPage({
             <h2 className="mb-4 text-base font-semibold text-gray-900">Datos del contrato actual</h2>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
               {[
-                ["Tipo de contrato", emp.tipoContrato],
+                ["Tipo de contrato", etiquetaEstado(emp.tipoContrato)],
                 ["Fecha de ingreso", formatDate(emp.fechaIngreso)],
-                ["Tipo de planilla", emp.tipoPlanilla],
+                ["Tipo de planilla", etiquetaEstado(emp.tipoPlanilla)],
                 ["Salario base", formatCurrency(Number(emp.salarioBase))],
                 ["Salario diario", formatCurrency(Number(emp.salarioDiario ?? 0))],
                 ["Salario por hora", formatCurrency(Number(emp.salarioHora ?? 0))],
@@ -189,6 +192,30 @@ export default async function FichaEmpleadoPage({
               ))}
             </div>
           </div>
+          <ContratosEmpleado
+            empleadoId={id}
+            contratos={emp.contratos.map((c) => ({
+              id: c.id,
+              tipoContrato: c.tipoContrato,
+              fechaInicio: c.fechaInicio.toISOString(),
+              fechaFin: c.fechaFin?.toISOString() ?? null,
+              salario: Number(c.salario),
+              cargo: c.cargo,
+              jornada: c.jornada,
+              horario: c.horario,
+              observaciones: c.observaciones,
+              activo: c.activo,
+            }))}
+            hoy={hoyHN().toISOString()}
+            datosFicha={{
+              tipoContrato: emp.tipoContrato,
+              salario: Number(emp.salarioBase),
+              cargo: emp.puesto?.nombre ?? "",
+              fechaIngreso: emp.fechaIngreso.toISOString(),
+            }}
+            dadoDeBaja={emp.estado === "INACTIVO"}
+            puedeEditar={puedeEditar}
+          />
           {emp.historialSalarios.length > 0 && (
             <div className="panel p-6">
               <h2 className="mb-4 text-base font-semibold text-gray-900">Historial de salarios</h2>

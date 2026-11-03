@@ -61,7 +61,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // remapeado cae al valor por omisión.
   const plan = await cargarPlan(prisma);
   const partida = generarPartidaContable(planilla.detalles, { incluirProvisiones, plan });
-  const concepto = `Planilla ${planilla.tipo} ${formatDate(planilla.fechaInicio)} al ${formatDate(planilla.fechaFin)} — ${planilla.empresa.nombre}`;
+  const esBorrador = planilla.estado === "BORRADOR";
+  const avisoBorrador = "AVISO: planilla en BORRADOR, sin confirmar";
+  const concepto = `Planilla ${planilla.tipo} ${formatDate(planilla.fechaInicio)} al ${formatDate(planilla.fechaFin)} — ${planilla.empresa.nombre}${esBorrador ? " (BORRADOR)" : ""}`;
 
   // ─── Desglose por centro de costo ───────────────────────────────────────────
   if (porCentros) {
@@ -109,6 +111,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         filas.push(["", "", "", `AVISO: el desglose no concilia con el consolidado. Diferencia ${desglose.diferenciaConciliacion.toFixed(2)}`, "", ""]);
       }
       for (const a of desglose.anomalias) filas.push(["", "", "", `AVISO: ${a}`, "", ""]);
+      if (esBorrador) filas.push(["", "", "", avisoBorrador, "", ""]);
 
       const csv = filas
         .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
@@ -151,6 +154,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       filas.push(["", `AVISO: el asiento NO cuadra. Diferencia ${partida.diferencia.toFixed(2)}`, "", ""]);
     }
     for (const a of partida.anomalias) filas.push(["", `AVISO: ${a}`, "", ""]);
+    if (esBorrador) filas.push(["", avisoBorrador, "", ""]);
 
     const csv = filas
       .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))

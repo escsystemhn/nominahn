@@ -49,13 +49,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // Desglose completo: cada deducción con su nombre e importe. La versión
   // anterior sólo mostraba bruto, total de deducciones y neto.
-  const html = templateBoletaPago(
-    construirBoleta(detalle, {
+  const html = templateBoletaPago({
+    ...construirBoleta(detalle, {
       empresa: detalle.planilla.empresa,
       empleado: detalle.empleado,
       planilla: detalle.planilla,
-    })
-  );
+    }),
+    borrador: detalle.planilla.estado === "BORRADOR",
+  });
 
   // `?modo=ver` la muestra en el navegador en vez de descargarla: es lo que usa
   // el botón «Ver» de la planilla y del expediente del empleado.

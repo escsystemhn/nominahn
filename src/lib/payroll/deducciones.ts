@@ -11,12 +11,16 @@
  * capa de datos aplica el resultado dentro de la transacción de la planilla.
  */
 
-import { money, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
+import { money, minimo, redondear, sumar, CERO, type Money, type MoneyInput } from "./money";
 
 /** Una deducción ya filtrada por vigencia de fechas por la capa de datos. */
 export interface DeduccionVigente {
   id: string;
-  /** Cuota del período. */
+  /**
+   * La cuota acordada, o el TOTAL a repartir cuando iguala al saldo inicial: un
+   * préstamo de Mi espacio guarda la cuota, una deducción por pantalla o plantilla
+   * guarda el total. Ver `cuotaDelPeriodo`.
+   */
   monto: MoneyInput;
   /** Saldo pendiente; `null` en deducciones recurrentes sin monto total. */
   saldo: MoneyInput | null;
@@ -68,7 +72,7 @@ export interface ResultadoDeducciones {
 }
 
 /** Una deducción está liquidada cuando agotó su saldo o completó su plazo. */
-export function estaLiquidada(d: DeduccionVigente): boolean {
+export function estaLiquidada(d: Pick<DeduccionVigente, "saldo" | "cuotasMeses" | "cuotasPagadas">): boolean {
   const saldo = d.saldo === null ? null : money(d.saldo);
   if (saldo !== null && saldo.lessThanOrEqualTo(0)) return true;
   if (d.cuotasMeses !== null && d.cuotasPagadas >= d.cuotasMeses) return true;
@@ -80,12 +84,23 @@ export function estaLiquidada(d: DeduccionVigente): boolean {
  *
  * El acotamiento evita el sobrecobro de la última cuota: un préstamo de L 1,000
  * en 3 cuotas de L 400 cobraría L 1,200 sin él.
+ *
+ * Con varias cuotas por delante, el monto es el TOTAL si iguala al saldo antes del
+ * primer cobro o lo supera después, y se reparte entre las que faltan. Sin esto,
+ * 6,000 en 6 cuotas se cobraban completos en la primera planilla. Una cuota acordada
+ * que ya cobró y queda igual al saldo no es un total: cierra la deuda. Se reparte
+ * sobre lo que falta para que el redondeo de los centavos no se acumule.
  */
-export function cuotaDelPeriodo(d: DeduccionVigente): Money {
+export function cuotaDelPeriodo(d: Pick<DeduccionVigente, "monto" | "saldo" | "cuotasMeses" | "cuotasPagadas">): Money {
   if (estaLiquidada(d)) return CERO;
-  const cuota = money(d.monto);
-  if (cuota.lessThanOrEqualTo(0)) return CERO;
-  return d.saldo === null ? cuota : minimo(cuota, money(d.saldo));
+  const monto = money(d.monto);
+  if (monto.lessThanOrEqualTo(0)) return CERO;
+  if (d.saldo === null) return monto;
+  const saldo = money(d.saldo);
+  const restantes = d.cuotasMeses === null ? 1 : d.cuotasMeses - d.cuotasPagadas;
+  const esElTotal = d.cuotasPagadas === 0 ? monto.equals(saldo) : monto.greaterThan(saldo);
+  if (restantes > 1 && esElTotal) return redondear(saldo.div(restantes));
+  return minimo(monto, saldo);
 }
 
 /**
@@ -175,7 +190,7 @@ export interface EstadoDeduccion {
  * `cuotasPagadas` se acota a cero: un contador negativo no significa nada y
  * haría que `estaLiquidada` dejara de cerrar la deducción.
  *
- * ESTA FUNCIÓN Y EL SQL DE `/api/planillas/[id]` HACEN LO MISMO. Si cambia una,
+ * ESTA FUNCIÓN Y EL SQL DE `devolverCobros` HACEN LO MISMO. Si cambia una,
  * cambia el otro: aquí se prueba la aritmética; allí se aplica en una sentencia.
  */
 export function revertirAmortizacion(

@@ -1,5 +1,5 @@
 /**
- * Definición de las columnas de los archivos de empleados y deducciones.
+ * Definición de las columnas de los archivos de empleados, deducciones y horas extra.
  *
  * UNA SOLA FUENTE PARA LAS DOS DIRECCIONES: el exportador escribe estas
  * cabeceras y el importador las espera. Si estuvieran declaradas por separado,
@@ -67,7 +67,7 @@ export const COLUMNAS_EMPLEADO: readonly ColumnaCsv[] = [
   {
     clave: "fecha_salida",
     etiqueta: "Fecha Salida",
-    descripcion: "DD/MM/AAAA. Sólo para empleados que ya no están activos.",
+    descripcion: "DD/MM/AAAA. Obligatoria si el Estado es INACTIVO.",
   },
   {
     clave: "estado",
@@ -187,7 +187,7 @@ export const COLUMNAS_DEDUCCION: readonly ColumnaCsv[] = [
   {
     clave: "monto",
     etiqueta: "Monto",
-    descripcion: "Importe total de la deducción, en Lempiras. Mayor que cero.",
+    descripcion: "Total a descontar, en Lempiras. Mayor que cero. Si en Cuotas pone 0, es lo que se descuenta en cada planilla.",
     requerido: true,
     sensible: true,
     ejemplo: "3000.00",
@@ -195,7 +195,7 @@ export const COLUMNAS_DEDUCCION: readonly ColumnaCsv[] = [
   {
     clave: "cuotas_meses",
     etiqueta: "Cuotas",
-    descripcion: "Número de cuotas en que se descuenta. Vacío = descuento único.",
+    descripcion: "Número de cuotas en que se reparte el total. Vacío = descuento único. 0 = se cobra en cada planilla, sin fin.",
     ejemplo: "12",
   },
   {
@@ -221,6 +221,36 @@ export const COLUMNAS_DEDUCCION: readonly ColumnaCsv[] = [
     descripcion: "Cuotas ya amortizadas en planilla. Sólo informativo; al importar se ignora.",
     soloLectura: true,
   },
+] as const;
+
+// ─── HORAS EXTRA ──────────────────────────────────────────────────────────────
+
+export const COLUMNAS_HORAS_EXTRA: readonly ColumnaCsv[] = [
+  {
+    clave: "empleado_codigo",
+    etiqueta: "Codigo Empleado",
+    descripcion: "Código del empleado. Debe existir.",
+    requerido: true,
+    ejemplo: "EMP-0001",
+  },
+  {
+    clave: "empleado_nombre",
+    etiqueta: "Empleado",
+    descripcion: "Sólo informativo, para poder revisar el archivo. Al importar se ignora.",
+    soloLectura: true,
+  },
+  {
+    clave: "fecha",
+    etiqueta: "Fecha",
+    descripcion: "DD/MM/AAAA. El día en que se hicieron las horas. Cada fila reemplaza las horas extra de ese día.",
+    requerido: true,
+    ejemplo: "15/10/2026",
+  },
+  { clave: "diurnas", etiqueta: "Extra 25%", descripcion: "Cantidad de horas con recargo de 25 % (extra en jornada diurna). Sólo la cantidad: el sistema calcula el costo. En blanco = 0.", ejemplo: "2" },
+  { clave: "mixtas", etiqueta: "Extra 50%", descripcion: "Cantidad de horas con recargo de 50 % (extra en jornada mixta). En blanco = 0.", ejemplo: "0" },
+  { clave: "nocturnas", etiqueta: "Extra 75%", descripcion: "Cantidad de horas con recargo de 75 % (extra en jornada nocturna). En blanco = 0.", ejemplo: "1.5" },
+  { clave: "feriado", etiqueta: "Extra 100%", descripcion: "Cantidad de horas con recargo de 100 % (feriado o día de descanso, se pagan al doble). En blanco = 0.", ejemplo: "0" },
+  { clave: "observacion", etiqueta: "Observacion", descripcion: "Motivo o referencia. Opcional.", ejemplo: "Inventario de fin de mes" },
 ] as const;
 
 // ─── AYUDAS ───────────────────────────────────────────────────────────────────

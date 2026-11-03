@@ -25,6 +25,7 @@ import { parsearCsv, mapearColumnas, type CsvParseado } from "./csv";
 import { COLUMNAS_EMPLEADO, clavesEsperadas } from "./columnas";
 import * as v from "./valores";
 import { creariaCiclo } from "@/lib/organizacion/jerarquia";
+import { cerrarContratoVigente, crearContratoInicial } from "@/lib/empleados/contratos-bd";
 import type {
   Incidencia,
   FilaPrevisualizada,
@@ -56,6 +57,8 @@ export interface FilaEmpleado {
   supervisorCodigo?: string;
   /** Para la fila de historial salarial. Sólo si el salario cambia. */
   salarioAnterior?: string;
+  /** Para saber si la fila da de baja o reincorpora. */
+  estadoAnterior?: string;
   cambios: string[];
   referencia: string;
 }
@@ -694,7 +697,10 @@ export function validar(
     }
     const estadoEfectivo = datos.estado !== undefined ? String(datos.estado) : existente?.estado;
     if (estadoEfectivo === "INACTIVO" && !salida) {
-      anota("Estado", "Un empleado inactivo debería tener fecha de salida.", "AVISO");
+      // Sólo bloquea al dar de baja: un registro antiguo sin fecha debe poder
+      // seguir corrigiéndose.
+      if (existente?.estado === "INACTIVO") anota("Estado", "Un empleado inactivo debería tener fecha de salida.", "AVISO");
+      else anota("Fecha Salida", "Indique la fecha de salida: sin ella no se le pagarían los días trabajados del último período.");
     }
 
     incidencias.push(...errores, ...avisos);
@@ -727,6 +733,7 @@ export function validar(
       datos,
       supervisorCodigo,
       salarioAnterior,
+      estadoAnterior: existente?.estado,
       cambios,
       referencia,
     });
@@ -850,14 +857,26 @@ export async function aplicar(
           salarioAnterior: 0,
           salarioNuevo: creado.salarioBase,
           fechaCambio: creado.fechaIngreso,
-          motivo: "Salario inicial al ingreso (importación CSV)",
+          motivo: "Salario inicial al ingreso (importación)",
           usuarioId: usuario.id,
           usuarioEmail: usuario.email ?? undefined,
         },
       });
+
+      await crearContratoInicial(tx, creado.id);
+      if (creado.estado === "INACTIVO" && creado.fechaSalida) await cerrarContratoVigente(tx, creado.id, creado.fechaSalida);
     } else {
       const id = fila.empleadoId!;
-      await tx.empleado.update({ where: { id }, data: datos as Prisma.EmpleadoUpdateInput });
+      const estadoNuevo = fila.datos.estado;
+      // Reincorporar sin indicar otra fecha: la salida anterior ya no vale, igual
+      // que al editar la ficha (ver `revisarCambioEstado`).
+      if (fila.estadoAnterior === "INACTIVO" && estadoNuevo !== undefined && estadoNuevo !== "INACTIVO" && fila.datos.fecha_salida === undefined) {
+        datos.fechaSalida = null;
+      }
+      const actualizado = await tx.empleado.update({ where: { id }, data: datos as Prisma.EmpleadoUpdateInput });
+      if (estadoNuevo === "INACTIVO" && fila.estadoAnterior !== "INACTIVO" && actualizado.fechaSalida) {
+        await cerrarContratoVigente(tx, id, actualizado.fechaSalida);
+      }
       actualizados++;
       ids.push(id);
       if (fila.codigo) codigoAId.set(norm(fila.codigo), id);
@@ -869,7 +888,7 @@ export async function aplicar(
             salarioAnterior: redondear(fila.salarioAnterior),
             salarioNuevo: redondear(String(fila.datos.salario_base)),
             fechaCambio: new Date(),
-            motivo: "Ajuste por importación CSV",
+            motivo: "Ajuste por importación",
             usuarioId: usuario.id,
             usuarioEmail: usuario.email ?? undefined,
           },

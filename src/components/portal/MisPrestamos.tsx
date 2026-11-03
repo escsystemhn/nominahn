@@ -13,6 +13,7 @@ import { evaluarSolicitud, CUOTAS_MINIMAS_ADELANTO, type LimiteDescuento } from 
 interface Vigente {
   id: string;
   monto: string | number;
+  cuota: number;
   saldo: string | number | null;
   cuotasMeses: number | null;
   cuotasPagadas: number;
@@ -109,7 +110,7 @@ export default function MisPrestamos() {
                 {datos.vigentes.map((v) => (
                   <tr key={v.id}>
                     <td className="px-4 py-2.5">{v.tipoDeduccion.nombre}</td>
-                    <td className="num px-4 py-2.5">{formatCurrency(Number(v.monto))}</td>
+                    <td className="num px-4 py-2.5">{formatCurrency(v.cuota)}</td>
                     <td className="px-4 py-2.5 text-gray-600">{v.cuotasMeses ? `${v.cuotasPagadas} de ${v.cuotasMeses} cuotas` : `${v.cuotasPagadas} cuotas pagadas`}</td>
                     <td className="num px-4 py-2.5 font-medium">{v.saldo !== null ? formatCurrency(Number(v.saldo)) : "Recurrente"}</td>
                     <td className="tnum px-4 py-2.5">{formatDate(v.fechaInicio)}</td>

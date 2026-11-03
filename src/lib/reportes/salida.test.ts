@@ -110,6 +110,46 @@ const AGRUPADO = {
   filtros: [],
 };
 
+describe("imprimir por hojas", () => {
+  const hoja = (nombre: string, pestana: string) => ({
+    nombre, pestana,
+    cabeceras: ["Empleado", "Neto"],
+    datos: [["Ana", "L 100.00"], ["TOTAL", "L 100.00"]],
+    filas: [{ tipo: "detalle" as const, nivel: 0 }, { tipo: "total" as const, nivel: 0 }],
+  });
+  const POR_HOJAS = {
+    titulo: "Planilla", cabeceras: ["Empleado"], datos: [["ignorada"]], generado: new Date("2026-11-03T12:00:00Z"), filtros: [],
+    hojas: [hoja("S / Ventas", "Ventas"), hoja("S / Caja", "Caja"), hoja("Resumen de toda la planilla", "Resumen")],
+  };
+  const paginas = (buf: Buffer) => (buf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+
+  it("el PDF empieza cada hoja en otra página", async () => {
+    expect(paginas(await aPdf(POR_HOJAS))).toBe(3);
+  });
+
+  it("sin hojas sigue siendo una sola tabla", async () => {
+    expect(paginas(await aPdf({ ...POR_HOJAS, hojas: undefined }))).toBe(1);
+  });
+
+  it("el Excel lleva una pestaña por hoja, lista para imprimir", async () => {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load((await aXlsx(POR_HOJAS)) as unknown as Parameters<typeof libro.xlsx.load>[0]);
+    expect(libro.worksheets.map((w) => w.name)).toEqual(["Ventas", "Caja", "Resumen"]);
+    const ws = libro.getWorksheet("Caja")!;
+    expect(ws.getCell("A3").value).toBe("S / Caja");
+    expect(ws.getCell("A5").value).toBe("Ana");
+    expect(ws.pageSetup.fitToWidth).toBe(1);
+    expect(ws.pageSetup.printTitlesRow).toBe("4:4");
+  });
+
+  it("dos pestañas con el mismo nombre no rompen el Excel", async () => {
+    const libro = new ExcelJS.Workbook();
+    const repetidas = { ...POR_HOJAS, hojas: [hoja("A / Ventas", "Ventas"), hoja("B / Ventas", "Ventas")] };
+    await libro.xlsx.load((await aXlsx(repetidas)) as unknown as Parameters<typeof libro.xlsx.load>[0]);
+    expect(libro.worksheets.map((w) => w.name)).toEqual(["Ventas", "Ventas (2)"]);
+  });
+});
+
 describe("filas de un reporte agrupado", () => {
   it("sin metadatos, una fila que empieza por TOTAL es total y el resto detalle", () => {
     expect(metaFila(["TOTAL", "L 1.00"])).toEqual({ tipo: "total", nivel: 0 });

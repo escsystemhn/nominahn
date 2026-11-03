@@ -26,6 +26,8 @@ interface DeduccionEmpleado {
   saldo: number | null;
   cuotasMeses: number | null;
   cuotasPagadas: number;
+  /** Lo que se descontará en la próxima planilla (`cuotaDelPeriodo`). */
+  cuotaPeriodo: number;
   fechaInicio: FechaSerializable;
   observacion: string | null;
   empleado: { id: string; codigo: string; primerNombre: string; primerApellido: string; sucursal: { nombre: string } };
@@ -50,6 +52,14 @@ const tiposBadge: Record<string, string> = {
   IMPUESTO: "bg-red-100 text-red-700",
   VOLUNTARIA: "bg-gray-100 text-gray-700",
   OTRO: "bg-gray-100 text-gray-700",
+};
+
+type FormaCobro = "UNA_VEZ" | "CUOTAS" | "SIEMPRE";
+
+const ETIQUETA_MONTO: Record<FormaCobro, string> = {
+  UNA_VEZ: "Monto (L.)",
+  CUOTAS: "Monto total (L.)",
+  SIEMPRE: "Monto por planilla (L.)",
 };
 
 export default function DeduccionesClient({
@@ -78,11 +88,19 @@ export default function DeduccionesClient({
   const [formEmp, setFormEmp] = useState({
     empleadoId: "",
     tipoDeduccionId: "",
+    forma: "UNA_VEZ" as FormaCobro,
     monto: "",
     cuotasMeses: "",
     fechaInicio: new Date().toISOString().split("T")[0],
     observacion: "",
   });
+  const montoAsignar = Number(formEmp.monto);
+  const cuotasAsignar = Number(formEmp.cuotasMeses);
+  const puedeAsignar =
+    !!formEmp.empleadoId &&
+    !!formEmp.tipoDeduccionId &&
+    montoAsignar > 0 &&
+    (formEmp.forma !== "CUOTAS" || (Number.isInteger(cuotasAsignar) && cuotasAsignar >= 1));
 
   async function crearTipo() {
     setLoading(true);
@@ -112,13 +130,22 @@ export default function DeduccionesClient({
       const res = await fetch("/api/empleados/" + formEmp.empleadoId + "/deducciones", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formEmp),
+        body: JSON.stringify({
+          tipoDeduccionId: formEmp.tipoDeduccionId,
+          monto: montoAsignar,
+          ...(formEmp.forma === "CUOTAS" ? { cuotasMeses: cuotasAsignar } : formEmp.forma === "SIEMPRE" ? { cuotasMeses: 0 } : {}),
+          fechaInicio: formEmp.fechaInicio,
+          observacion: formEmp.observacion || undefined,
+        }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error);
+      }
       setModalEmp(false);
       router.refresh();
-    } catch {
-      alert("No se pudo asignar la deducción. Intente nuevamente.");
+    } catch (e) {
+      alert((e instanceof Error && e.message) || "No se pudo asignar la deducción. Intente nuevamente.");
     } finally {
       setLoading(false);
     }
@@ -209,13 +236,14 @@ export default function DeduccionesClient({
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Empleado</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Deducción</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Monto</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Por planilla</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Cuotas</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Observación</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {deduccionesEmpleados.length === 0 ? (
-                <tr><td colSpan={5} className="text-center py-6 text-gray-400">Sin deducciones asignadas</td></tr>
+                <tr><td colSpan={6} className="text-center py-6 text-gray-400">Sin deducciones asignadas</td></tr>
               ) : deduccionesEmpleados.map((d) => (
                 <tr key={d.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
@@ -228,8 +256,9 @@ export default function DeduccionesClient({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right font-medium">{formatCurrency(Number(d.monto))}</td>
+                  <td className="px-4 py-3 text-right">{formatCurrency(d.cuotaPeriodo)}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {d.cuotasMeses ? `${d.cuotasPagadas}/${d.cuotasMeses}` : "Indefinido"}
+                    {d.cuotasMeses ? `${d.cuotasPagadas}/${d.cuotasMeses}` : d.saldo === null ? "Cada planilla" : "Una vez"}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">{d.observacion ?? "—"}</td>
                 </tr>
@@ -311,27 +340,43 @@ export default function DeduccionesClient({
                 ))}
               </select>
             </div>
+            <div>
+              <label htmlFor="forma-cobro" className="block text-xs font-medium text-gray-700 mb-1">Forma de cobro</label>
+              <select id="forma-cobro" value={formEmp.forma} onChange={(e) => setFormEmp((f) => ({ ...f, forma: e.target.value as FormaCobro }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="UNA_VEZ">Una sola vez</option>
+                <option value="CUOTAS">En cuotas</option>
+                <option value="SIEMPRE">Cada planilla, sin fin</option>
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Monto por Período (L.)</label>
-                <input type="number" step="0.01" value={formEmp.monto} onChange={(e) => setFormEmp((f) => ({ ...f, monto: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <label htmlFor="monto-asignar" className="block text-xs font-medium text-gray-700 mb-1">{ETIQUETA_MONTO[formEmp.forma]}</label>
+                <input id="monto-asignar" type="number" min="0" step="0.01" value={formEmp.monto} onChange={(e) => setFormEmp((f) => ({ ...f, monto: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">No. Cuotas (0 = indefinido)</label>
-                <input type="number" value={formEmp.cuotasMeses} onChange={(e) => setFormEmp((f) => ({ ...f, cuotasMeses: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-              </div>
+              {formEmp.forma === "CUOTAS" && (
+                <div>
+                  <label htmlFor="cuotas-asignar" className="block text-xs font-medium text-gray-700 mb-1">Número de cuotas</label>
+                  <input id="cuotas-asignar" type="number" min="1" step="1" value={formEmp.cuotasMeses} onChange={(e) => setFormEmp((f) => ({ ...f, cuotasMeses: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Fecha Inicio</label>
                 <input type="date" value={formEmp.fechaInicio} onChange={(e) => setFormEmp((f) => ({ ...f, fechaInicio: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
             </div>
+            {formEmp.forma === "CUOTAS" && puedeAsignar && (
+              <p className="text-xs text-gray-500">Se descontarán {formatCurrency(montoAsignar / cuotasAsignar)} en cada una de las {cuotasAsignar} planillas.</p>
+            )}
+            {formEmp.forma === "SIEMPRE" && (
+              <p className="text-xs text-gray-500">Se descontará este monto en cada planilla, hasta que alguien desactive la deducción.</p>
+            )}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Observación</label>
               <input value={formEmp.observacion} onChange={(e) => setFormEmp((f) => ({ ...f, observacion: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div className="flex gap-3">
               <button onClick={() => setModalEmp(false)} className="flex-1 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50">Cancelar</button>
-              <button onClick={asignarEmpleado} disabled={loading || !formEmp.empleadoId || !formEmp.tipoDeduccionId} className="flex-1 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
+              <button onClick={asignarEmpleado} disabled={loading || !puedeAsignar} className="flex-1 py-2 bg-blue-700 text-white text-sm rounded-lg hover:bg-blue-800 disabled:bg-blue-400">
                 {loading ? "Guardando..." : "Asignar"}
               </button>
             </div>

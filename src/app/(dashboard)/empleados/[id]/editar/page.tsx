@@ -29,7 +29,7 @@ export default async function EditarEmpleadoPage({
   const { id } = await params;
 
   const conDivisiones = await divisionesHabilitadas(prisma);
-  const [emp, sucursales, divisiones, departamentos, puestos, centrosCosto] = await Promise.all([
+  const [emp, sucursales, divisiones, departamentos, puestos, centrosCosto, contratosVigentes] = await Promise.all([
     prisma.empleado.findUnique({ where: { id } }),
     prisma.sucursal.findMany({ where: { activa: true }, orderBy: { nombre: "asc" } }),
     conDivisiones
@@ -52,6 +52,7 @@ export default async function EditarEmpleadoPage({
       select: { id: true, codigo: true, nombre: true },
       orderBy: { codigo: "asc" },
     }),
+    prisma.contrato.count({ where: { empleadoId: id, activo: true } }),
   ]);
 
   if (!emp) notFound();
@@ -125,6 +126,7 @@ export default async function EditarEmpleadoPage({
         puestos={puestos}
         supervisores={supervisores}
         centrosCosto={centrosCosto}
+        tieneContratoVigente={contratosVigentes > 0}
       />
     </div>
   );
