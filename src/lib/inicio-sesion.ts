@@ -26,6 +26,26 @@ export interface Novedad {
 export const NOVEDADES: Record<string, Novedad[]> = {
   "2.0": [
     {
+      titulo: "Deducciones por período",
+      detalle: "Exporte a Excel lo que se descuenta a cada empleado en la quincena, corríjalo y vuelva a importarlo: cooperativas y préstamos que cambian cada quincena.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "Asignar a varios",
+      detalle: "Una deducción a muchos empleados a la vez, con monto igual para todos o uno por persona.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "Aportes en una o dos quincenas",
+      detalle: "IHSS, RAP e impuesto vecinal divididos entre las dos quincenas o completos en una sola.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "Planilla detallada",
+      detalle: "Días trabajados, total devengado, total deducciones y neto a pagar, con el resumen en la última página y papel legal o doble carta.",
+      modulo: "Reportes",
+    },
+    {
       titulo: "Jerarquía de nómina",
       detalle: "Vista en árbol por frecuencia, grupo, empresa y departamento. Se activa en Configuración.",
       modulo: "Nómina",
