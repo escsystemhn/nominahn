@@ -31,7 +31,7 @@ export default function ArchivoBanco({ base, etiqueta = "Archivo para el banco" 
     let vivo = true;
     void (async () => {
       const r = await fetch("/api/formatos-banco", { cache: "no-store" });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
       if (!vivo) return;
       if (!r.ok) {
         setError(d.error ?? "No se pudieron leer los formatos");
@@ -49,7 +49,7 @@ export default function ArchivoBanco({ base, etiqueta = "Archivo para el banco" 
     let vivo = true;
     void (async () => {
       const r = await fetch(url("&resumen=1"), { cache: "no-store" });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
       if (!vivo) return;
       if (!r.ok) {
         setResumen(null);

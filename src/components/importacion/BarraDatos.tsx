@@ -14,7 +14,9 @@
 
 import { useState } from "react";
 import AsistenteImportacion from "./AsistenteImportacion";
+import ExportarSeleccion, { exportaConSeleccion } from "./ExportarSeleccion";
 import type { RecursoImportacion } from "@/lib/importacion/tipos";
+import type { TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 
 interface Props {
   recurso: RecursoImportacion;
@@ -26,6 +28,23 @@ interface Props {
   incluyePII?: boolean;
   /** Aclara qué lleva la exportación, si no es lo que se ve en pantalla. */
   notaExportar?: string;
+  /**
+   * Antes de descargar se marca qué filas exportar, con formato Excel o CSV (empleados,
+   * deducciones). Sin marcar nada sale la plantilla vacía. Ver `ExportarSeleccion`.
+   */
+  elegirFilas?: boolean;
+  /**
+   * El recurso se exporta e importa también por período de planilla (deducciones por
+   * empleado). Es el tipo de planilla con que arrancan los selectores de período.
+   */
+  periodoPlanilla?: TipoPlanillaPeriodo;
+  /** Al importar montos del período, puede crear los tipos de deducción que falten. */
+  puedeCrearTipos?: boolean;
+  /** El menú de exportar ofrece también el archivo con datos en Excel. */
+  exportaXlsx?: boolean;
+  /** Textos de los botones, cuando hay más de una barra en la pantalla. */
+  textoExportar?: string;
+  textoImportar?: string;
   ayudaImportacion: string;
   tituloImportacion: string;
 }
@@ -37,11 +56,19 @@ export default function BarraDatos({
   filtros,
   incluyePII,
   notaExportar,
+  elegirFilas,
+  periodoPlanilla,
+  puedeCrearTipos = false,
+  exportaXlsx = false,
+  textoExportar = "Exportar",
+  textoImportar = "Importar",
   ayudaImportacion,
   tituloImportacion,
 }: Props) {
   const [asistente, setAsistente] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [eligiendo, setEligiendo] = useState(false);
+  const conSeleccion = !!elegirFilas && exportaConSeleccion(recurso);
 
   if (!puedeExportar && !puedeImportar) return null;
 
@@ -62,10 +89,10 @@ export default function BarraDatos({
           <div className="relative">
             <button
               type="button"
-              onClick={() => setMenu((v) => !v)}
+              onClick={() => (conSeleccion ? setEligiendo(true) : setMenu((v) => !v))}
               className="btn btn-secondary"
             >
-              Exportar
+              {textoExportar}
             </button>
 
             {menu && (
@@ -79,6 +106,18 @@ export default function BarraDatos({
                   className="fixed inset-0 cursor-default z-10"
                 />
                 <div className="absolute right-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                  {exportaXlsx && (
+                    <a
+                      href={`/api/exportar/${recurso}${query()}${query() ? "&" : "?"}formato=xlsx`}
+                      onClick={() => setMenu(false)}
+                      className="block px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      <span className="font-medium">Excel (.xlsx)</span>
+                      <span className="block text-xs text-gray-500">
+                        Con los datos de hoy, para corregirlos y volver a importarlos.
+                      </span>
+                    </a>
+                  )}
                   <a
                     href={`/api/exportar/${recurso}${query()}`}
                     onClick={() => setMenu(false)}
@@ -141,16 +180,19 @@ export default function BarraDatos({
             onClick={() => setAsistente(true)}
             className="btn btn-secondary"
           >
-            Importar
+            {textoImportar}
           </button>
         )}
       </div>
+
+      {eligiendo && <ExportarSeleccion recurso={recurso} filtros={filtros} incluyePII={incluyePII} tipoPlanilla={periodoPlanilla} onCerrar={() => setEligiendo(false)} />}
 
       {asistente && (
         <AsistenteImportacion
           recurso={recurso}
           titulo={tituloImportacion}
           ayuda={ayudaImportacion}
+          montosDelPeriodo={periodoPlanilla ? { tipoPlanilla: periodoPlanilla, puedeDescargar: puedeExportar, puedeCrearTipos } : undefined}
           onCerrar={() => setAsistente(false)}
         />
       )}

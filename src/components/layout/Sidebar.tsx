@@ -18,6 +18,8 @@ interface NavItem {
    * enlace es para toda cuenta con sesión (Inicio, Mi Espacio, el portal).
    */
   permisos?: readonly Permiso[];
+  /** Sólo aparece si el administrador activó la jerarquía de nómina. */
+  soloConJerarquia?: boolean;
 }
 
 interface NavSection {
@@ -206,6 +208,12 @@ const navItems: NavEntry[] = [
         permisos: ["planillas.ver"],
       },
       {
+        href: "/jerarquia-nomina",
+        label: "Jerarquía de nómina",
+        permisos: ["empleados.ver"],
+        soloConJerarquia: true,
+      },
+      {
         href: "/deducciones",
         label: "Deducciones",
         permisos: ["deducciones.ver"],
@@ -306,8 +314,9 @@ const navItems: NavEntry[] = [
 ];
 
 // Sin permisos declarados, el enlace es para toda cuenta con sesión.
-function permitidoEnMenu(item: NavItem, permisos: readonly string[], conEmpleado: boolean) {
+function permitidoEnMenu(item: NavItem, permisos: readonly string[], conEmpleado: boolean, jerarquiaNomina: boolean) {
   return (
+    (!item.soloConJerarquia || jerarquiaNomina) &&
     (item.href !== "/mi-espacio" || conEmpleado || tieneAlguno(permisos, ["asistencia.aprobar_permisos"])) &&
     (!item.permisos || tieneAlguno(permisos, item.permisos))
   );
@@ -318,18 +327,19 @@ const etiquetaEnMenu = (item: { href: string; label: string }, conEmpleado: bool
   item.href === "/mi-espacio" && !conEmpleado ? "Aprobaciones" : item.label;
 
 /** Las pantallas que esta cuenta tiene en su menú, para buscarlas por nombre. */
-export function opcionesDeMenu(permisos: readonly string[], conEmpleado: boolean): Array<{ href: string; label: string; seccion?: string }> {
+export function opcionesDeMenu(permisos: readonly string[], conEmpleado: boolean, jerarquiaNomina: boolean): Array<{ href: string; label: string; seccion?: string }> {
   return navItems.flatMap((entry) => {
     if (esSeccion(entry)) {
-      return entry.items.filter((i) => permitidoEnMenu(i, permisos, conEmpleado)).map((i) => ({ href: i.href, label: i.label, seccion: entry.label }));
+      return entry.items.filter((i) => permitidoEnMenu(i, permisos, conEmpleado, jerarquiaNomina)).map((i) => ({ href: i.href, label: i.label, seccion: entry.label }));
     }
-    return permitidoEnMenu(entry, permisos, conEmpleado) ? [{ href: entry.href, label: etiquetaEnMenu(entry, conEmpleado) }] : [];
+    return permitidoEnMenu(entry, permisos, conEmpleado, jerarquiaNomina) ? [{ href: entry.href, label: etiquetaEnMenu(entry, conEmpleado) }] : [];
   });
 }
 
 export default function Sidebar({
   permisos,
   conEmpleado,
+  jerarquiaNomina,
   abierto,
   refCerrar,
   onCerrar,
@@ -338,6 +348,7 @@ export default function Sidebar({
   permisos: readonly string[];
   /** Sin empleado vinculado, Mi espacio no tiene nada que mostrar. */
   conEmpleado: boolean;
+  jerarquiaNomina: boolean;
   /** En pantalla angosta el menú se desliza; desde 1024 px siempre está. */
   abierto: boolean;
   refCerrar: React.RefObject<HTMLButtonElement | null>;
@@ -363,7 +374,7 @@ export default function Sidebar({
   const alternar = (id: string, abierta: boolean) =>
     escribirSecciones({ ...abiertas, [id]: !abierta });
 
-  const permitido = (item: NavItem) => permitidoEnMenu(item, permisos, conEmpleado);
+  const permitido = (item: NavItem) => permitidoEnMenu(item, permisos, conEmpleado, jerarquiaNomina);
 
   // Una sección se muestra solo si el rol puede ver al menos uno de sus módulos.
   const visible = navItems.reduce<NavEntry[]>((acc, entry) => {

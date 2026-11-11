@@ -21,6 +21,7 @@ import {
   horasDiurnasEnIntervalo,
   repartirJornada,
   diasConDerechoASalario,
+  diasComerciales,
   RECARGO_EXTRA,
   RECARGO_FERIADO,
   PARAMETROS_DEFAULT,
@@ -636,9 +637,11 @@ describe("horas extra — recargos legales por jornada", () => {
     expect(n(calcularMontoHorasExtra(S, { diurnas: 10 }))).not.toBeCloseTo(1500, 2);
   });
 
-  it("cada jornada aplica su propio recargo", () => {
+  it("el 50 % va sobre la hora diurna y el 75 % sobre la hora nocturna (Art. 330)", () => {
+    // Período nocturno de una jornada diurna: 150 % de la hora diurna (100).
     expect(n(calcularMontoHorasExtra(S, { mixtas: 10 }))).toBeCloseTo(1500, 2);
-    expect(n(calcularMontoHorasExtra(S, { nocturnas: 10 }))).toBeCloseTo(1750, 2);
+    // Prolongación de jornada nocturna: 175 % de la hora nocturna, 24,000 / 30 / 6.
+    expect(n(calcularMontoHorasExtra(S, { nocturnas: 10 }))).toBeCloseTo((24000 / 30 / 6) * 10 * 1.75, 2);
   });
 
   it("un número suelto se interpreta como jornada diurna", () => {
@@ -648,7 +651,7 @@ describe("horas extra — recargos legales por jornada", () => {
 
   it("suma los tramos de un mismo período", () => {
     const m = calcularMontoHorasExtra(S, { diurnas: 4, mixtas: 2, nocturnas: 1, feriado: 8 });
-    expect(n(m)).toBeCloseTo(4 * 125 + 2 * 150 + 1 * 175 + 8 * 200, 2);
+    expect(n(m)).toBeCloseTo(4 * 125 + 2 * 150 + 1 * (24000 / 30 / 6) * 1.75 + 8 * 200, 2);
   });
 
   it("sin horas no hay importe", () => {
@@ -703,13 +706,24 @@ describe("repartirJornada — de las marcas del reloj al desglose", () => {
     expect(r.extra).toEqual({ diurnas: 2 });
   });
 
-  it("el excedente que entra en la noche se clasifica MIXTA o NOCTURNA", () => {
-    // 12:00 → 22:00: extras de 20:00 a 22:00 → íntegramente nocturnas.
+  it("la extra de una jornada diurna o mixta va hora por hora según el período (Art. 330)", () => {
+    // 12:00 → 22:00: la jornada ordinaria (12:00 a 20:00) es mixta; la extra de
+    // 20:00 a 22:00 cae en el período nocturno → 50 %, no 75 %.
     expect(repartirJornada({ horaEntrada: dia(12), horaSalida: dia(22) }).extra)
-      .toEqual({ nocturnas: 2 });
-    // 10:00 → 21:00: extras de 18:00 a 21:00 → cruzan las 19:00 → mixtas.
+      .toEqual({ mixtas: 2 });
+    // 10:00 → 21:00: extra de 18:00 a 21:00 → 1 h diurna (25 %) y 2 nocturnas (50 %).
     expect(repartirJornada({ horaEntrada: dia(10), horaSalida: dia(21) }).extra)
-      .toEqual({ mixtas: 3 });
+      .toEqual({ diurnas: 1, mixtas: 2 });
+  });
+
+  it("la extra que prolonga una jornada nocturna va toda al 75 %", () => {
+    // 19:00 → 03:00 con jornada de 6 h: la ordinaria (19:00 a 01:00) es nocturna.
+    const r = repartirJornada({ horaEntrada: dia(19), horaSalida: new Date(2026, 7, 13, 3, 0, 0), jornadaHoras: 6 });
+    expect(r.horasNormales).toBe(6);
+    expect(r.extra).toEqual({ nocturnas: 2 });
+    // Con el tipo del turno no hace falta deducirlo de las marcas.
+    expect(repartirJornada({ horaEntrada: dia(18), horaSalida: dia(23), jornadaHoras: 3, tipoJornada: "NOCTURNA" }).extra)
+      .toEqual({ nocturnas: 2 });
   });
 
   it("el almuerzo se descuenta del lapso: 08:00 a 17:00 son 8 horas, no 9", () => {
@@ -722,11 +736,11 @@ describe("repartirJornada — de las marcas del reloj al desglose", () => {
   it("con almuerzo, la hora extra empieza DESPUÉS de completar la jornada", () => {
     // 10:00 → 21:00 con 1 h de almuerzo = 10 h efectivas, 2 extra. La jornada
     // se completa a las 19:00 (10 + 8 + 1), así que la extra va de 19:00 a
-    // 21:00: nocturna. Sin correr el inicio, empezaría a las 18:00 y cruzaría
-    // las 19:00 como mixta — con otro recargo.
+    // 21:00: período nocturno, 50 %. Sin correr el inicio, empezaría a las 18:00
+    // y una de las horas iría al 25 %.
     const r = repartirJornada({ horaEntrada: dia(10), horaSalida: dia(21), minutosDescanso: 60 });
     expect(r.horasNormales).toBe(8);
-    expect(r.extra).toEqual({ nocturnas: 2 });
+    expect(r.extra).toEqual({ mixtas: 2 });
   });
 
   it("en feriado el almuerzo tampoco se paga", () => {
@@ -764,10 +778,29 @@ describe("diasConDerechoASalario — ingreso y baja a mitad de período", () => 
   });
 
   it("REGRESIÓN: quien ingresa a mitad de mes NO cobra el mes entero", () => {
-    // Ingreso el 20 de agosto: 12 días de relación laboral (del 20 al 31).
+    // Ingreso el 20 de agosto: del 20 al 30 comercial (el 31 cuenta como 30) = 11.
     const dias = diasConDerechoASalario({ fechaIngreso: d("2026-08-20"), fechaSalida: null, ...mes });
     expect(dias).toBeLessThan(30);
-    expect(dias).toBe(12); // 12/31 del período, prorrateado sobre la convención de 30
+    expect(dias).toBe(11);
+  });
+
+  it("el tramo parcial se cuenta en días comerciales, sea el mes de 28, 30 o 31", () => {
+    // Sale el 20 de un mes de 31: 20 días (antes 19, por prorratear 20/31).
+    expect(diasConDerechoASalario({ fechaIngreso: d("2020-01-01"), fechaSalida: d("2026-08-20"), ...mes })).toBe(20);
+    // Entra el 16 de febrero: 15 días, como en cualquier mes (antes 14).
+    const febrero = { desde: d("2026-02-01"), hasta: d("2026-02-28"), diasMes: 30 };
+    expect(diasConDerechoASalario({ fechaIngreso: d("2026-02-16"), fechaSalida: null, ...febrero })).toBe(15);
+    // Sale el último día de febrero: mes completo.
+    expect(diasConDerechoASalario({ fechaIngreso: d("2020-01-01"), fechaSalida: d("2026-02-28"), ...febrero })).toBe(30);
+  });
+
+  it("días comerciales: cada mes vale 30", () => {
+    expect(diasComerciales(d("2026-07-01"), d("2026-12-31"))).toBe(180);
+    expect(diasComerciales(d("2026-08-01"), d("2026-08-31"))).toBe(30);
+    expect(diasComerciales(d("2026-02-16"), d("2026-02-28"))).toBe(15);
+    expect(diasComerciales(d("2031-07-01"), d("2032-03-20"))).toBe(260);
+    expect(diasComerciales(d("2026-01-31"), d("2026-01-31"))).toBe(1);
+    expect(diasComerciales(d("2026-03-10"), d("2026-03-09"))).toBe(0);
   });
 
   it("quien causa baja a mitad de mes cobra sólo hasta su último día", () => {

@@ -20,14 +20,18 @@ const zTasa = zPorcentaje.refine(
   "máximo 2 decimales"
 );
 
+/** Montos en lempiras y centavos: más de 2 decimales es un error de captura, no algo que redondear. */
+const dosDecimales = (n: number | null | undefined) => n === null || n === undefined || Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+const zCentavos = zMontoAnulable.refine(dosDecimales, "máximo 2 decimales");
+
 const schema = z.object({
   modo: z.enum(["PORCENTAJE", "MONTO_FIJO"]),
   porcentajeEmpleado: zTasa.nullable().optional(),
   porcentajeEmpleador: zTasa,
-  topeMaximo: zMontoPositivo.nullable().optional(),
-  topeMinimo: zMontoAnulable,
-  montoFijoEmpleado: zMontoAnulable,
-  montoFijoEmpleador: zMontoAnulable,
+  topeMaximo: zMontoPositivo.nullable().optional().refine(dosDecimales, "máximo 2 decimales"),
+  topeMinimo: zCentavos,
+  montoFijoEmpleado: zCentavos,
+  montoFijoEmpleador: zCentavos,
 });
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -66,6 +70,13 @@ export async function PUT(
       falta("montoFijoEmpleado");
     }
     if (d.montoFijoEmpleador === null || d.montoFijoEmpleador === undefined) falta("montoFijoEmpleador");
+    // Un aporte MENSUAL mayor que el techo de su propia base es un error de captura
+    // (p. ej. «297,58» leído como 29,758): se rechaza antes de descontarlo a todos.
+    if (meta.tieneTope && d.topeMaximo) {
+      const techo = d.topeMaximo;
+      if (meta.tieneEmpleado && d.montoFijoEmpleado && d.montoFijoEmpleado > techo) falta("montoFijoEmpleado", `no puede pasar del techo de la base (${techo})`);
+      if (d.montoFijoEmpleador && d.montoFijoEmpleador > techo) falta("montoFijoEmpleador", `no puede pasar del techo de la base (${techo})`);
+    }
   }
   if (Object.keys(detalles).length > 0) {
     return NextResponse.json({ error: "Datos inválidos", detalles }, { status: 400 });

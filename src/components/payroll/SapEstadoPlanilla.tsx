@@ -125,7 +125,7 @@ export default function SapEstadoPlanilla({ planillaId, estadoPlanilla, puedeEnv
   const cargar = useCallback(async () => {
     try {
       const res = await fetch(`/api/planillas/${planillaId}/sap`, { cache: "no-store" });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo consultar el estado en SAP");
       setEstado(d);
       setError(null);
@@ -156,7 +156,7 @@ export default function SapEstadoPlanilla({ planillaId, estadoPlanilla, puedeEnv
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: a }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo enviar");
       const env: Envio | null = d.envio;
       if (d.ok && env) {

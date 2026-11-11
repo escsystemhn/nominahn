@@ -12,6 +12,8 @@
 import type { Content, ContentText, TDocumentDefinitions } from "pdfmake/interfaces";
 import { pdfmakeListo } from "@/lib/reportes/salida";
 import { PRODUCTO } from "@/lib/marca";
+import { LOGO_CAJA_ALTO, LOGO_CAJA_ANCHO } from "@/lib/organizacion/logo";
+import type { LogoDocumento } from "@/lib/organizacion/logo-bd";
 
 const TINTA = "#0D2B38";
 const LINEA = "#C9D3D8";
@@ -23,6 +25,8 @@ export interface EmpresaDoc {
   direccion?: string | null;
   telefono?: string | null;
   email?: string | null;
+  /** El de la sucursal de la persona, si tiene. */
+  logo?: LogoDocumento | null;
 }
 
 export interface FirmaDoc {
@@ -74,10 +78,11 @@ function membrete(e: EmpresaDoc): Content {
   const linea2 = [e.rtn ? `RTN ${e.rtn}` : null, e.telefono ? `Tel. ${e.telefono}` : null, e.email].filter(Boolean).join("   ");
   return {
     stack: [
+      e.logo ? { image: `data:image/png;base64,${e.logo.png.toString("base64")}`, fit: [LOGO_CAJA_ANCHO * 0.75, LOGO_CAJA_ALTO * 0.75], margin: [0, 0, 0, 8] } : { text: "" },
       { text: e.nombre, fontSize: 13, bold: true, color: TINTA },
       e.direccion ? { text: e.direccion, fontSize: 8.5, color: TENUE, margin: [0, 2, 0, 0] } : { text: "" },
       linea2 ? { text: linea2, fontSize: 8.5, color: TENUE, margin: [0, 1, 0, 0] } : { text: "" },
-      { canvas: [{ type: "line", x1: 0, y1: 6, x2: 540, y2: 6, lineWidth: 0.8, lineColor: TINTA }] },
+      { canvas: [{ type: "line", x1: 0, y1: 6, x2: 516, y2: 6, lineWidth: 0.8, lineColor: TINTA }] },
     ],
     margin: [0, 0, 0, 18],
   } as unknown as Content;

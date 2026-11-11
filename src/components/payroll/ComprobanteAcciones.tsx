@@ -47,7 +47,7 @@ export default function ComprobanteAcciones({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ empleadoIds: [empleadoId] }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "No se pudo enviar");
       if (data.enviados === 1) avisar.exito(`Comprobante enviado a ${correo}.`);
       else throw new Error(data.primerError ?? "El servidor de correo rechazó el envío.");
@@ -75,7 +75,7 @@ export default function ComprobanteAcciones({
       )}
       <div className="mt-1 text-xs space-x-2">
         <a href={`${url}?modo=ver`} target="_blank" rel="noopener noreferrer" className={enlace}>Ver</a>
-        <a href={url} className="text-gray-500 hover:underline">Descargar</a>
+        <a href={url} title="Descargar en PDF" className="text-gray-500 hover:underline">Descargar</a>
         {puedeEnviar && correo && (
           <button onClick={enviar} disabled={enviando} title={`Enviar a ${correo}`}
             className="text-green-700 hover:underline disabled:opacity-40">

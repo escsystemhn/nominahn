@@ -16,6 +16,7 @@ const schema = z.object({
   codigo: z.string().trim().min(1).max(50).optional(),
   direccion: z.string().trim().max(300).nullable().optional(),
   telefono: z.string().trim().max(50).nullable().optional(),
+  descripcion: z.string().trim().max(300).nullable().optional(),
   activa: z.boolean().optional(),
 });
 
@@ -30,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const antes = await prisma.sucursal.findUnique({
     where: { id },
-    select: { nombre: true, codigo: true, direccion: true, telefono: true, activa: true, empresaId: true },
+    select: { nombre: true, codigo: true, direccion: true, telefono: true, descripcion: true, activa: true, empresaId: true },
   });
   if (!antes) return NextResponse.json({ error: "La sucursal no existe." }, { status: 404 });
 
@@ -58,6 +59,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       codigo,
       ...(c.direccion !== undefined ? { direccion: c.direccion || null } : {}),
       ...(c.telefono !== undefined ? { telefono: c.telefono || null } : {}),
+      ...(c.descripcion !== undefined ? { descripcion: c.descripcion || null } : {}),
       ...(c.activa !== undefined ? { activa: c.activa } : {}),
     },
   });
@@ -65,8 +67,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "UPDATE", tabla: "Sucursal", registroId: id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
-    valorAnterior: { nombre: antes.nombre, codigo: antes.codigo, direccion: antes.direccion, telefono: antes.telefono, activa: antes.activa },
-    valorNuevo: { nombre: sucursal.nombre, codigo: sucursal.codigo, direccion: sucursal.direccion, telefono: sucursal.telefono, activa: sucursal.activa },
+    valorAnterior: { nombre: antes.nombre, codigo: antes.codigo, direccion: antes.direccion, telefono: antes.telefono, descripcion: antes.descripcion, activa: antes.activa },
+    valorNuevo: { nombre: sucursal.nombre, codigo: sucursal.codigo, direccion: sucursal.direccion, telefono: sucursal.telefono, descripcion: sucursal.descripcion, activa: sucursal.activa },
     ip, userAgent,
   });
   return NextResponse.json(sucursal);

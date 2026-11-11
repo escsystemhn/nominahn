@@ -119,8 +119,8 @@ export async function textoDeArchivo(nombre: string, bytes: Uint8Array): Promise
   return /\.xlsx$/i.test(nombre) ? xlsxATexto(bytes) : { ok: true, texto: decodificar(bytes) };
 }
 
-const COLUMNAS_NUMERO = new Set(["monto", "salario_base", "diurnas", "mixtas", "nocturnas", "feriado"]);
-const COLUMNAS_ENTERO = new Set(["cuotas_meses"]);
+const COLUMNAS_NUMERO = new Set(["monto", "salario_base", "diurnas", "mixtas", "nocturnas", "feriado", "saldo"]);
+const COLUMNAS_ENTERO = new Set(["cuotas_meses", "cuotas_pagadas"]);
 
 /**
  * Formato de cada columna. Todo lo demás va como TEXTO, y eso incluye las fechas:
@@ -128,25 +128,41 @@ const COLUMNAS_ENTERO = new Set(["cuotas_meses"]);
  * mientras que como texto llega tal cual y el validador lo lee con el día primero.
  * También conserva los ceros a la izquierda de un código o una identidad.
  */
-function formatoColumna(clave: string): string {
-  if (COLUMNAS_NUMERO.has(clave)) return "0.00";
-  if (COLUMNAS_ENTERO.has(clave)) return "0";
+function formatoColumna(c: ColumnaCsv): string {
+  // Con separador de miles: una columna de montos por empleado se lee como planilla.
+  if (c.formato === "monto") return "#,##0.00";
+  if (c.formato === "entero" || COLUMNAS_ENTERO.has(c.clave)) return "0";
+  if (COLUMNAS_NUMERO.has(c.clave)) return "0.00";
   return "@";
 }
+
+const esNumerica = (c: ColumnaCsv) => !!c.formato || COLUMNAS_NUMERO.has(c.clave) || COLUMNAS_ENTERO.has(c.clave);
 
 /**
  * Plantilla vacía: hoja «Datos» sólo con cabeceras y hoja «Instrucciones» con el
  * ejemplo. Sin fila de ejemplo en los datos: su código podría ser el de un empleado
  * real y aplicarse si a alguien se le olvida borrarla.
+ *
+ * `filas` la llena al exportar personas reales: el mismo archivo se puede corregir
+ * y volver a importar. Los montos van como número, para que Excel pueda sumarlos.
  */
-export async function plantillaXlsx(columnas: readonly ColumnaCsv[]): Promise<Uint8Array> {
+export async function plantillaXlsx(
+  columnas: readonly ColumnaCsv[],
+  filas: readonly (readonly string[])[] = [],
+  /**
+   * `notas`: las primeras líneas de «Instrucciones», en lugar de la general.
+   * `fijarColumnas`: las primeras quedan quietas al desplazarse.
+   * `listas`: columnas que se llenan eligiendo de una lista desplegable (clave → valores).
+   */
+  opciones: { notas?: readonly string[]; fijarColumnas?: number; listas?: Record<string, readonly string[]> } = {}
+): Promise<Uint8Array> {
   const libro = new ExcelJS.Workbook();
-  const datos = libro.addWorksheet("Datos", { views: [{ state: "frozen", ySplit: 1 }] });
+  const datos = libro.addWorksheet("Datos", { views: [{ state: "frozen", ySplit: 1, xSplit: opciones.fijarColumnas ?? 0 }] });
   datos.columns = columnas.map((c) => ({
     header: c.etiqueta,
     key: c.clave,
-    width: Math.max(14, c.etiqueta.length + 4),
-    style: { numFmt: formatoColumna(c.clave) },
+    width: Math.min(40, Math.max(14, c.etiqueta.length + 4)),
+    style: { numFmt: formatoColumna(c) },
   }));
   const cabecera = datos.getRow(1);
   cabecera.eachCell((celda, n) => {
@@ -155,9 +171,28 @@ export async function plantillaXlsx(columnas: readonly ColumnaCsv[]): Promise<Ui
     celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: columnas[n - 1].requerido ? "FF0B5A6E" : "FF4B5563" } };
     celda.alignment = { vertical: "middle" };
   });
+  for (const fila of filas) {
+    datos.addRow(fila.map((valor, i) => (esNumerica(columnas[i]) && valor !== "" ? Number(valor) : valor)));
+  }
+  // Lista desplegable: elegir es más rápido que escribir y no deja errores de tecleo.
+  // Excel limita la lista escrita a 255 caracteres; los valores no pueden llevar comas.
+  const hasta = Math.max(filas.length + 200, 300);
+  for (const [clave, valores] of Object.entries(opciones.listas ?? {})) {
+    const col = columnas.findIndex((c) => c.clave === clave) + 1;
+    if (!col) continue;
+    const formula = `"${valores.join(",")}"`;
+    for (let r = 2; r <= hasta; r++) {
+      datos.getCell(r, col).dataValidation = {
+        type: "list", allowBlank: true, formulae: [formula],
+        showErrorMessage: true, errorTitle: "Valor no válido", error: `Elija de la lista: ${valores.join(", ")}.`,
+      };
+    }
+  }
 
   const ayuda = libro.addWorksheet("Instrucciones");
-  ayuda.addRow(["Llene la hoja Datos, una fila por registro. No cambie los nombres de las columnas. Las de color azul son obligatorias."]);
+  for (const nota of opciones.notas ?? ["Llene la hoja Datos, una fila por registro. No cambie los nombres de las columnas. Las de color azul son obligatorias."]) {
+    ayuda.addRow([nota]);
+  }
   ayuda.addRow([]);
   const titulos = ayuda.addRow(["Columna", "¿Obligatoria?", "Qué poner", "Ejemplo"]);
   titulos.font = { bold: true };

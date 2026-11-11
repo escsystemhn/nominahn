@@ -223,6 +223,29 @@ export const COLUMNAS_DEDUCCION: readonly ColumnaCsv[] = [
   },
 ] as const;
 
+// ─── CATÁLOGO DE TIPOS DE DEDUCCIÓN ──────────────────────────────────────────
+
+export const COLUMNAS_TIPO_DEDUCCION: readonly ColumnaCsv[] = [
+  {
+    clave: "codigo",
+    etiqueta: "Codigo",
+    descripcion: "Código corto y único, sin espacios (letras, números, guion). Es la CLAVE: si existe se actualiza; si no, se crea. Es el que va en los demás archivos y no se cambia después.",
+    requerido: true,
+    ejemplo: "COOP-ELGA",
+  },
+  { clave: "nombre", etiqueta: "Nombre", descripcion: "Como se verá en pantallas, planilla y comprobantes. Obligatorio al crear.", requerido: true, ejemplo: "Cooperativa ELGA" },
+  {
+    clave: "categoria",
+    etiqueta: "Categoria",
+    descripcion: "Elija de la lista. Decide hasta cuánto se cobra: Préstamo de la empresa y Embargo judicial, hasta la cuarta parte de lo que excede al mínimo (Arts. 371-372); Pensión alimenticia, hasta el 50 %; AFP baja la base del ISR; las demás, sin pasar del neto. Obligatoria al crear.",
+    requerido: true,
+    ejemplo: "Cooperativa",
+  },
+  { clave: "monto_habitual", etiqueta: "Monto Habitual", descripcion: "Opcional. Se propone al asignarlo a un empleado (por ejemplo, el seguro médico). Vacío: sin monto habitual.", formato: "monto", ejemplo: "500.00" },
+  { clave: "descripcion", etiqueta: "Descripcion", descripcion: "Opcional. Para qué es, a quién se le paga.", ejemplo: "Cooperativa de ahorro y crédito ELGA" },
+  { clave: "activo", etiqueta: "Activo", descripcion: "Sí o No. Vacío: Sí al crear y sin cambio al actualizar. Uno inactivo ya no se ofrece para asignar, pero lo asignado se sigue cobrando.", ejemplo: "Sí" },
+] as const;
+
 // ─── HORAS EXTRA ──────────────────────────────────────────────────────────────
 
 export const COLUMNAS_HORAS_EXTRA: readonly ColumnaCsv[] = [
@@ -246,9 +269,9 @@ export const COLUMNAS_HORAS_EXTRA: readonly ColumnaCsv[] = [
     requerido: true,
     ejemplo: "15/10/2026",
   },
-  { clave: "diurnas", etiqueta: "Extra 25%", descripcion: "Cantidad de horas con recargo de 25 % (extra en jornada diurna). Sólo la cantidad: el sistema calcula el costo. En blanco = 0.", ejemplo: "2" },
-  { clave: "mixtas", etiqueta: "Extra 50%", descripcion: "Cantidad de horas con recargo de 50 % (extra en jornada mixta). En blanco = 0.", ejemplo: "0" },
-  { clave: "nocturnas", etiqueta: "Extra 75%", descripcion: "Cantidad de horas con recargo de 75 % (extra en jornada nocturna). En blanco = 0.", ejemplo: "1.5" },
+  { clave: "diurnas", etiqueta: "Extra 25%", descripcion: "Horas extra trabajadas en el período diurno (5:00 a 19:00): recargo de 25 % sobre la hora diurna (Art. 330). Sólo la cantidad: el sistema calcula el costo. En blanco = 0.", ejemplo: "2" },
+  { clave: "mixtas", etiqueta: "Extra 50%", descripcion: "Horas extra de una jornada diurna o mixta trabajadas en el período nocturno (19:00 a 5:00): recargo de 50 % sobre la hora diurna (Art. 330). En blanco = 0.", ejemplo: "1.5" },
+  { clave: "nocturnas", etiqueta: "Extra 75%", descripcion: "Horas extra que prolongan una jornada nocturna: recargo de 75 % sobre la hora nocturna, salario ÷ 30 ÷ 6 (Art. 330). En blanco = 0.", ejemplo: "0" },
   { clave: "feriado", etiqueta: "Extra 100%", descripcion: "Cantidad de horas con recargo de 100 % (feriado o día de descanso, se pagan al doble). En blanco = 0.", ejemplo: "0" },
   { clave: "observacion", etiqueta: "Observacion", descripcion: "Motivo o referencia. Opcional.", ejemplo: "Inventario de fin de mes" },
 ] as const;

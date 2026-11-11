@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAvisos } from "@/components/ui/Avisos";
 import { Field, PestanasFicha, ResumenErrores, erroresPorPestana, fieldClass, primerError, type PestanaFicha } from "./CamposFicha";
+import { montoComoTexto } from "@/lib/formato/monto-texto";
 
 const OBLIGATORIO = "Este dato es obligatorio.";
 const ELEGIR = "Elija una opción.";
@@ -46,8 +47,10 @@ const schema = z.object({
   emailCorporativo: z.string().optional(),
   extension: z.string().optional(),
   emailPersonal: z.union([z.literal(""), z.string().trim().email("Escriba un correo válido.")]).optional(),
-  // Vacío = IHSS por porcentaje. Texto: el servidor lo valida y lo convierte.
-  ihssMontoFijo: z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 1500.00.")]).optional(),
+  // Vacío = IHSS por porcentaje. Texto: el servidor lo valida y lo convierte. Se
+  // acepta la coma decimal («297,58»): ver `montoComoTexto`.
+  ihssMontoFijo: z.string().transform(montoComoTexto)
+    .pipe(z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 595.16.")])).optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -388,13 +391,13 @@ export default function EditarEmpleadoForm({
             <Field
               label="IHSS fijo mensual (L)"
               error={errors.ihssMontoFijo?.message}
-              hint="Reemplaza el IHSS calculado por porcentaje. Mensual: en planilla quincenal se descuenta la mitad. El aporte patronal sigue por porcentaje."
+              hint="Reemplaza el IHSS calculado (EM + IVM) del trabajador. Es mensual: en planilla quincenal se descuenta como diga Parámetros de ley (la mitad en cada quincena o completo en una). El aporte patronal sigue por porcentaje."
             >
               <input
                 {...register("ihssMontoFijo")}
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
                 className={fieldClass}
                 placeholder="Vacío = cálculo por porcentaje"
               />

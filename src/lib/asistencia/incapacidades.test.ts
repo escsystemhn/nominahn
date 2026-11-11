@@ -20,13 +20,14 @@ describe("reglas", () => {
   });
   it("lee lo guardado sobre lo de omisión y descarta valores imposibles", () => {
     const r = normalizarReglas({ ENFERMEDAD_COMUN: { diasPatrono: 2, porcentajeSubsidio: 70 }, MATERNIDAD: { porcentajeComplemento: 150 }, BASURA: {} });
-    expect(r.ENFERMEDAD_COMUN).toEqual({ diasPatrono: 2, porcentajeSubsidio: 70, porcentajeComplemento: 0 });
+    expect(r.ENFERMEDAD_COMUN).toEqual({ diasPatrono: 2, porcentajeSubsidio: 70, porcentajeComplemento: 34 });
     expect(r.MATERNIDAD.porcentajeComplemento).toBe(34);
     expect(normalizarReglas(null)).toEqual(REGLAS_POR_OMISION);
   });
-  it("subsidio más complemento no pasa de 100", () => {
+  it("el subsidio no pasa de 100 %; el complemento ya no se valida (el patrono completa siempre)", () => {
     expect(validarReglas(REGLAS_POR_OMISION)).toEqual([]);
-    expect(validarReglas({ ...REGLAS_POR_OMISION, MATERNIDAD: { diasPatrono: 0, porcentajeSubsidio: 66, porcentajeComplemento: 50 } })[0]).toMatch(/Maternidad/);
+    expect(validarReglas({ ...REGLAS_POR_OMISION, MATERNIDAD: { diasPatrono: 0, porcentajeSubsidio: 120, porcentajeComplemento: 0 } })[0]).toMatch(/Maternidad/);
+    expect(validarReglas({ ...REGLAS_POR_OMISION, MATERNIDAD: { diasPatrono: 0, porcentajeSubsidio: 66, porcentajeComplemento: 50 } })).toEqual([]);
   });
   it("una prórroga no reinicia los días del patrono", () => {
     expect(diasPatronoParaNueva(REGLAS_POR_OMISION.ENFERMEDAD_COMUN, 0)).toBe(3);
@@ -36,7 +37,7 @@ describe("reglas", () => {
 });
 
 describe("reparto de días en el período", () => {
-  const inc = { fechaInicio: f("2026-10-10"), fechaFin: f("2026-10-19"), diasPatrono: 3, porcentajeComplemento: 0 };
+  const inc = { fechaInicio: f("2026-10-10"), fechaFin: f("2026-10-19"), diasPatrono: 3, porcentajeSubsidio: 66 };
 
   it("10 días: 3 del patrono y 7 del IHSS", () => {
     expect(diasEntre(inc.fechaInicio, inc.fechaFin)).toBe(10);
@@ -61,12 +62,15 @@ describe("reparto de días en el período", () => {
 });
 
 describe("descuento en planilla y subsidio estimado", () => {
-  it("salario diario × días del IHSS × (1 − complemento)", () => {
-    const incs = [{ fechaInicio: f("2026-10-10"), fechaFin: f("2026-10-19"), diasPatrono: 3, porcentajeComplemento: 0 }];
-    expect(descuentoIncapacidades(15000, incs, f("2026-10-01"), f("2026-10-31"))).toEqual({ diasIhss: 7, descuento: 3500 });
+  it("se descuenta sólo lo que paga el IHSS; el patrono completa la diferencia (Art. 73)", () => {
+    const incs = [{ fechaInicio: f("2026-10-10"), fechaFin: f("2026-10-19"), diasPatrono: 3, porcentajeSubsidio: 66 }];
+    // 7 días del IHSS: 66 % de 500 diarios = 2,310. El patrono paga los otros 1,190.
+    expect(descuentoIncapacidades(15000, incs, f("2026-10-01"), f("2026-10-31"))).toEqual({ diasIhss: 7, descuento: 2310 });
+    // Con techo de 10,000 el IHSS paga menos (1,540) y el patrono completa más.
+    expect(descuentoIncapacidades(15000, incs, f("2026-10-01"), f("2026-10-31"), 10000)).toEqual({ diasIhss: 7, descuento: 1540 });
   });
   it("maternidad: el patrono sólo deja de pagar lo que cubre el IHSS", () => {
-    const incs = [{ fechaInicio: f("2026-10-01"), fechaFin: f("2026-12-23"), diasPatrono: 0, porcentajeComplemento: 34 }];
+    const incs = [{ fechaInicio: f("2026-10-01"), fechaFin: f("2026-12-23"), diasPatrono: 0, porcentajeSubsidio: 66 }];
     expect(descuentoIncapacidades(15000, incs, f("2026-10-01"), f("2026-10-15"))).toEqual({ diasIhss: 15, descuento: 4950 });
   });
   it("subsidio estimado con techo de cotización", () => {

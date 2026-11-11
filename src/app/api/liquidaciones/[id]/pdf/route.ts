@@ -11,6 +11,7 @@ import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { formatCurrency, formatDate, formatDateLong, nombreCompleto } from "@/lib/utils";
 import { pdfFiniquito, type ConceptoFiniquito } from "@/lib/documentos/pdf";
 import { leerFirmante } from "@/lib/documentos/firmante";
+import { logoParaDocumento } from "@/lib/organizacion/logo-bd";
 import { montoALetras } from "@/lib/documentos/numero-letras";
 import { etiquetaCausa, textoTiempoServicio, folioLiquidacion } from "@/lib/payroll/etiquetas-prestaciones";
 import { etiquetaParentesco } from "@/lib/empleados/familia";
@@ -27,7 +28,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         select: {
           id: true, sucursalId: true, departamentoId: true,
           codigo: true, identidad: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
-          sucursal: { select: { empresa: { select: { nombre: true, rtn: true, direccion: true, telefono: true, email: true } } } },
+          sucursal: {
+            select: {
+              logo: { select: { png: true, ancho: true, alto: true } },
+              empresa: { select: { nombre: true, rtn: true, direccion: true, telefono: true, email: true } },
+            },
+          },
           puesto: { select: { nombre: true } },
           departamento: { select: { nombre: true } },
           beneficiarios: { orderBy: { createdAt: "asc" } },
@@ -41,7 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const firmante = await leerFirmante(prisma);
   const conceptos = (Array.isArray(liq.conceptos) ? liq.conceptos : []) as unknown as ConceptoFiniquito[];
   const folio = folioLiquidacion(liq.id, liq.fechaSalida);
-  const empresa = liq.empleado.sucursal.empresa;
+  const empresa = { ...liq.empleado.sucursal.empresa, logo: logoParaDocumento(liq.empleado.sucursal.logo) };
 
   const buf = await pdfFiniquito({
     empresa,

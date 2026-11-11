@@ -20,10 +20,12 @@ export interface ColumnaCsv {
   /** Se exporta para dar contexto, pero al importar se ignora. */
   readonly soloLectura?: boolean;
   readonly ejemplo?: string;
+  /** Celda numérica en Excel, para columnas que no están en la lista fija de `xlsx.ts` (los tipos de deducción). */
+  readonly formato?: "monto" | "entero";
 }
 
 /** Lo que completa las rutas /api/importar y /api/exportar. */
-export type RecursoImportacion = "empleados" | "deducciones" | "horas-extra";
+export type RecursoImportacion = "empleados" | "deducciones" | "horas-extra" | "tipos-deduccion";
 
 /** Qué se permite hacer con las filas del archivo. */
 export type ModoImportacion = "CREAR" | "ACTUALIZAR" | "CREAR_O_ACTUALIZAR";
@@ -52,7 +54,8 @@ export type AccionFila = "CREAR" | "ACTUALIZAR" | "OMITIR";
 /** Resumen de una fila para la vista previa, sin exponer el registro completo. */
 export interface FilaPrevisualizada {
   linea: number;
-  accion: AccionFila;
+  /** QUITAR: un monto del período que deja de cobrarse. */
+  accion: AccionFila | "QUITAR";
   /** Identificador legible: código de empleado, o empleado + deducción. */
   referencia: string;
   /** Descripción corta de lo que cambia, para las filas de actualización. */
@@ -77,6 +80,27 @@ export interface InformeValidacion {
   expiraEn: string | null;
   /** `false` cuando hay errores: no hay nada que confirmar. */
   aplicable: boolean;
+  /** Cifras propias de la vista previa, en lugar de altas, actualizaciones y omitidas. */
+  cifras?: Array<{ label: string; valor: number }>;
+  /** Una línea que dice qué se va a aplicar, sobre la tabla de detalle. */
+  resumen?: string;
+  /** Montos del período: columnas que todavía no son tipos de deducción, con lo que se propone para crearlas. */
+  tiposNuevos?: TipoSugerido[];
+}
+
+/** Una columna del archivo de montos que no es un tipo de deducción, y cómo se propone crearlo. */
+export interface TipoSugerido {
+  cabecera: string;
+  nombre: string;
+  codigo: string;
+  /** Categoría propuesta (`CategoriaDeduccion`); la persona la confirma. */
+  tipo: string;
+  /** Celdas con monto en esa columna. */
+  conMontos: number;
+  /** Se propone crearla (marcada). */
+  crear: boolean;
+  /** Por qué se propone no crearla. */
+  motivo: string | null;
 }
 
 /** Lo que devuelve la fase de aplicación. */
@@ -85,4 +109,6 @@ export interface ResultadoImportacion {
   creados: number;
   actualizados: number;
   omitidos: number;
+  /** Frase del resultado, si el recurso la escribe a su manera. */
+  mensaje?: string;
 }

@@ -12,6 +12,7 @@ const schema = z.object({
   direccion: z.string().trim().max(300).optional(),
   telefono: z.string().trim().max(50).optional(),
   email: z.string().trim().email().max(150).optional().or(z.literal("")),
+  descripcion: z.string().trim().max(300).optional(),
   empresaId: zId,
 });
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
   const repetida = motivoSucursalRepetida(parsed.data, otras);
   if (repetida) return NextResponse.json({ error: repetida }, { status: 409 });
 
-  const sucursal = await prisma.sucursal.create({ data: parsed.data });
+  const sucursal = await prisma.sucursal.create({ data: { ...parsed.data, descripcion: parsed.data.descripcion || null } });
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "CREATE", tabla: "Sucursal", registroId: sucursal.id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,

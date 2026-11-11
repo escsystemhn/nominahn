@@ -8,7 +8,7 @@
  * equivocado es peor que ninguno.
  */
 
-export const VERSION = "1.0";
+export const VERSION = "2.0";
 
 /** Contacto verificado en esc-systemhn.com. */
 export const SOPORTE = {
@@ -24,6 +24,38 @@ export interface Novedad {
 }
 
 export const NOVEDADES: Record<string, Novedad[]> = {
+  "2.0": [
+    {
+      titulo: "Jerarquía de nómina",
+      detalle: "Vista en árbol por frecuencia, grupo, empresa y departamento. Se activa en Configuración.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Impresión por empresa",
+      detalle: "Cada empresa en su hoja, con su nombre y RTN, en PDF o en Excel.",
+      modulo: "Reportes",
+    },
+    {
+      titulo: "Revisar antes de confirmar",
+      detalle: "Compare la planilla con la anterior antes de confirmarla o aprobarla.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Reabrir y anular planillas",
+      detalle: "Una planilla aprobada o pagada se puede revertir, con motivo obligatorio y según los permisos de cada cuenta.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Logo por sucursal",
+      detalle: "Cada sucursal lleva su logo en sus comprobantes y documentos.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "Buscador general",
+      detalle: "Encuentre empleados, planillas y pantallas con Ctrl K.",
+      modulo: "Inicio",
+    },
+  ],
   "1.0": [
     {
       titulo: "Planilla en borrador",

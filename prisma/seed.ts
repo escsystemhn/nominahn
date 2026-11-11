@@ -392,10 +392,11 @@ async function main() {
     { nombre: "RAP - Fondo de Vivienda (FOVIIF)", codigo: "RAP", tipo: "LEGAL" as const, porcentaje: 0.015, aplicaEmpleado: true, aplicaEmpleador: true, porcentajeEmpleador: 0.015, topeMinimo: 11903.13, topeMaximo: 57896.16, esLegal: true, descripcion: "Fondo de Vivienda e Inclusión Financiera del RAP. Base = excedente del salario sobre L11,903.13, hasta L57,896.16. Valores 2026: verificar vigencia." },
     { nombre: "Fondo de Reserva Laboral (RAP)", codigo: "RESERVA_LABORAL", tipo: "LEGAL" as const, aplicaEmpleado: false, aplicaEmpleador: true, porcentajeEmpleador: 0.04, topeMaximo: 57896.16, esLegal: true, descripcion: "Aporte patronal del 4% del salario ordinario al Fondo de Reserva Laboral de Capitalización Individual (Decreto 47-2024). Techo = 3 salarios mínimos. Al liquidar se descuenta del auxilio de cesantía." },
     { nombre: "AFP Atlántida", codigo: "AFP-ATL", tipo: "AFP" as const, porcentaje: 0.03, aplicaEmpleado: true, esLegal: false, descripcion: "Administradora de Fondos de Pensiones" },
-    { nombre: "INFOP", codigo: "INFOP", tipo: "LEGAL" as const, porcentaje: 0.01, aplicaEmpleado: false, aplicaEmpleador: true, porcentajeEmpleador: 0.01, esLegal: true, descripcion: "Instituto Nacional de Formación Profesional (patronal)" },
+    { nombre: "INFOP", codigo: "INFOP", tipo: "LEGAL" as const, porcentaje: 0, aplicaEmpleado: false, aplicaEmpleador: true, porcentajeEmpleador: 0.01, esLegal: true, descripcion: "Instituto Nacional de Formación Profesional (patronal)" },
     { nombre: "Cooperativa Empleados", codigo: "COOP1", tipo: "COOPERATIVA" as const, esLegal: false, descripcion: "Cuota mensual cooperativa" },
     { nombre: "Préstamo Empresa", codigo: "PREST", tipo: "PRESTAMO" as const, esLegal: false, descripcion: "Préstamos otorgados por la empresa" },
     { nombre: "Adelanto de Salario", codigo: "ADELANTO", tipo: "ADELANTO" as const, esLegal: false, descripcion: "Adelantos de quincena o salario" },
+    { nombre: "Retención de ISR fija por período", codigo: "ISR-FIJO", tipo: "IMPUESTO" as const, esLegal: false, descripcion: "Reemplaza el ISR calculado por este monto en cada planilla (retención proyectada por el contador)" },
   ];
 
   for (const d of deduccionesData) {

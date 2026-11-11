@@ -43,6 +43,31 @@ export function columnasNumericas(cabeceras: string[], datos: string[][]): boole
   });
 }
 
+// ─── Papel ────────────────────────────────────────────────────────────────────
+
+/**
+ * Tamaños de papel para imprimir. La planilla detallada lleva quince columnas: en
+ * carta la letra queda en 6 puntos; en legal o doble carta se lee sin lupa. Medidas en
+ * puntos (72 por pulgada); `excel` es el código de tamaño de la hoja de Excel.
+ */
+export type Papel = "CARTA" | "OFICIO" | "LEGAL" | "DOBLE_CARTA";
+
+export const PAPELES: Record<Papel, { etiqueta: string; pdf: "LETTER" | "FOLIO" | "LEGAL" | "TABLOID"; corto: number; largo: number; excel: number }> = {
+  CARTA: { etiqueta: "Carta (8.5 × 11 pulg.)", pdf: "LETTER", corto: 612, largo: 792, excel: 1 },
+  OFICIO: { etiqueta: "Oficio (8.5 × 13 pulg.)", pdf: "FOLIO", corto: 612, largo: 936, excel: 14 },
+  LEGAL: { etiqueta: "Legal (8.5 × 14 pulg.)", pdf: "LEGAL", corto: 612, largo: 1008, excel: 5 },
+  DOBLE_CARTA: { etiqueta: "Doble carta (11 × 17 pulg.)", pdf: "TABLOID", corto: 792, largo: 1224, excel: 3 },
+};
+
+export function leerPapel(valor: string | null | undefined): Papel | undefined {
+  return valor && valor in PAPELES ? (valor as Papel) : undefined;
+}
+
+/** Sin papel elegido: carta, salvo los reportes muy anchos, que van en legal. */
+export function papelPorOmision(columnas: number): Papel {
+  return columnas > 12 ? "LEGAL" : "CARTA";
+}
+
 // ─── Filas de un reporte jerárquico ───────────────────────────────────────────
 
 /**
@@ -62,6 +87,8 @@ export interface HojaReporte {
   nombre: string;
   /** Nombre corto para la pestaña de Excel. */
   pestana: string;
+  /** Lo que se dice debajo del título en lugar de «N registros» (en un resumen no hay registros). */
+  descripcion?: string;
   cabeceras: string[];
   datos: string[][];
   filas: MetaFila[];

@@ -61,7 +61,7 @@ export default function EvaluarPage() {
   useEffect(() => {
     fetch(`/api/evaluar/${token}`)
       .then(async (r) => {
-        const json = await r.json();
+        const json = await r.json().catch(() => ({}));
         if (!r.ok) {
           if (json.completada) setCompletada(true);
           else setError(json.error ?? "Error al cargar");
@@ -112,7 +112,7 @@ export default function EvaluarPage() {
     if (res.ok) {
       setCompletada(true);
     } else {
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       setError(json.error ?? "Error al enviar");
     }
   }

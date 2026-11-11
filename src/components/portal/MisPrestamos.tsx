@@ -81,7 +81,7 @@ export default function MisPrestamos() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tipo: form.tipo, monto, cuotas, motivo: form.motivo || undefined }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo enviar");
       setAviso({ ok: true, texto: d.aviso ? `Solicitud enviada. ${d.aviso}` : "Solicitud enviada a Recursos Humanos." });
       setForm((f) => ({ ...f, monto: "", motivo: "" }));

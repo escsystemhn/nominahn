@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { construirParametros, type MontosFijos, type ParametrosLegales } from "./calculos-hn";
+import { leerDistribucionQuincenal } from "./distribucion-quincenal-bd";
 
 type Config = {
   modo: "PORCENTAJE" | "MONTO_FIJO";
@@ -88,7 +89,7 @@ export async function filasVecinalVigentes() {
 }
 
 export async function cargarParametrosLegales(): Promise<ParametrosLegales> {
-  const [isr, vecinal, ihss, ivm, rap, reserva, infop, jornada] = await Promise.all([
+  const [isr, vecinal, ihss, ivm, rap, reserva, infop, jornada, distribucionQuincenal] = await Promise.all([
     filasISRVigentes(),
     filasVecinalVigentes(),
     prisma.tipoDeduccionConfig.findFirst({ where: { codigo: "IHSS", activo: true } }),
@@ -97,6 +98,7 @@ export async function cargarParametrosLegales(): Promise<ParametrosLegales> {
     prisma.tipoDeduccionConfig.findFirst({ where: { codigo: "RESERVA_LABORAL", activo: true } }),
     prisma.tipoDeduccionConfig.findFirst({ where: { codigo: "INFOP", activo: true } }),
     prisma.configuracionSistema.findUnique({ where: { clave: "JORNADA_HORAS" } }),
+    leerDistribucionQuincenal(prisma),
   ]);
 
   const jornadaHoras = jornada ? Number(jornada.valor) : null;
@@ -129,5 +131,6 @@ export async function cargarParametrosLegales(): Promise<ParametrosLegales> {
     reservaLaboralTope: num(reserva?.topeMaximo),
     jornadaHoras: Number.isFinite(jornadaHoras) && jornadaHoras! > 0 ? jornadaHoras : null,
     fijos,
+    distribucionQuincenal,
   });
 }

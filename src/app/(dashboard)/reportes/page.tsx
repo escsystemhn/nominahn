@@ -4,7 +4,7 @@ import ReportesClient from "@/components/reports/ReportesClient";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { formatDate } from "@/lib/utils";
 import { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 export default async function ReportesPage({ searchParams }: { searchParams: Promise<{ reporte?: string; planillaId?: string }> }) {
   const usuario = await requerirPermisoPagina("reportes.ver");
@@ -14,6 +14,7 @@ export default async function ReportesPage({ searchParams }: { searchParams: Pro
   // servidor del reporte aplica el alcance de todos modos.
   const soloSus = usuario.alcance === "SUCURSAL" ? { id: { in: usuario.sucursalesIds ?? [] } } : {};
   const conDivisiones = await divisionesHabilitadas(prisma);
+  const conJerarquia = await jerarquiaNominaHabilitada(prisma);
 
   const [sucursales, divisiones, departamentos, planillasRaw] = await Promise.all([
     prisma.sucursal.findMany({ where: soloSus, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
@@ -41,6 +42,7 @@ export default async function ReportesPage({ searchParams }: { searchParams: Pro
   return (
     <ReportesClient
       conDivisiones={conDivisiones}
+      conJerarquia={conJerarquia}
       sucursales={sucursales}
       divisiones={divisiones}
       departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}

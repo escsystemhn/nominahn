@@ -31,7 +31,7 @@ const IconoBuscar = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export default function BuscadorGlobal({ permisos, conEmpleado }: { permisos: readonly string[]; conEmpleado: boolean }) {
+export default function BuscadorGlobal({ permisos, conEmpleado, jerarquiaNomina }: { permisos: readonly string[]; conEmpleado: boolean; jerarquiaNomina: boolean }) {
   const [abierto, setAbierto] = useState(false);
   const boton = useRef<HTMLButtonElement>(null);
 
@@ -66,12 +66,12 @@ export default function BuscadorGlobal({ permisos, conEmpleado }: { permisos: re
         <kbd className="hidden rounded border border-gray-200 px-1.5 text-xs font-sans text-gray-500 lg:block">Ctrl K</kbd>
       </button>
       {/* Se monta al abrir: cada búsqueda empieza limpia. */}
-      {abierto && <Paleta permisos={permisos} conEmpleado={conEmpleado} onCerrar={cerrar} />}
+      {abierto && <Paleta permisos={permisos} conEmpleado={conEmpleado} jerarquiaNomina={jerarquiaNomina} onCerrar={cerrar} />}
     </>
   );
 }
 
-function Paleta({ permisos, conEmpleado, onCerrar }: { permisos: readonly string[]; conEmpleado: boolean; onCerrar: () => void }) {
+function Paleta({ permisos, conEmpleado, jerarquiaNomina, onCerrar }: { permisos: readonly string[]; conEmpleado: boolean; jerarquiaNomina: boolean; onCerrar: () => void }) {
   const router = useRouter();
   const idLista = useId();
   const [texto, setTexto] = useState("");
@@ -86,11 +86,11 @@ function Paleta({ permisos, conEmpleado, onCerrar }: { permisos: readonly string
 
   const pantallas = useMemo<Opcion[]>(() => {
     if (!hayTexto) return [];
-    return opcionesDeMenu(permisos, conEmpleado)
+    return opcionesDeMenu(permisos, conEmpleado, jerarquiaNomina)
       .filter((o) => coincide(`${o.label} ${o.seccion ?? ""}`, palabras))
       .slice(0, PANTALLAS_VISIBLES)
       .map((o) => ({ id: `pantalla-${o.href}`, titulo: o.label, detalle: o.seccion, href: o.href }));
-  }, [permisos, conEmpleado, palabras, hayTexto]);
+  }, [permisos, conEmpleado, jerarquiaNomina, palabras, hayTexto]);
 
   const grupos = [
     { nombre: "Pantallas", opciones: pantallas },

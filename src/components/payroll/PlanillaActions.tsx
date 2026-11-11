@@ -136,7 +136,7 @@ export default function PlanillaActions({
     setLoading(true);
     try {
       const res = await fetch(`/api/planillas/${planillaId}/email`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       // El servidor dice por qué (sin servidor de correo, planilla sin aprobar);
       // «intente nuevamente» no ayudaba a nadie a arreglarlo.
       if (!res.ok) throw new Error(data.error ?? "No se pudieron enviar los comprobantes.");

@@ -14,6 +14,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { repartirJornada, type HorasExtraPorJornada } from "@/lib/payroll/calculos-hn";
+import { MAX_ORDINARIA_MAS_EXTRA_H, type TipoJornada } from "@/lib/horarios/ley";
 import type { Marcaje, Prisma } from "@prisma/client";
 
 export type FuenteMarcaje = "BIOMETRICO" | "MANUAL";
@@ -30,6 +31,11 @@ export interface DatosMarcaje {
   fuente?: FuenteMarcaje;
   /** Horas de la jornada ordinaria del turno. Ver `lib/asistencia/turnos.ts`. */
   jornadaHoras?: number;
+  /**
+   * Tipo de jornada del turno (Art. 321). Decide el recargo de la extra: la que
+   * prolonga una jornada nocturna va al 75 % (Art. 330). Sin él se deduce de las marcas.
+   */
+  tipoJornada?: TipoJornada;
   /**
    * Almuerzo u otra pausa que se descuenta del lapso: no es tiempo de trabajo.
    * Lo resuelve quien llama con `resolverDescanso` (marcado o fijo del turno);
@@ -97,8 +103,10 @@ export async function registrarMarcaje(
     observacion,
     fuente = "MANUAL",
     jornadaHoras,
+    tipoJornada,
     sobrescribirManual = true,
   } = datos;
+  let observacionFinal = observacion ?? null;
 
   let horasNormales = 0;
   let horasExtra = 0;
@@ -127,11 +135,20 @@ export async function registrarMarcaje(
       jornadaHoras,
       esFeriado: recargo.recargo || !!esDiaLibre,
       minutosDescanso,
+      tipoJornada,
     });
 
     horasNormales = jornada.horasNormales;
     horasExtra = jornada.totalExtra;
     extra = jornada.extra;
+
+    // Art. 332: la jornada ordinaria más la extra no pasa de 12 horas. Se paga lo
+    // trabajado, pero el día queda señalado para que alguien lo revise.
+    const totalDia = jornada.horasNormales + jornada.totalExtra;
+    if (totalDia > MAX_ORDINARIA_MAS_EXTRA_H) {
+      const aviso = `Trabajó ${totalDia.toFixed(2)} h: pasa del máximo de ${MAX_ORDINARIA_MAS_EXTRA_H} h diarias con horas extra (Art. 332).`;
+      observacionFinal = observacionFinal ? `${observacionFinal} ${aviso}` : aviso;
+    }
   } else {
     // Sin las dos marcas no hay jornada que repartir, pero el empleado debe
     // existir igualmente: si no, el upsert falla con un error de clave foránea
@@ -171,7 +188,7 @@ export async function registrarMarcaje(
     minutosDescanso,
     esAusencia: esAusencia ?? false,
     esDiaLibre: esDiaLibre ?? false,
-    observacion: observacion ?? null,
+    observacion: observacionFinal,
     // `fuente` TAMBIÉN se actualiza, no sólo se fija al crear.
     //
     // Cuando no lo hacía, una corrección manual sobre un día que había llegado

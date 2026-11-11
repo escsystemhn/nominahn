@@ -40,7 +40,8 @@ const schemaEditar = z.object({
   genero: opcionalTexto,
   estadoCivil: opcionalTexto,
   nacionalidad: opcionalTexto,
-  identidad: opcionalTexto,
+  // Es UNIQUE: en blanco se guarda NULL, o dos personas sin identidad chocarían.
+  identidad: z.string().trim().max(200).transform((v) => v || null).optional(),
   rtn: opcionalTexto,
   ihssNro: opcionalTexto,
   rapNro: opcionalTexto,

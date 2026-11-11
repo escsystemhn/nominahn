@@ -162,6 +162,7 @@ export async function agregarEventosPendientes(opts?: {
       observacion,
       fuente: "BIOMETRICO",
       jornadaHoras: turno.jornadaHoras,
+      tipoJornada: turno.tipoJornada,
       // Lo que corrigió una persona pesa más que lo que reporta un aparato.
       sobrescribirManual: false,
     });

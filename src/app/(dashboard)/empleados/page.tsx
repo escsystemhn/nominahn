@@ -104,6 +104,7 @@ export default async function EmpleadosPage({
           <>
             <BarraDatos
               recurso="empleados"
+              elegirFilas
               puedeExportar={puedeExportar}
               puedeImportar={puedeImportar}
               incluyePII={vePII}

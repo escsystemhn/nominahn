@@ -53,15 +53,16 @@ describe("calcularDecimo — devengo", () => {
   });
 
   it("quien ingresa a mitad de año devenga el proporcional", () => {
-    // Del 1 de julio al 31 de diciembre = 184 días.
+    // Del 1 de julio al 31 de diciembre = 180 días comerciales (base de 30 días,
+    // Decreto 112-82). Antes contaba los 184 del calendario sobre 360 y pagaba 2 % de más.
     const r = calcularDecimo({
       tipo: "DECIMO_TERCERO",
       anio: 2026,
       fechaIngreso: d("2026-07-01"),
       salarioPromedio: 12000,
     });
-    expect(r.diasComputados).toBe(184);
-    expect(n(r.montoDevengado)).toBeCloseTo(12000 * 184 / 360, 2);
+    expect(r.diasComputados).toBe(180);
+    expect(n(r.montoDevengado)).toBeCloseTo(6000, 2);
     expect(r.esProporcional).toBe(true);
   });
 
@@ -111,19 +112,19 @@ describe("calcularDecimo — devengo", () => {
       salarioPromedio: 24000,
       hasta: d("2026-06-30"),
     });
-    expect(r.diasComputados).toBe(181); // 1 ene a 30 jun, inclusivo
-    expect(n(r.montoDevengado)).toBeCloseTo(24000 * 181 / 360, 2);
+    expect(r.diasComputados).toBe(180); // 1 ene a 30 jun: seis meses comerciales
+    expect(n(r.montoDevengado)).toBeCloseTo(12000, 2);
   });
 
   it("el décimo cuarto computa sobre su propia ventana de julio a junio", () => {
-    // Ingreso el 1 de enero de 2026: sólo devenga de enero a junio (181 días).
+    // Ingreso el 1 de enero de 2026: sólo devenga de enero a junio (180 días comerciales).
     const r = calcularDecimo({
       tipo: "DECIMO_CUARTO",
       anio: 2026,
       fechaIngreso: d("2026-01-01"),
       salarioPromedio: 18000,
     });
-    expect(r.diasComputados).toBe(181);
+    expect(r.diasComputados).toBe(180);
     expect(r.periodoDesde.toISOString().slice(0, 10)).toBe("2026-01-01");
     expect(r.periodoHasta.toISOString().slice(0, 10)).toBe("2026-06-30");
   });
@@ -156,28 +157,16 @@ describe("fiscalidad del décimo — exención del Art. 11 Ley del ISR", () => {
     expect(n(f.isrRetenido)).toBeGreaterThan(0);
   });
 
-  it("el techo es CONJUNTO: lo que consumió un décimo no lo tiene el otro", () => {
-    const techo = SAL_MIN * SALARIOS_MINIMOS_EXENTOS;
+  it("el techo es de CADA décimo («en cada caso», Ley del ISR, Art. 10), no conjunto", () => {
+    // Antes, si el 14.º había eximido casi todo, al 13.º sólo le quedaba el resto.
     const f = aplicarFiscalidadDecimo({
       montoDevengado: 80000,
       salarioMinimo: SAL_MIN,
-      exentoYaUsado: techo - 30000, // el 14.º ya consumió casi todo
       rentaOrdinariaAnual: 900000,
     });
-    expect(n(f.montoExento)).toBeCloseTo(30000, 2);
-    expect(n(f.montoGravado)).toBeCloseTo(50000, 2);
-  });
-
-  it("un techo ya agotado deja el décimo entero gravado", () => {
-    const techo = SAL_MIN * SALARIOS_MINIMOS_EXENTOS;
-    const f = aplicarFiscalidadDecimo({
-      montoDevengado: 25000,
-      salarioMinimo: SAL_MIN,
-      exentoYaUsado: techo,
-      rentaOrdinariaAnual: 900000,
-    });
-    expect(n(f.montoExento)).toBe(0);
-    expect(n(f.montoGravado)).toBeCloseTo(25000, 2);
+    expect(n(f.techoExento)).toBeCloseTo(SAL_MIN * SALARIOS_MINIMOS_EXENTOS, 2);
+    expect(n(f.montoExento)).toBeCloseTo(80000, 2);
+    expect(n(f.montoGravado)).toBe(0);
   });
 
   it("el excedente tributa al tramo marginal del trabajador, no de forma aislada", () => {

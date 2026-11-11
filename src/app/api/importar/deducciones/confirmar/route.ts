@@ -15,6 +15,7 @@ import { parsearBody, zId } from "@/lib/http/validar";
 import { z } from "zod";
 import { aplicar, type FilaDeduccion } from "@/lib/importacion/deducciones";
 import { tomarLote, marcarAplicado } from "@/lib/importacion/lote";
+import { CLASE_MONTO_PERIODO } from "@/lib/importacion/montos-periodo";
 import type { ResultadoImportacion } from "@/lib/importacion/tipos";
 
 const schema = z.object({ loteId: zId });
@@ -33,6 +34,12 @@ export async function POST(req: NextRequest) {
   const filas = tomado.lote.filas as unknown as FilaDeduccion[];
   if (!Array.isArray(filas) || filas.length === 0) {
     return NextResponse.json({ error: "El lote no tiene filas que aplicar." }, { status: 409 });
+  }
+  // Los montos del período y el catálogo de tipos comparten el tipo de lote, pero se
+  // aplican por su propia ruta: sus filas llevan `clase`, las de esta importación no.
+  if (filas.some((f) => (f as { clase?: string }).clase !== undefined)) {
+    const montos = filas.some((f) => (f as { clase?: string }).clase === CLASE_MONTO_PERIODO);
+    return NextResponse.json({ error: montos ? "Este archivo es de montos del período: confírmelo desde esa importación." : "Este archivo no es de deducciones a asignar." }, { status: 409 });
   }
 
   let resultado;

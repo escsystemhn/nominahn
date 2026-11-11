@@ -5,11 +5,12 @@ import { textoEstadoPlanilla } from "@/lib/payroll/estado-planilla";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
-import { configSmtpVigente, sendEmail, templateBoletaPago } from "@/lib/email/send";
+import { configSmtpVigente, sendEmail } from "@/lib/email/send";
 import { correoDeComprobantes } from "@/lib/email/destinatario";
 import { audit, getClientInfo } from "@/lib/audit";
-import { construirBoleta } from "@/lib/payroll/boleta";
-import { formatDate } from "@/lib/utils";
+import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, sucursalDeBoleta, UBICACION_BOLETA } from "@/lib/payroll/boleta";
+import { adjuntoDelLogo, CID_LOGO, comprobanteHtml } from "@/lib/payroll/comprobante-html";
+import { logosDeSucursales } from "@/lib/organizacion/logo-bd";
 
 /** Sin cuerpo: se envía a toda la planilla. Con `empleadoIds`: sólo a esos. */
 const schema = z.object({
@@ -43,16 +44,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const planilla = await prisma.planilla.findUnique({
     where: { id },
     include: {
-      empresa: { select: { nombre: true, rtn: true } },
+      empresa: EMPRESA_BOLETA,
       detalles: {
         // Sólo a las personas de su alcance, aunque pida otras.
         where: { AND: [filtro ? { empleadoId: { in: filtro } } : {}, filtroPorEmpleado(g.usuario)] },
         include: {
+          ...UBICACION_BOLETA,
           empleado: {
             select: {
-              id: true, codigo: true, identidad: true,
-              primerNombre: true, segundoNombre: true,
-              primerApellido: true, segundoApellido: true,
+              ...EMPLEADO_BOLETA,
               emailPersonal: true, emailCorporativo: true,
               user: { select: { email: true } },
             },
@@ -86,6 +86,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
+  // De una vez: una planilla con cientos de personas tiene pocas sucursales.
+  const ubicacionDe = (d: (typeof planilla.detalles)[number]) => ({ sucursal: d.sucursal, division: d.division, departamento: d.departamento });
+  const logos = await logosDeSucursales(prisma, planilla.detalles.flatMap((d) => sucursalDeBoleta(ubicacionDe(d), d.empleado)?.id ?? []));
+
   let enviados = 0;
   let errores = 0;
   let primerError: string | null = null;
@@ -99,16 +103,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     try {
+      const ubicacion = ubicacionDe(detalle);
+      const datos = construirBoleta(detalle, { empresa: planilla.empresa, empleado: detalle.empleado, planilla, ubicacion });
+      const sucursalId = sucursalDeBoleta(ubicacion, detalle.empleado)?.id;
+      const logo = sucursalId ? logos.get(sucursalId) : undefined;
+
       await sendEmail({
         to: email,
-        subject: `Comprobante de pago — ${planilla.tipo} — ${formatDate(planilla.fechaFin)}`,
-        html: templateBoletaPago(
-          construirBoleta(detalle, {
-            empresa: planilla.empresa,
-            empleado: detalle.empleado,
-            planilla,
-          })
-        ),
+        // Sin montos: el asunto se lee en la pantalla bloqueada del teléfono.
+        subject: `Comprobante de pago del ${datos.periodo}`,
+        html: comprobanteHtml(datos, {
+          modo: "correo",
+          logo: logo ? { src: `cid:${CID_LOGO}`, ancho: logo.ancho, alto: logo.alto, alt: `Logo de ${datos.sucursal ?? datos.empresa}` } : null,
+        }),
+        attachments: logo ? [adjuntoDelLogo(logo.png)] : [],
       });
 
       await prisma.planillaDetalle.update({

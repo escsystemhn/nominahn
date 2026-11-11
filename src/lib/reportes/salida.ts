@@ -16,11 +16,11 @@ import * as pdfmakeModulo from "pdfmake";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
 // La lectura de celdas y filas tiene una sola definición, compartida con el
 // visor del navegador (que no puede importar este archivo por exceljs y pdfmake).
-import { valorCelda, columnasNumericas, metaFila, contarDetalles, type HojaReporte, type TipoCelda, type MetaFila } from "./salida-celdas";
+import { valorCelda, columnasNumericas, metaFila, contarDetalles, PAPELES, papelPorOmision, type HojaReporte, type Papel, type TipoCelda, type MetaFila } from "./salida-celdas";
 import { PRODUCTO } from "@/lib/marca";
 
-export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles } from "./salida-celdas";
-export type { HojaReporte, TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
+export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles, PAPELES, leerPapel, papelPorOmision } from "./salida-celdas";
+export type { HojaReporte, Papel, TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
 
 /**
  * pdfmake 0.3 exporta UNA instancia (module.exports = new pdfmake()). Según cómo
@@ -47,6 +47,30 @@ export interface ReporteTabla {
   filas?: MetaFila[];
   /** Para imprimir por partes. Con hojas, el PDF y el Excel las usan en vez de `datos`. */
   hojas?: HojaReporte[];
+  /** Papel del PDF y de la impresión desde Excel. Sin él, `papelPorOmision`. */
+  papel?: Papel;
+}
+
+/**
+ * Tamaño de letra para que las columnas quepan a lo ancho. Cada columna de montos
+ * ocupa unas 6.1 veces el tamaño de letra («L 165,841.52» en Helvetica) más 8 puntos
+ * de margen; la de nombres se lleva lo que sobre, al menos 12 veces. En carta se
+ * conservan los tamaños de siempre (8, o 7 con más de 9 columnas) como máximo.
+ */
+export function tamanoLetra(columnas: number, anchoUtil: number, enCarta: boolean): number {
+  const otras = Math.max(1, columnas - 1);
+  const cabe = (anchoUtil - 8 * otras) / (6.1 * otras + 12);
+  const tope = enCarta ? (columnas > 9 ? 7 : 8) : 9;
+  return Math.max(6, Math.min(tope, Math.floor(cabe * 2) / 2));
+}
+
+function configurarImpresion(ws: ExcelJS.Worksheet, columnas: number, papel: Papel) {
+  // Cada hoja se imprime a lo ancho de la página elegida, repitiendo sus cabeceras.
+  ws.pageSetup = {
+    orientation: columnas > 6 ? "landscape" : "portrait",
+    paperSize: PAPELES[papel].excel as unknown as ExcelJS.PaperSize,
+    fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "4:4",
+  };
 }
 
 // ─── Celdas ───────────────────────────────────────────────────────────────────
@@ -85,15 +109,17 @@ export async function aXlsx(r: ReporteTabla): Promise<Buffer> {
   wb.creator = PRODUCTO;
   wb.created = r.generado;
 
+  // Un mismo papel para todo el libro: el de la parte más ancha.
+  const papel = r.papel ?? papelPorOmision(Math.max(r.cabeceras.length, ...(r.hojas ?? []).map((h) => h.cabeceras.length)));
   if (r.hojas?.length) {
     const usados = new Set<string>();
     for (const h of r.hojas) {
       const ws = escribirHoja(wb, nombreHojaUnico(h.pestana, usados), r, h, h.nombre);
-      // Cada pestaña se imprime a lo ancho de la página, repitiendo sus cabeceras.
-      ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "4:4" };
+      configurarImpresion(ws, Math.max(7, h.cabeceras.length), papel);
     }
   } else {
-    escribirHoja(wb, nombreHoja(r.titulo), r, r);
+    const ws = escribirHoja(wb, nombreHoja(r.titulo), r, r);
+    configurarImpresion(ws, r.cabeceras.length, papel);
   }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
@@ -103,7 +129,7 @@ function escribirHoja(
   wb: ExcelJS.Workbook,
   nombre: string,
   r: Pick<ReporteTabla, "titulo" | "generado" | "filtros">,
-  tabla: Pick<ReporteTabla, "cabeceras" | "datos" | "filas">,
+  tabla: Pick<ReporteTabla, "cabeceras" | "datos" | "filas"> & { descripcion?: string },
   subtitulo?: string
 ): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(nombre, { views: [{ state: "frozen", ySplit: 4 }] });
@@ -115,7 +141,7 @@ function escribirHoja(
   ws.getCell("A1").font = { bold: true, size: 14, color: { argb: "FF0D2B38" } };
 
   ws.mergeCells(`A2:${ultima}2`);
-  ws.getCell("A2").value = [`Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`, `${contarDetalles(tabla.datos, tabla.filas)} registros`, ...r.filtros].join(" · ");
+  ws.getCell("A2").value = [`Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`, tabla.descripcion ?? `${contarDetalles(tabla.datos, tabla.filas)} registros`, ...r.filtros].join(" · ");
   ws.getCell("A2").font = { size: 9, color: { argb: "FF637580" } };
 
   if (subtitulo) {
@@ -223,7 +249,10 @@ const FONDO_GRUPO_PDF = ["#DCE6EA", "#E9EFF2", "#F3F6F8"];
 function tablaPdf(t: Pick<ReporteTabla, "cabeceras" | "datos" | "filas">, tamano: number, rotulo?: string): Content {
   if (t.datos.length === 0) return { text: "Sin registros para los filtros elegidos.", fontSize: 9, color: TENUE, italics: true };
 
-  const numericas = columnasNumericas(t.cabeceras, t.datos);
+  // Una columna vacía (los días en un resumen) se alinea y se mide como las de números:
+  // como texto se repartiría el ancho con la de nombres y los apretaría.
+  const llenas = t.cabeceras.map((_, i) => t.datos.some((f) => String(f[i] ?? "").trim() !== ""));
+  const numericas = columnasNumericas(t.cabeceras, t.datos).map((n, i) => n || !llenas[i]);
 
   const encabezado: TableCell[] = t.cabeceras.map((h, i) => ({
     text: h,
@@ -286,15 +315,17 @@ function tablaPdf(t: Pick<ReporteTabla, "cabeceras" | "datos" | "filas">, tamano
 
 export async function aPdf(r: ReporteTabla): Promise<Buffer> {
   prepararFuentes();
-  const partes: Array<Pick<ReporteTabla, "cabeceras" | "datos" | "filas"> & { nombre?: string }> = r.hojas?.length ? r.hojas : [r];
+  const partes: Array<Pick<ReporteTabla, "cabeceras" | "datos" | "filas"> & { nombre?: string; descripcion?: string }> = r.hojas?.length ? r.hojas : [r];
   const columnas = Math.max(...partes.map((p) => p.cabeceras.length));
   const apaisado = columnas > 6;
-  const tamano = columnas > 9 ? 7 : 8;
+  const papel = r.papel ?? papelPorOmision(columnas);
+  const hoja = PAPELES[papel];
+  const tamano = tamanoLetra(columnas, (apaisado ? hoja.largo : hoja.corto) - 72, papel === "CARTA");
 
   const contenido: Content[] = partes.flatMap((p, i) => {
     const meta = [
       `Generado el ${r.generado.toLocaleString("es-HN", { timeZone: "America/Tegucigalpa" })}`,
-      `${contarDetalles(p.datos, p.filas)} registros`,
+      p.descripcion ?? `${contarDetalles(p.datos, p.filas)} registros`,
       ...r.filtros,
     ].join("  ·  ");
     const bloque: Content[] = [
@@ -306,7 +337,7 @@ export async function aPdf(r: ReporteTabla): Promise<Buffer> {
   });
 
   const definicion: TDocumentDefinitions = {
-    pageSize: "LETTER",
+    pageSize: hoja.pdf,
     pageOrientation: apaisado ? "landscape" : "portrait",
     pageMargins: [36, 36, 36, 40],
     defaultStyle: { font: "Helvetica", fontSize: 9, color: "#142129" },

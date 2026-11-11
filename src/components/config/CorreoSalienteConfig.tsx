@@ -64,7 +64,7 @@ export default function CorreoSalienteConfig() {
     (async () => {
       try {
         const res = await fetch("/api/configuracion/correo");
-        const d = await res.json();
+        const d = await res.json().catch(() => ({}));
         if (!vivo) return;
         if (!res.ok) throw new Error(d.error ?? "No se pudo cargar la configuración");
         setEstado(d);
@@ -113,7 +113,7 @@ export default function CorreoSalienteConfig() {
           password: form.password === "" ? undefined : form.password,
         }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         const campos = d.detalles
           ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`)
@@ -141,7 +141,7 @@ export default function CorreoSalienteConfig() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ destino: destinoPrueba }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (d.ok) avisar.exito(d.detalle);
       else avisar.error(`No se pudo enviar.\n\n${d.error ?? "Error desconocido"}`);
     } catch {

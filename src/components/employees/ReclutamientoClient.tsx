@@ -118,7 +118,7 @@ export default function ReclutamientoClient({ departamentos, puedeGestionar }: P
     e.preventDefault(); setMsg("");
     if (!fVac.titulo.trim()) { setMsg("El título es obligatorio."); return; }
     const res = await fetch("/api/reclutamiento/vacantes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...fVac, publicada: fVac.publicada && !fVac.esInterna }) });
-    if (!res.ok) { setMsg((await res.json()).error ?? "Error al crear."); return; }
+    if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "Error al crear."); return; }
     setFVac({ titulo: "", departamentoId: "", tipoContrato: "INDEFINIDO", plazas: 1, esInterna: false, publicada: false, salarioMin: "", salarioMax: "", descripcion: "", requisitos: "" });
     setCreando(false);
     await cargarVacantes();
@@ -132,7 +132,7 @@ export default function ReclutamientoClient({ departamentos, puedeGestionar }: P
   async function publicarVacante(id: string, publicada: boolean) {
     setMsg("");
     const res = await fetch(`/api/reclutamiento/vacantes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicada }) });
-    if (!res.ok) setMsg((await res.json()).error ?? "No se pudo cambiar la publicación.");
+    if (!res.ok) setMsg((await res.json().catch(() => ({}))).error ?? "No se pudo cambiar la publicación.");
     await cargarVacantes();
   }
 
@@ -146,7 +146,7 @@ export default function ReclutamientoClient({ departamentos, puedeGestionar }: P
         const fd = new FormData();
         fd.append("file", cvFile);
         const up = await fetch("/api/uploads", { method: "POST", body: fd });
-        if (!up.ok) { setMsg((await up.json()).error ?? "No se pudo subir el CV."); return; }
+        if (!up.ok) { setMsg((await up.json().catch(() => ({}))).error ?? "No se pudo subir el CV."); return; }
         cvUrl = (await up.json()).url;
       }
       const res = await fetch("/api/reclutamiento/candidatos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...fCand, vacanteId: sel, cvUrl }) });

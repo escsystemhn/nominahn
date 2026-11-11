@@ -157,7 +157,7 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(datos),
       });
-      setDatosMsg(res.ok ? "Datos actualizados." : ((await res.json()).error ?? "No se pudo guardar."));
+      setDatosMsg(res.ok ? "Datos actualizados." : ((await res.json().catch(() => ({}))).error ?? "No se pudo guardar."));
     } finally {
       setGuardandoDatos(false);
     }
@@ -175,7 +175,7 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (!res.ok) { setError((await res.json()).error ?? "No se pudo enviar la solicitud."); return; }
+      if (!res.ok) { setError((await res.json().catch(() => ({}))).error ?? "No se pudo enviar la solicitud."); return; }
       setForm({ tipo: "VACACIONES", fechaInicio: "", fechaFin: "", motivo: "" });
       await cargar();
     } finally {
@@ -189,7 +189,7 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado }),
     });
-    if (!res.ok) { avisar.error((await res.json()).error ?? "No se pudo resolver la solicitud."); return; }
+    if (!res.ok) { avisar.error((await res.json().catch(() => ({}))).error ?? "No se pudo resolver la solicitud."); return; }
     avisar.exito(estado === "APROBADO" ? "Solicitud aprobada." : "Solicitud rechazada.");
     await cargar();
   }
@@ -336,7 +336,7 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
                         <a href={`/api/mis-boletas/${b.id}?modo=ver`} target="_blank" rel="noopener noreferrer"
                           className="mr-3 text-sm font-medium text-blue-700 hover:underline">Ver</a>
                         <a href={`/api/mis-boletas/${b.id}`}
-                          className="text-sm text-gray-600 hover:underline">Descargar</a>
+                          className="text-sm text-gray-600 hover:underline">Descargar PDF</a>
                       </td>
                     </tr>
                   ))}

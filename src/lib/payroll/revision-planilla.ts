@@ -12,6 +12,7 @@
 
 import { CERO, money, sumarPor, type Money, type MoneyInput } from "./money";
 import { formatCurrency } from "@/lib/utils";
+import { MAX_DIAS_CON_EXTRA_SEMANA, MAX_ORDINARIA_MAS_EXTRA_H } from "@/lib/horarios/ley";
 
 /** A partir de este cambio en el neto de una persona, vale la pena mirarla de cerca. */
 export const CAMBIO_GRANDE = 0.25;
@@ -49,7 +50,7 @@ export interface CambioPersona {
 }
 
 export interface PuntoRevision {
-  clave: "neto-cero" | "deducciones-altas" | "cambio-grande" | "sin-cuenta" | "sin-correo";
+  clave: "neto-cero" | "deducciones-altas" | "cambio-grande" | "jornada-maxima" | "sin-cuenta" | "sin-correo";
   titulo: string;
   personas: Array<{ empleadoId: string; nombre: string }>;
 }
@@ -95,7 +96,44 @@ function motivosDe(ahora: LineaRevision, antes: LineaRevision): string[] {
   return motivos;
 }
 
-export function revisarPlanilla(actual: LineaRevision[], anterior: LineaRevision[] | null): RevisionPlanilla {
+/** Un día de asistencia, con lo que se necesita para revisar la jornada máxima. */
+export interface DiaJornada {
+  empleadoId: string;
+  fecha: Date;
+  horasNormales: MoneyInput;
+  horasExtra: MoneyInput;
+  horasFeriado: MoneyInput;
+}
+
+/**
+ * Personas que pasaron de 12 horas en un día contando la extra (Art. 332) o que
+ * hicieron horas extra más de 4 días en una misma semana (Art. 333). Se paga lo
+ * trabajado; esto sólo señala a quién mirar antes de confirmar.
+ */
+export function excesosDeJornada(dias: DiaJornada[]): Set<string> {
+  const exceden = new Set<string>();
+  const diasConExtra = new Map<string, number>();
+  for (const d of dias) {
+    const extra = money(d.horasExtra);
+    const total = money(d.horasNormales).plus(extra.isZero() ? d.horasFeriado : extra);
+    if (total.greaterThan(MAX_ORDINARIA_MAS_EXTRA_H)) exceden.add(d.empleadoId);
+    if (extra.isPositive()) {
+      const f = d.fecha;
+      const lunes = Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), f.getUTCDate()) - ((f.getUTCDay() + 6) % 7) * 86_400_000;
+      const clave = `${d.empleadoId}|${lunes}`;
+      const n = (diasConExtra.get(clave) ?? 0) + 1;
+      diasConExtra.set(clave, n);
+      if (n > MAX_DIAS_CON_EXTRA_SEMANA) exceden.add(d.empleadoId);
+    }
+  }
+  return exceden;
+}
+
+export function revisarPlanilla(
+  actual: LineaRevision[],
+  anterior: LineaRevision[] | null,
+  excedenJornada: Set<string> = new Set()
+): RevisionPlanilla {
   const previas = new Map((anterior ?? []).map((l) => [l.empleadoId, l]));
   const vigentes = new Set(actual.map((l) => l.empleadoId));
   const hayAnterior = anterior !== null;
@@ -158,6 +196,11 @@ export function revisarPlanilla(actual: LineaRevision[], anterior: LineaRevision
       actual.filter((l) => money(l.totalBruto).isPositive() && money(l.totalDeducciones).greaterThan(money(l.totalBruto).div(2))).map(quien),
     ],
     ["cambio-grande", `Neto cambia más de ${CAMBIO_GRANDE * 100} % frente a la anterior`, cambios.filter((c) => c.grande).map((c) => ({ empleadoId: c.empleadoId, nombre: c.nombre }))],
+    [
+      "jornada-maxima",
+      `Más de ${MAX_ORDINARIA_MAS_EXTRA_H} h en un día con horas extra (Art. 332) u horas extra más de ${MAX_DIAS_CON_EXTRA_SEMANA} días en una semana (Art. 333)`,
+      actual.filter((l) => excedenJornada.has(l.empleadoId)).map(quien),
+    ],
     ["sin-cuenta", "Sin cuenta bancaria: se pagan a mano, no salen en el archivo del banco", actual.filter((l) => !l.tieneCuenta).map(quien)],
     ["sin-correo", "Sin correo: no recibirán su comprobante", actual.filter((l) => !l.tieneCorreo).map(quien)],
   ];

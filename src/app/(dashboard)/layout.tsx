@@ -5,6 +5,7 @@ import Armazon from "@/components/layout/Armazon";
 import AvisoEvaluacion from "@/components/licencia/AvisoEvaluacion";
 import { estadoLicencia } from "@/lib/licencia/estado";
 import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 export default async function DashboardLayout({
   children,
@@ -30,10 +31,13 @@ export default async function DashboardLayout({
   const licencia = await estadoLicencia();
   const aviso = licencia.modo === "evaluacion" && licencia.evaluacion.mostrarAviso ? licencia.evaluacion : null;
 
+  const jerarquiaNomina = await jerarquiaNominaHabilitada(prisma);
+
   return (
     <Armazon
       permisos={session.user?.permisos ?? []}
       conEmpleado={!!session.user?.empleadoId}
+      jerarquiaNomina={jerarquiaNomina}
       user={session.user}
       empresa={empresa?.nombre}
       bloqueado={bloqueado}

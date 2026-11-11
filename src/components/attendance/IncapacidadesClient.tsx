@@ -134,7 +134,7 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
         const fd = new FormData();
         fd.append("file", archivo);
         const up = await fetch("/api/uploads", { method: "POST", body: fd });
-        const du = await up.json();
+        const du = await up.json().catch(() => ({}));
         if (!up.ok) throw new Error(du.error ?? "No se pudo subir el certificado");
         archivoUrl = du.url;
       }
@@ -143,7 +143,7 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, prorrogaDeId: form.prorrogaDeId || null, numeroCertificado: form.numeroCertificado || null, observacion: form.observacion || null, archivoUrl }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo registrar");
       setAviso({ ok: true, texto: `Incapacidad registrada: ${d.dias} días, ${d.diasPatrono} a cargo del patrono.${d.avisos?.length ? ` ${d.avisos.join(" ")}` : ""}` });
       setForm(formVacio);
@@ -167,7 +167,7 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
     });
     if (motivo === null) return;
     const res = await fetch(`/api/incapacidades/${i.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anulada: true, motivo }) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     setAviso(res.ok ? { ok: true, texto: "Incapacidad anulada." } : { ok: false, texto: d.error ?? "No se pudo anular" });
     await cargar();
   }
@@ -240,7 +240,7 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
           {previa && (
             <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700">
               {previa.dias} días: {previa.patrono} a cargo del patrono y {previa.ihss} a cargo del IHSS.
-              {previa.ihss > 0 && previa.regla.porcentajeComplemento > 0 && ` En esos días el patrono completa el ${previa.regla.porcentajeComplemento} % del salario.`}
+              {previa.ihss > 0 && ` En esos días el IHSS paga el ${previa.regla.porcentajeSubsidio} % del salario (hasta su techo) y el patrono completa la diferencia hasta el salario (Art. 73 del reglamento).`}
               {form.prorrogaDeId && " Como es prórroga, no reinicia los días del patrono."}
             </p>
           )}
@@ -318,7 +318,7 @@ function PanelReglas({ reglas, puedeEditar, onGuardado }: { reglas: ReglasIncapa
 
   async function guardar() {
     const res = await fetch("/api/incapacidades/reglas", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edicion) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     setMsg(res.ok ? { ok: true, texto: "Reglas guardadas. Se aplican a las incapacidades que se registren desde ahora." } : { ok: false, texto: d.error ?? "No se pudo guardar" });
     if (res.ok) onGuardado(d.reglas);
   }
@@ -339,20 +339,20 @@ function PanelReglas({ reglas, puedeEditar, onGuardado }: { reglas: ReglasIncapa
       <div>
         <h2 id="inc-reglas" className="text-sm font-semibold text-gray-900">Reglas por tipo</h2>
         <p className="mt-1 text-xs text-gray-500">
-          Verificado: los 3 días del patrono (Art. 71 del Reglamento de Incapacidad Temporal del IHSS, La Gaceta del 29 de mayo de 2020) y el complemento patronal en maternidad (Art. 136 del Código del Trabajo). Sin verificar: el 66 % del subsidio, que sólo se usa para el estimado y para fijar el complemento. Cada incapacidad guarda las reglas con que se registró.
+          Reglamento de Incapacidad Temporal del IHSS (La Gaceta del 29 de mayo de 2020): los primeros días los paga el patrono (Art. 71); desde ahí el IHSS paga el 66 % del salario hasta su techo y el patrono completa la diferencia hasta el salario total (Art. 73). En la planilla sólo se descuenta lo que paga el IHSS. Cada incapacidad guarda las reglas con que se registró.
           {!puedeEditar && " Las cambia quien edita los parámetros de ley."}
         </p>
       </div>
       <div className="overflow-x-auto">
         <table className="table-base">
-          <thead><tr><th>Tipo</th><th className="num">Días del patrono</th><th className="num">% subsidio IHSS</th><th className="num">% complemento patronal</th></tr></thead>
+          <thead><tr><th>Tipo</th><th className="num">Días del patrono</th><th className="num">% subsidio IHSS</th><th>Patrono en los días del IHSS</th></tr></thead>
           <tbody>
             {TIPOS.map(([t, l]) => (
               <tr key={t}>
                 <td>{l}</td>
                 <td className="text-right">{campo(t, "diasPatrono")}</td>
                 <td className="text-right">{campo(t, "porcentajeSubsidio")}</td>
-                <td className="text-right">{campo(t, "porcentajeComplemento")}</td>
+                <td className="text-sm text-gray-600">Completa hasta el salario</td>
               </tr>
             ))}
           </tbody>

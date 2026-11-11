@@ -90,7 +90,7 @@ const comparar = (a: string, b: string) => a.localeCompare(b, "es", { sensitivit
  * Si en una sucursal unos tienen división y otros no, los segundos quedan bajo
  * «Sin división», al final. Los `items` conservan el orden de entrada.
  */
-export function agruparPorEstructura<T>(items: T[], ubicacion: (t: T) => Ubicacion): GrupoEstructura<T>[] {
+export function agruparPorEstructura<T>(items: T[], ubicacion: (t: T) => Ubicacion, sinDivision: string = SIN_DIVISION): GrupoEstructura<T>[] {
   const sucursales = new Map<string, { unidad: Unidad; items: T[] }>();
   for (const it of items) {
     const u = ubicacion(it);
@@ -133,7 +133,7 @@ export function agruparPorEstructura<T>(items: T[], ubicacion: (t: T) => Ubicaci
           .map((g) => ({
             nivel: "DIVISION" as const,
             id: g.unidad?.id ?? null,
-            nombre: g.unidad?.nombre ?? SIN_DIVISION,
+            nombre: g.unidad?.nombre ?? sinDivision,
             hijos: departamentos(g.items),
             items: g.items,
           }));
@@ -164,13 +164,48 @@ export function aplanarEstructura<T>(grupos: GrupoEstructura<T>[], conSubtotales
   return salida;
 }
 
+// ─── Opciones de la estructura ────────────────────────────────────────────────
+
+export interface OpcionesOrganizacion {
+  divisiones: boolean;
+  jerarquia: boolean;
+}
+
+/**
+ * Estado de las opciones tras un cambio. La jerarquía de nómina se apoya en el
+ * nivel División (cada división es una empresa del grupo): encenderla lo
+ * enciende, y apagar las divisiones la apaga.
+ */
+export function aplicarCambioOpciones(actual: OpcionesOrganizacion, cambio: Partial<OpcionesOrganizacion>): OpcionesOrganizacion {
+  const divisiones = cambio.jerarquia === true ? true : cambio.divisiones ?? actual.divisiones;
+  return { divisiones, jerarquia: divisiones && (cambio.jerarquia ?? actual.jerarquia) };
+}
+
+/** Nombre de cada nivel: con la jerarquía de nómina, la sucursal es un grupo y la división, una empresa. */
+export function etiquetasNiveles(jerarquia: boolean) {
+  return jerarquia
+    ? {
+        sucursal: "Grupo de nómina", sucursalCorta: "Grupo", sucursales: "Grupos de nómina", nuevaSucursal: "Nuevo grupo de nómina", todasSucursales: "Todos los grupos",
+        division: "Empresa", divisiones: "Empresas", nuevaDivision: "Nueva empresa", todasDivisiones: "Todas las empresas", sinDivision: "Sin empresa asignada", sinDivisiones: "Sin empresas",
+        // El modelo `Empresa` (la de los libros) queda por encima del grupo: no debe llamarse igual que las empresas del grupo.
+        empresaLegal: "Empresa principal", todaLaEmpresa: "Todos los grupos",
+      }
+    : {
+        sucursal: "Sucursal", sucursalCorta: "Sucursal", sucursales: "Sucursales", nuevaSucursal: "Nueva sucursal", todasSucursales: "Todas las sucursales",
+        division: "División", divisiones: "Divisiones", nuevaDivision: "Nueva división", todasDivisiones: "Todas las divisiones", sinDivision: SIN_DIVISION, sinDivisiones: "Sin divisiones",
+        empresaLegal: "Empresa", todaLaEmpresa: "Toda la empresa",
+      };
+}
+
+export type NivelesEstructura = ReturnType<typeof etiquetasNiveles>;
+
 /** Alcance de una planilla en palabras: «Toda la empresa» o «Sucursal / División / Departamento». */
 export function describirAlcance(p: {
   sucursal?: { nombre: string } | null;
   division?: { nombre: string } | null;
   departamento?: { nombre: string } | null;
-}): string {
-  if (!p.sucursal) return "Toda la empresa";
+}, todo = "Toda la empresa"): string {
+  if (!p.sucursal) return todo;
   return [p.sucursal.nombre, p.division?.nombre, p.departamento?.nombre].filter(Boolean).join(" / ");
 }
 

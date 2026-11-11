@@ -32,7 +32,9 @@ interface SucursalConfig {
   codigo: string;
   direccion: string | null;
   telefono: string | null;
+  descripcion: string | null;
   activa: boolean;
+  logoVersion: number | null;
 }
 
 interface SalarioMinimoConfig {
@@ -49,6 +51,7 @@ interface Props {
   puestos: PuestoEstructura[];
   /** Opción del administrador: usar el nivel División (Sucursal → División → Departamento). */
   divisionesHabilitadas: boolean;
+  jerarquiaHabilitada: boolean;
   salarioMinimo: SalarioMinimoConfig | null;
   configs: Array<{ clave: string; valor: string; descripcion: string | null }>;
   /** Ve y edita la empresa, sucursales y parámetros (`configuracion.ver`/`.editar`). */
@@ -68,7 +71,7 @@ interface Props {
 }
 
 export default function ConfiguracionClient({
-  empresa, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, salarioMinimo, configs,
+  empresa, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, jerarquiaHabilitada, salarioMinimo, configs,
   puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco,
 }: Props) {
   const router = useRouter();
@@ -161,11 +164,14 @@ export default function ConfiguracionClient({
       {tab === "sucursales" && (
         <EstructuraOrganizacional
           empresaId={empresa?.id ?? null}
+          empresaNombre={empresa?.nombre ?? null}
+          empresaRtn={empresa?.rtn ?? null}
           sucursales={sucursales}
           divisiones={divisiones}
           departamentos={departamentos}
           puestos={puestos}
           divisionesHabilitadas={divisionesHabilitadas}
+          jerarquiaHabilitada={jerarquiaHabilitada}
           puedeEditar={puedeEditar}
         />
       )}

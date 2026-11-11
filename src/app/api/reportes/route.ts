@@ -10,9 +10,9 @@ import {
 } from "@/lib/reportes/formato";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { filtroEmpleados, filtroPorEmpleado } from "@/lib/auth/alcance";
-import { filtroDetallesOrg, filtroEmpleadosOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
-import { hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "@/lib/reportes/planilla-estructura";
+import { etiquetasNiveles, filtroDetallesOrg, filtroEmpleadosOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { hojasPlanillaDetallada, hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "@/lib/reportes/planilla-estructura";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
 import { nombreCompleto, formatCurrency, formatDate, calcularAniosTrabajados } from "@/lib/utils";
 import {
@@ -23,7 +23,7 @@ import {
 } from "@/lib/payroll/calculos-hn";
 import { calcularDecimo, ventanaDevengo, type TipoDecimo } from "@/lib/payroll/decimos";
 import { aNumero, minimo, sumar, sumarPor, money, redondear, CERO, type Money } from "@/lib/payroll/money";
-import { aXlsx, aPdf, contarDetalles, metaFila, type HojaReporte, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
+import { aXlsx, aPdf, contarDetalles, leerPapel, metaFila, type HojaReporte, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
 import { reportePuntualidad, MAX_DIAS_REPORTE } from "@/lib/asistencia/tardanzas";
 import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
 import { PRODUCTO } from "@/lib/marca";
@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
   // Alcance organizacional pedido (Sucursal → División → Departamento). La
   // división sólo cuenta si el administrador habilitó ese nivel.
   const conDivisiones = await divisionesHabilitadas(prisma);
+  const conJerarquia = await jerarquiaNominaHabilitada(prisma);
+  const niveles = etiquetasNiveles(conJerarquia);
   const alcance = normalizarAlcance({
     sucursalId: searchParams.get("sucursalId"),
     divisionId: conDivisiones ? searchParams.get("divisionId") : null,
@@ -81,7 +83,7 @@ export async function GET(req: NextRequest) {
       orderBy: { primerApellido: "asc" },
     });
     titulo = "Listado de Empleados Activos";
-    cabeceras = ["Código", "Nombre", "Identidad", "Sucursal", "Departamento", "Puesto", "Salario", "Ingreso", "Tipo Planilla"];
+    cabeceras = ["Código", "Nombre", "Identidad", niveles.sucursal, "Departamento", "Puesto", "Salario", "Ingreso", "Tipo Planilla"];
     datos = empleados.map((e) => [
       e.codigo,
       nombreCompleto(e),
@@ -122,15 +124,20 @@ export async function GET(req: NextRequest) {
       pl.detalles.map((d) => ({
         empleadoId: d.empleadoId,
         nombre: nombreCompleto(d.empleado),
-        periodo: `${formatDate(pl.fechaInicio)}-${formatDate(pl.fechaFin)}`,
         ubicacion: ubicacionDeLinea(d, conDivisiones),
-        bruto: money(d.totalBruto),
+        dias: Number(d.diasTrabajados),
+        salario: money(d.salarioBase),
+        horasExtra: money(d.montoHorasExtra),
+        otrosIngresos: sumar(d.bonificaciones, d.otrosIngresos),
+        devengado: money(d.totalBruto),
         ihss: money(d.ihssEmpleado),
         rap: money(d.rapEmpleado),
         afp: money(d.afpEmpleado),
         isr: money(d.isr),
+        vecinal: money(d.impuestoVecinal),
         otras: sumar(d.cooperativa, d.prestamos, d.adelantos, d.otrosDeducciones),
-        ausencias: money(d.ausencias),
+        // La incapacidad a cargo del IHSS también es salario que no se paga: va con las ausencias.
+        ausencias: sumar(d.ausencias, d.incapacidad),
         deducciones: money(d.totalDeducciones),
         neto: money(d.salarioNeto),
         patronal: sumar(d.ihssEmpleador, d.rapEmpleador, d.infop, d.reservaLaboral),
@@ -139,12 +146,18 @@ export async function GET(req: NextRequest) {
 
     // Agrupadas por Sucursal → División → Departamento, con subtotales. Sin
     // divisiones habilitadas, el nivel no aparece.
-    const niveles = conDivisiones ? "Sucursal, División y Departamento" : "Sucursal y Departamento";
-    const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas) : tablaPlanillaDetallada(lineas);
-    titulo = reporteId === "resumen-planilla" ? `Resumen de Planilla por ${niveles}` : `Planilla Detallada por ${niveles}`;
+    const porNiveles = conDivisiones ? `${niveles.sucursalCorta}, ${niveles.division} y Departamento` : `${niveles.sucursalCorta} y Departamento`;
+    const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas, niveles) : tablaPlanillaDetallada(lineas, niveles);
+    titulo = reporteId === "resumen-planilla" ? `Resumen de Planilla por ${porNiveles}` : `Planilla Detallada por ${porNiveles}`;
     ({ cabeceras, datos, filas } = tabla);
     if (reporteId === "planilla-detallada" && conDivisiones && searchParams.get("porDivision") === "1") {
-      hojas = hojasPorDivision(lineas);
+      // El RTN sólo tiene sentido si cada división es una empresa del grupo.
+      const conRtn = conJerarquia ? await prisma.division.findMany({ where: { rtn: { not: null } }, select: { id: true, rtn: true } }) : [];
+      hojas = hojasPorDivision(lineas, niveles, new Map(conRtn.map((v) => [v.id, v.rtn!])));
+    } else if (reporteId === "planilla-detallada") {
+      // Impresa: el detalle cierra en el total de cada empresa; el subtotal del grupo y
+      // el total general van en el resumen de la última página.
+      hojas = hojasPlanillaDetallada(lineas, niveles);
     }
   } else if (reporteId === "ihss-planilla") {
     titulo = "Planilla IHSS (EM + IVM)";
@@ -241,7 +254,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: `El rango no puede pasar de ${MAX_DIAS_REPORTE} días` }, { status: 400 });
     }
     titulo = "Puntualidad";
-    cabeceras = ["Empleado", "Sucursal", "Turno", "Días con marca", "Llegadas tarde", "Minutos tarde", "Promedio por llegada tarde", "Días laborales sin marca"];
+    cabeceras = ["Empleado", niveles.sucursal, "Turno", "Días con marca", "Llegadas tarde", "Minutos tarde", "Promedio por llegada tarde", "Días laborales sin marca"];
     const puntualidad = await reportePuntualidad(d0, d1, filtroEmp);
     datos = puntualidad.map((r) => [
       r.empleado,
@@ -267,8 +280,8 @@ export async function GET(req: NextRequest) {
     // Antes este reporte emitía el `empleadoId` crudo como nombre, la sucursal
     // en blanco y «Días Ausentes» fijo en "0".
     cabeceras = [
-      "Empleado", "Sucursal", "Días Presentes", "Días Ausentes",
-      "H. Extra Diurna", "H. Extra Mixta", "H. Extra Nocturna", "H. Feriado", "Total H. Extra",
+      "Empleado", niveles.sucursal, "Días Presentes", "Días Ausentes",
+      "H. Extra 25 % (diurnas)", "H. Extra 50 % (período nocturno)", "H. Extra 75 % (prolongación nocturna)", "H. Feriado", "Total H. Extra",
     ];
 
     const marcajes = await prisma.marcaje.findMany({
@@ -714,11 +727,11 @@ export async function GET(req: NextRequest) {
   if (hasta) filtros.push(`Hasta ${formatDate(hasta)}`);
   if (sucursalId) {
     const suc = await prisma.sucursal.findUnique({ where: { id: sucursalId }, select: { nombre: true } });
-    if (suc) filtros.push(`Sucursal: ${suc.nombre}`);
+    if (suc) filtros.push(`${niveles.sucursal}: ${suc.nombre}`);
   }
   if (divisionId) {
     const div = await prisma.division.findUnique({ where: { id: divisionId }, select: { nombre: true } });
-    if (div) filtros.push(`División: ${div.nombre}`);
+    if (div) filtros.push(`${niveles.division}: ${div.nombre}`);
   }
   if (departamentoId) {
     const dep = await prisma.departamento.findUnique({ where: { id: departamentoId }, select: { nombre: true } });
@@ -732,7 +745,9 @@ export async function GET(req: NextRequest) {
       filtros.push("BORRADOR: planilla sin confirmar");
     }
   }
-  const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros, ...(filas ? { filas } : {}), ...(hojas ? { hojas } : {}) };
+  // Papel elegido para imprimir; sin elegir, carta, o legal si el reporte es muy ancho.
+  const papel = leerPapel(searchParams.get("papel"));
+  const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros, ...(filas ? { filas } : {}), ...(hojas ? { hojas } : {}), ...(papel ? { papel } : {}) };
 
   // La tabla tal cual, para verla dentro de la aplicación antes de exportar.
   if (formato === "JSON") {

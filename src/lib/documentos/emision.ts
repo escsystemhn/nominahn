@@ -13,6 +13,7 @@ import { turnoDe, textoTurno } from "@/lib/asistencia/turnos";
 import { construirContexto, resolverPlantilla, PLANTILLAS_POR_OMISION, type Resolucion } from "./plantillas";
 import { leerFirmante } from "./firmante";
 import { pdfCarta, type FirmaDoc } from "./pdf";
+import { logoParaDocumento } from "@/lib/organizacion/logo-bd";
 
 type Db = PrismaClient;
 
@@ -158,7 +159,12 @@ export async function pdfDeEmitido(db: Db, id: string): Promise<{ buffer: Buffer
       empleado: {
         select: {
           primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, identidad: true,
-          sucursal: { select: { empresa: { select: { nombre: true, rtn: true, direccion: true, telefono: true, email: true } } } },
+          sucursal: {
+            select: {
+              logo: { select: { png: true, ancho: true, alto: true } },
+              empresa: { select: { nombre: true, rtn: true, direccion: true, telefono: true, email: true } },
+            },
+          },
         },
       },
     },
@@ -176,7 +182,7 @@ export async function pdfDeEmitido(db: Db, id: string): Promise<{ buffer: Buffer
   // de lugar y fecha arriba sólo se pone en cartas y otros.
   const conLugarFecha = doc.plantilla.tipo === "CARTA" || doc.plantilla.tipo === "OTRO";
   const buffer = await pdfCarta({
-    empresa: doc.empleado.sucursal.empresa,
+    empresa: { ...doc.empleado.sucursal.empresa, logo: logoParaDocumento(doc.empleado.sucursal.logo) },
     titulo: doc.titulo,
     contenido: doc.contenido,
     lugarFecha: conLugarFecha ? `${firmante.ciudad ? `${firmante.ciudad}, ` : ""}${formatDateLong(doc.createdAt)}` : null,

@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAvisos } from "@/components/ui/Avisos";
 import { Field, PestanasFicha, ResumenErrores, erroresPorPestana, fieldClass, primerError, type PestanaFicha } from "./CamposFicha";
+import { montoComoTexto } from "@/lib/formato/monto-texto";
 
 const OBLIGATORIO = "Este dato es obligatorio.";
 const ELEGIR = "Elija una opción.";
@@ -38,8 +39,10 @@ const schema = z.object({
   sucursalId: z.string().min(1, OBLIGATORIO),
   departamentoId: z.string().min(1, OBLIGATORIO),
   puestoId: z.string().optional(),
-  // Vacío = IHSS por porcentaje. Se envía como texto; el servidor lo valida.
-  ihssMontoFijo: z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 1500.00.")]).optional(),
+  // Vacío = IHSS por porcentaje. Se envía como texto; el servidor lo valida. Se
+  // acepta la coma decimal («297,58»): ver `montoComoTexto`.
+  ihssMontoFijo: z.string().transform(montoComoTexto)
+    .pipe(z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 595.16.")])).optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -99,11 +102,12 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      const emp = await res.json();
-      if (!res.ok) {
+      // Un fallo interno del servidor llega sin cuerpo: leerlo a ciegas mostraba un error del navegador en inglés.
+      const emp = await res.json().catch(() => null);
+      if (!res.ok || !emp) {
         // El servidor dice qué campo falló; «intente nuevamente» no lo decía.
         const campos = emp?.detalles ? Object.entries(emp.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
-        throw new Error([emp?.error ?? "Error al crear el empleado", ...campos].join("\n"));
+        throw new Error([emp?.error ?? "El servidor no pudo registrar el empleado. Intente de nuevo.", ...campos].join("\n"));
       }
       avisar.exito("Empleado registrado.");
       router.push(`/empleados/${emp.id}`);
@@ -219,9 +223,9 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             <Field
               label="IHSS fijo mensual (L)"
               error={errors.ihssMontoFijo?.message}
-              hint="Monto mensual que se le descuenta de IHSS. En planilla quincenal se descuenta la mitad. El aporte patronal sigue calculándose por porcentaje."
+              hint="Monto mensual de IHSS (EM + IVM) que se le descuenta. En planilla quincenal se descuenta como diga Parámetros de ley (la mitad en cada quincena o completo en una). El aporte patronal sigue calculándose por porcentaje."
             >
-              <input {...register("ihssMontoFijo")} type="number" step="0.01" min="0" className={fieldClass} placeholder="Vacío = cálculo por porcentaje" />
+              <input {...register("ihssMontoFijo")} type="text" inputMode="decimal" autoComplete="off" className={fieldClass} placeholder="Vacío = cálculo por porcentaje" />
             </Field>
             <Field label="Tipo de planilla *" error={errors.tipoPlanilla?.message}>
               <select {...register("tipoPlanilla")} className={fieldClass}>

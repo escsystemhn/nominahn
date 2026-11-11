@@ -14,16 +14,21 @@
  * 3. QUEDA RASTRO. Un archivo con la plantilla completa sale del sistema y ya no
  *    vuelve; hay que poder decir quién lo descargó, cuándo, cuántas filas y si
  *    llevaba datos personales.
+ *
+ * La pantalla manda por POST los empleados marcados (en una URL no caben cientos
+ * de ids). Sin ninguno marcado, el archivo sale sólo con los encabezados.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
 import { Prisma, EstadoEmpleado } from "@prisma/client";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requerirPermiso, puede } from "@/lib/auth/guard";
+import { requerirPermiso, puede, type Usuario } from "@/lib/auth/guard";
 import { conAlcance } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
-import { generarCsv, cabecerasDescarga, delimitadorPedido } from "@/lib/importacion/csv";
+import { parsearBody, zId } from "@/lib/http/validar";
+import { generarCsv, cabecerasDescarga, delimitadorPedido, type Delimitador } from "@/lib/importacion/csv";
 import { cabecerasXlsx, plantillaXlsx } from "@/lib/importacion/xlsx";
 import {
   COLUMNAS_EMPLEADO,
@@ -31,7 +36,7 @@ import {
   etiquetas,
   filaEjemplo,
 } from "@/lib/importacion/columnas";
-import { formatDate } from "@/lib/utils";
+import { formatDate, nombreCompleto } from "@/lib/utils";
 
 /**
  * Tope de filas por descarga. No es una restricción de negocio sino de memoria:
@@ -40,42 +45,22 @@ import { formatDate } from "@/lib/utils";
  */
 const MAX_FILAS = 20_000;
 
-export async function GET(req: NextRequest) {
-  const g = await requerirPermiso("empleados.exportar");
-  if (!g.ok) return g.response;
+const schemaSeleccion = z.object({
+  ids: z.array(zId).max(MAX_FILAS),
+  delimitador: z.string().nullable().optional(),
+  formato: z.enum(["csv", "xlsx"]).optional(),
+});
 
-  const vePII = puede(g.usuario, "empleados.pii");
+async function responderExportacion(
+  req: NextRequest,
+  usuario: Usuario,
+  where: Prisma.EmpleadoWhereInput,
+  salida: { delimitador: Delimitador; excel?: boolean },
+  filtrosAuditoria: Record<string, unknown>,
+  archivo: string
+) {
+  const vePII = puede(usuario, "empleados.pii");
   const columnas = columnasVisibles(COLUMNAS_EMPLEADO, vePII);
-  const { searchParams } = new URL(req.url);
-  const delimitador = delimitadorPedido(searchParams.get("delimitador"));
-
-  // ─── Plantilla vacía ────────────────────────────────────────────────────────
-  // Cabeceras y una fila de muestra. Es el punto de partida de una carga inicial
-  // y, de paso, documenta el formato de fechas y enumerados sin abrir el manual.
-  if (searchParams.get("plantilla") === "1") {
-    if (searchParams.get("formato") === "xlsx") {
-      return new NextResponse(new Uint8Array(await plantillaXlsx(columnas)), { headers: cabecerasXlsx("plantilla_empleados.xlsx") });
-    }
-    const csv = generarCsv(etiquetas(columnas), [filaEjemplo(columnas)], delimitador);
-    return new NextResponse(csv, { headers: cabecerasDescarga("plantilla_empleados.csv") });
-  }
-
-  // Mismos filtros que la pantalla, para que se exporte lo que se está viendo.
-  const search = searchParams.get("search") ?? "";
-  const sucursalId = searchParams.get("sucursalId");
-  const departamentoId = searchParams.get("departamentoId");
-  const estado = searchParams.get("estado");
-
-  const filtros: Prisma.EmpleadoWhereInput = {
-    AND: [
-      await filtroBusquedaEmpleados(prisma, search, { conIdentidad: vePII }),
-      sucursalId ? { sucursalId } : {},
-      departamentoId ? { departamentoId } : {},
-      estado ? { estado: estado as EstadoEmpleado } : {},
-    ],
-  };
-
-  const where = conAlcance(filtros, g.usuario);
 
   const total = await prisma.empleado.count({ where });
   if (total > MAX_FILAS) {
@@ -140,7 +125,6 @@ export async function GET(req: NextRequest) {
   };
 
   const filas = empleados.map((e) => columnas.map((c) => valorDe[c.clave]?.(e) ?? ""));
-  const csv = generarCsv(etiquetas(columnas), filas, delimitador);
 
   const { ip, userAgent } = getClientInfo(req);
   await audit({
@@ -148,21 +132,103 @@ export async function GET(req: NextRequest) {
     tabla: "Empleado",
     // No hay un registro concreto: el sujeto de la acción es el conjunto.
     registroId: `export:${filas.length}`,
-    usuarioId: g.usuario.id,
-    usuarioEmail: g.usuario.email ?? undefined,
+    usuarioId: usuario.id,
+    usuarioEmail: usuario.email ?? undefined,
     valorNuevo: {
       filas: filas.length,
       // El dato clave de la auditoría: si el archivo llevaba identidades,
       // salarios y cuentas bancarias, o sólo el directorio.
-      incluyePII: vePII,
+      incluyePII: vePII && filas.length > 0,
       columnas: columnas.length,
-      filtros: { search: search || undefined, sucursalId, departamentoId, estado },
-      alcance: g.usuario.alcance ?? "TODO",
+      formato: salida.excel ? "xlsx" : "csv",
+      filtros: filtrosAuditoria,
+      alcance: usuario.alcance ?? "TODO",
     },
     ip,
     userAgent,
   });
 
-  const marca = new Date().toISOString().slice(0, 10);
-  return new NextResponse(csv, { headers: cabecerasDescarga(`empleados_${marca}.csv`) });
+  if (salida.excel) {
+    return new NextResponse(new Uint8Array(await plantillaXlsx(columnas, filas)), { headers: cabecerasXlsx(`${archivo}.xlsx`) });
+  }
+  return new NextResponse(generarCsv(etiquetas(columnas), filas, salida.delimitador), { headers: cabecerasDescarga(`${archivo}.csv`) });
+}
+
+const archivoConFecha = () => `empleados_${new Date().toISOString().slice(0, 10)}`;
+
+export async function GET(req: NextRequest) {
+  const g = await requerirPermiso("empleados.exportar");
+  if (!g.ok) return g.response;
+
+  const vePII = puede(g.usuario, "empleados.pii");
+  const { searchParams } = new URL(req.url);
+  const delimitador = delimitadorPedido(searchParams.get("delimitador"));
+
+  // ─── Plantilla vacía ────────────────────────────────────────────────────────
+  // Cabeceras y una fila de muestra. Es el punto de partida de una carga inicial
+  // y, de paso, documenta el formato de fechas y enumerados sin abrir el manual.
+  if (searchParams.get("plantilla") === "1") {
+    const columnas = columnasVisibles(COLUMNAS_EMPLEADO, vePII);
+    if (searchParams.get("formato") === "xlsx") {
+      return new NextResponse(new Uint8Array(await plantillaXlsx(columnas)), { headers: cabecerasXlsx("plantilla_empleados.xlsx") });
+    }
+    const csv = generarCsv(etiquetas(columnas), [filaEjemplo(columnas)], delimitador);
+    return new NextResponse(csv, { headers: cabecerasDescarga("plantilla_empleados.csv") });
+  }
+
+  // Mismos filtros que la pantalla, para que se exporte lo que se está viendo.
+  const search = searchParams.get("search") ?? "";
+  const sucursalId = searchParams.get("sucursalId");
+  const departamentoId = searchParams.get("departamentoId");
+  const estado = searchParams.get("estado");
+
+  const filtros: Prisma.EmpleadoWhereInput = {
+    AND: [
+      await filtroBusquedaEmpleados(prisma, search, { conIdentidad: vePII }),
+      sucursalId ? { sucursalId } : {},
+      departamentoId ? { departamentoId } : {},
+      estado ? { estado: estado as EstadoEmpleado } : {},
+    ],
+  };
+  const where = conAlcance(filtros, g.usuario);
+
+  // A quién se puede marcar: sólo lo necesario para reconocerlo, sin datos personales.
+  if (searchParams.get("lista") === "1") {
+    const empleados = await prisma.empleado.findMany({
+      where,
+      select: {
+        id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
+        sucursal: { select: { nombre: true } },
+        departamento: { select: { nombre: true } },
+      },
+      orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
+      take: MAX_FILAS,
+    });
+    // `filas` es el formato común de la ventana de exportar (ver ExportarSeleccion).
+    return NextResponse.json({
+      filas: empleados.map((e) => ({ id: e.id, titulo: nombreCompleto(e), detalle: `${e.codigo}, ${e.departamento.nombre}, ${e.sucursal.nombre}` })),
+    });
+  }
+
+  return responderExportacion(req, g.usuario, where, { delimitador }, { search: search || undefined, sucursalId, departamentoId, estado }, archivoConFecha());
+}
+
+export async function POST(req: NextRequest) {
+  const g = await requerirPermiso("empleados.exportar");
+  if (!g.ok) return g.response;
+
+  const parsed = await parsearBody(req, schemaSeleccion);
+  if (!parsed.ok) return parsed.response;
+  const { ids, delimitador, formato } = parsed.data;
+
+  // Con AND el alcance manda: un id de otra sucursal simplemente no sale en el archivo.
+  const where = conAlcance({ id: { in: ids } }, g.usuario);
+  return responderExportacion(
+    req,
+    g.usuario,
+    where,
+    { delimitador: delimitadorPedido(delimitador ?? null), excel: formato === "xlsx" },
+    { seleccionados: ids.length },
+    ids.length ? archivoConFecha() : "plantilla_empleados_vacia"
+  );
 }

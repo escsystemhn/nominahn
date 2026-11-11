@@ -217,6 +217,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { status: 409 }
       );
     }
+    // Un neto negativo no se paga: las deducciones de ley pasan del salario del
+    // período (casi siempre por ausencias). Hay que revisarlo antes de confirmar.
+    const negativos = r.detalles.filter((d) => d.salarioNeto.isNegative()).length;
+    if (negativos > 0) {
+      return NextResponse.json(
+        { error: `${negativos === 1 ? "Una persona queda" : `${negativos} personas quedan`} con neto negativo. Revise sus ausencias y deducciones antes de confirmar.` },
+        { status: 409 }
+      );
+    }
     calculo = r;
   }
 

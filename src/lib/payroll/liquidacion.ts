@@ -28,8 +28,8 @@
  * Es lógica pura (sin Prisma ni red) para poder probarse de forma aislada.
  */
 
-import { money, redondear, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
-import { calcularVacacionesDevengadas } from "./calculos-hn";
+import { money, redondear, maximo, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
+import { calcularVacacionesDevengadas, diasVacacionesPorAnio } from "./calculos-hn";
 
 export type CausaTerminacion =
   | "DESPIDO_INJUSTIFICADO"
@@ -238,7 +238,16 @@ export interface EntradaLiquidacion {
   otrosAdeudos?: MoneyInput;
   /** Anticipos, préstamos o adelantos a descontar del finiquito. */
   deducciones?: MoneyInput;
+  /**
+   * Saldo del Fondo de Reserva Laboral del trabajador en el RAP, con sus
+   * rendimientos. Cuando la causa da cesantía, ese saldo lo entrega el RAP y el
+   * patrono sólo paga la diferencia (Decreto 47-2024, Art. 6).
+   */
+  saldoFondoReserva?: MoneyInput;
 }
+
+/** Concepto con que se rebaja de la cesantía lo que entrega el Fondo de Reserva Laboral. */
+export const CONCEPTO_FONDO_RESERVA = "Fondo de Reserva Laboral, lo entrega el RAP";
 
 export interface ConceptoLiquidacion {
   concepto: string;
@@ -265,7 +274,9 @@ export interface ResultadoLiquidacion {
  * Liquidación final completa.
  *
  * El salario diario sale de dividir el promedio mensual entre 30, que es la
- * convención de nómina en Honduras y la que usa la Secretaría de Trabajo.
+ * convención de nómina en Honduras y la que usa la Secretaría de Trabajo. Los
+ * importes se calculan como salario mensual × días ÷ 30 y se redondean al final:
+ * redondear antes el salario diario daba 49,999.80 por 60 días de 25,000.
  */
 export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiquidacion {
   const {
@@ -281,11 +292,13 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
     salariosPendientes = 0,
     otrosAdeudos = 0,
     deducciones = 0,
+    saldoFondoReserva = 0,
   } = entrada;
 
   const t = calcularTiempoServicio(fechaIngreso, fechaSalida);
   const salarioMensual = money(salarioPromedio);
   const salarioDiario = redondear(salarioMensual.div(30));
+  const porDias = (dias: number) => salarioMensual.times(dias).div(30);
 
   const conceptos: ConceptoLiquidacion[] = [];
   const observaciones: string[] = [];
@@ -301,7 +314,7 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
       observaciones.push("Preaviso otorgado por escrito: no se paga su equivalente.");
     } else {
       const dias = diasPreaviso(t.mesesCompletos);
-      agregar("Preaviso", dias, salarioDiario.times(dias), "Art. 116 C.T.");
+      agregar("Preaviso", dias, porDias(dias), "Art. 116 C.T.");
     }
   } else if (causa === "RENUNCIA") {
     observaciones.push(
@@ -319,7 +332,23 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
       porcentaje === 1
         ? "Auxilio de cesantía"
         : `Auxilio de cesantía (${(porcentaje * 100).toFixed(0)} %)`;
-    agregar(etiqueta, redondearDias(dias), salarioDiario.times(dias), "Art. 120 C.T.");
+    const cesantia = redondear(porDias(dias));
+    agregar(etiqueta, redondearDias(dias), cesantia, "Art. 120 C.T.");
+
+    // Fondo de Reserva Laboral (Decreto 47-2024, Art. 6): su saldo lo entrega el
+    // RAP y se descuenta de la cesantía; en renuncia (35 %) y muerte (75 %) el
+    // patrono completa sólo lo que falte hasta esos porcentajes.
+    const fondo = maximo(money(saldoFondoReserva), 0);
+    if (fondo.greaterThan(0)) {
+      const rebaja = minimo(fondo, cesantia);
+      agregar(CONCEPTO_FONDO_RESERVA, null, rebaja.negated(), "Decreto 47-2024, Art. 6");
+      observaciones.push(
+        `De la cesantía se rebajan ${rebaja.toFixed(2)} del Fondo de Reserva Laboral: ese saldo lo entrega el RAP, el patrono paga la diferencia.` +
+          (fondo.greaterThan(cesantia)
+            ? ` El fondo supera la cesantía en ${fondo.minus(cesantia).toFixed(2)}: el RAP le entrega esa diferencia como prima de antigüedad.`
+            : "")
+      );
+    }
 
     const tope = esMicroempresa ? TOPE_CESANTIA_DIAS_MICROEMPRESA : TOPE_CESANTIA_DIAS;
     if (CESANTIA_DIAS_POR_ANIO * t.aniosFraccionarios > tope) {
@@ -353,9 +382,21 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
   agregar(
     "Vacaciones no gozadas",
     redondearDias(diasVacSaldo),
-    salarioDiario.times(diasVacSaldo),
+    porDias(diasVacSaldo),
     "Art. 346 C.T."
   );
+
+  // Art. 350: prohibido acumular vacaciones, salvo una vez y hasta dos años. Un
+  // saldo mayor casi siempre es un historial sin cargar (vacaciones gozadas que
+  // nadie registró), no una deuda real: se avisa para confirmarlo antes de pagar.
+  const maximoAcumulable = maximoVacacionesAcumulables(t.aniosFraccionarios);
+  if (diasVacSaldo > maximoAcumulable + 0.005) {
+    observaciones.push(
+      `El saldo de vacaciones no gozadas (${redondearDias(diasVacSaldo)} días) pasa de dos períodos ` +
+        `(${redondearDias(maximoAcumulable)} días). El Art. 350 prohíbe acumular vacaciones salvo una vez y hasta dos años: ` +
+        "confirme los días gozados en el saldo de vacaciones antes de liquidar."
+    );
+  }
 
   // ── Décimos proporcionales ─────────────────────────────────────────────────
   // Los calcula `./decimos.ts`; aquí sólo entran como importe ya devengado.
@@ -410,4 +451,18 @@ export function salarioOrdinarioPromedio(
 /** Días a dos decimales: las fracciones de cesantía y vacaciones no son enteras. */
 function redondearDias(d: number): number {
   return Math.round(d * 100) / 100;
+}
+
+/**
+ * Lo más que puede quedar pendiente sin violar el Art. 350: el derecho de los dos
+ * últimos años completos más lo proporcional del año en curso.
+ */
+export function maximoVacacionesAcumulables(aniosFraccionarios: number): number {
+  const completos = Math.floor(aniosFraccionarios);
+  const fraccion = aniosFraccionarios - completos;
+  return (
+    diasVacacionesPorAnio(completos) +
+    diasVacacionesPorAnio(completos - 1) +
+    diasVacacionesPorAnio(completos + 1) * fraccion
+  );
 }

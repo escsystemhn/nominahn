@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, nombreCompleto } from "@/lib/utils";
 import BarraDatos from "@/components/importacion/BarraDatos";
+import AsignarVarios from "@/components/payroll/AsignarVarios";
+import TipoDeduccionModal, { type TipoEditable } from "@/components/payroll/TipoDeduccionModal";
+import type { TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
+import { etiquetaCategoria } from "@/lib/deducciones/tipos";
+import { leerMonto } from "@/lib/formato/monto-texto";
 import { useAvisos } from "@/components/ui/Avisos";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge from "@/components/ui/EstadoBadge";
@@ -34,6 +39,8 @@ interface DeduccionEmpleado {
   cuotaPeriodo: number;
   fechaInicio: FechaSerializable;
   observacion: string | null;
+  /** «del 01/11/2026 al 15/11/2026» si es un monto del período (sólo vale entre esas fechas). */
+  soloPeriodo: string | null;
   empleado: { id: string; codigo: string; primerNombre: string; primerApellido: string; sucursal: { nombre: string } };
   tipoDeduccion: TipoDeduccion;
 }
@@ -45,21 +52,21 @@ interface Props {
   /** Permisos ya resueltos en el servidor: aquí sólo deciden qué se dibuja. */
   puedeExportar: boolean;
   puedeImportar: boolean;
+  puedeAsignar: boolean;
+  /** Crear y editar tipos (`deducciones.configurar`). */
+  puedeConfigurar: boolean;
+  /** Bajar el catálogo de tipos en archivo. */
+  puedeExportarTipos: boolean;
+  /** «Sucursal» o «Grupo de nómina», según la jerarquía. */
+  etiquetaSucursal: string;
+  /** El tipo de planilla de la mayoría: con él arrancan los selectores de período. */
+  tipoPlanilla: TipoPlanillaPeriodo;
   /** Solicitudes de préstamo por atender: van bajo el título, no encima. */
   solicitudes?: React.ReactNode;
 }
 
-/** El tipo de deducción en palabras, no el nombre del enum. */
-const TIPO_TEXTO: Record<string, string> = {
-  LEGAL: "Legal",
-  PRESTAMO: "Préstamo",
-  ADELANTO: "Adelanto",
-  COOPERATIVA: "Cooperativa",
-  AFP: "AFP",
-  IMPUESTO: "Impuesto",
-  VOLUNTARIA: "Voluntaria",
-  OTRO: "Otro",
-};
+/** Los de ley y la retención fija de ISR: se configuran en Parámetros de ley. */
+const esDelSistema = (t: Pick<TipoDeduccion, "esLegal" | "codigo">) => t.esLegal || t.codigo === "ISR-FIJO";
 
 type FormaCobro = "UNA_VEZ" | "CUOTAS" | "SIEMPRE";
 
@@ -75,24 +82,23 @@ export default function DeduccionesClient({
   empleados,
   puedeExportar,
   puedeImportar,
+  puedeAsignar: permiteAsignar,
+  puedeConfigurar,
+  puedeExportarTipos,
+  etiquetaSucursal,
+  tipoPlanilla,
   solicitudes,
 }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
   const [tab, setTab] = useState<"tipos" | "empleados">("tipos");
   const [loading, setLoading] = useState(false);
-  const [modalTipo, setModalTipo] = useState(false);
+  /** `undefined`: cerrada; `null`: uno nuevo. */
+  const [editando, setEditando] = useState<TipoEditable | null | undefined>(undefined);
   const [modalEmp, setModalEmp] = useState(false);
+  const [modalVarios, setModalVarios] = useState(false);
 
-  const [formTipo, setFormTipo] = useState({
-    nombre: "",
-    codigo: "",
-    tipo: "VOLUNTARIA",
-    porcentaje: "",
-    montoFijo: "",
-    esLegal: false,
-    descripcion: "",
-  });
+  const asignables = tipos.filter((t) => t.activo && !t.esLegal);
 
   const [formEmp, setFormEmp] = useState({
     empleadoId: "",
@@ -103,7 +109,8 @@ export default function DeduccionesClient({
     fechaInicio: new Date().toISOString().split("T")[0],
     observacion: "",
   });
-  const montoAsignar = Number(formEmp.monto);
+  const lecturaMonto = leerMonto(formEmp.monto);
+  const montoAsignar = lecturaMonto.ok && lecturaMonto.valor !== null ? lecturaMonto.valor : 0;
   const cuotasAsignar = Number(formEmp.cuotasMeses);
   const puedeAsignar =
     !!formEmp.empleadoId &&
@@ -111,27 +118,10 @@ export default function DeduccionesClient({
     montoAsignar > 0 &&
     (formEmp.forma !== "CUOTAS" || (Number.isInteger(cuotasAsignar) && cuotasAsignar >= 1));
 
-  async function crearTipo() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/deducciones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formTipo,
-          porcentaje: formTipo.porcentaje ? parseFloat(formTipo.porcentaje) / 100 : null,
-          montoFijo: formTipo.montoFijo ? parseFloat(formTipo.montoFijo) : null,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      setModalTipo(false);
-      avisar.exito("Tipo de deducción creado.");
-      router.refresh();
-    } catch {
-      avisar.error("No se pudo crear el tipo de deducción. Revise los datos e intente de nuevo.");
-    } finally {
-      setLoading(false);
-    }
+  /** Al elegir el tipo se propone su monto habitual, si el campo está vacío. */
+  function elegirTipoEmp(id: string) {
+    const habitual = tipos.find((t) => t.id === id)?.montoFijo;
+    setFormEmp((f) => ({ ...f, tipoDeduccionId: id, monto: f.monto.trim() === "" && habitual ? habitual.toFixed(2) : f.monto }));
   }
 
   async function asignarEmpleado() {
@@ -171,18 +161,30 @@ export default function DeduccionesClient({
           <>
             <BarraDatos
               recurso="deducciones"
+              elegirFilas
+              periodoPlanilla={tipoPlanilla}
+              puedeCrearTipos={puedeConfigurar}
               puedeExportar={puedeExportar}
               puedeImportar={puedeImportar}
               incluyePII
               tituloImportacion="Importar deducciones de empleados"
               ayudaImportacion="Cada fila asigna una deducción a un empleado, identificada por el código del empleado, el código del tipo de deducción y la fecha de inicio. Reimportar el mismo archivo actualiza esas mismas deducciones en vez de duplicar el descuento. Las deducciones legales (IHSS, RAP, INFOP) las calcula la planilla y no se asignan por aquí."
             />
-            <button onClick={() => setModalEmp(true)} className="btn btn-secondary">
-              Asignar a empleado
-            </button>
-            <button onClick={() => setModalTipo(true)} className="btn btn-primary">
-              Nuevo tipo
-            </button>
+            {permiteAsignar && (
+              <>
+                <button onClick={() => setModalEmp(true)} className="btn btn-secondary">
+                  Asignar a empleado
+                </button>
+                <button onClick={() => setModalVarios(true)} className="btn btn-secondary">
+                  Asignar a varios
+                </button>
+              </>
+            )}
+            {puedeConfigurar && (
+              <button onClick={() => setEditando(null)} className="btn btn-primary">
+                Nuevo tipo
+              </button>
+            )}
           </>
         }
       />
@@ -205,42 +207,75 @@ export default function DeduccionesClient({
       </div>
 
       {tab === "tipos" && (
-        <div className="panel overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="table-base tabla-tarjetas">
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Código</th>
-                  <th>Tipo</th>
-                  <th>Valor</th>
-                  <th>Legal</th>
-                  <th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tipos.length === 0 ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-2xl text-sm text-gray-600">
+              El catálogo de descuentos de la empresa. La categoría decide hasta cuánto se cobra; cada tipo es una columna en el archivo de montos del período.
+            </p>
+            <BarraDatos
+              recurso="tipos-deduccion"
+              exportaXlsx
+              textoExportar="Exportar tipos"
+              textoImportar="Importar tipos"
+              puedeExportar={puedeExportarTipos}
+              puedeImportar={puedeConfigurar}
+              tituloImportacion="Importar tipos de deducción"
+              ayudaImportacion="Una fila por tipo de deducción: código, nombre, categoría y, si quiere, un monto habitual. El código es la clave: si ya existe se actualiza, si no se crea. Úselo para cargar de una vez los descuentos de una empresa nueva o para corregir varios nombres. La plantilla de Excel trae la categoría en una lista para elegir."
+            />
+          </div>
+          <div className="panel overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="table-base tabla-tarjetas">
+                <thead>
                   <tr>
-                    <td colSpan={6}>
-                      <EstadoVacio titulo="Todavía no hay tipos de deducción." detalle="Cree el primero con el botón Nuevo tipo." />
-                    </td>
+                    <th>Nombre</th>
+                    <th>Código</th>
+                    <th>Categoría</th>
+                    <th>Valor</th>
+                    <th>Estado</th>
+                    {puedeConfigurar && <th><span className="sr-only">Acciones</span></th>}
                   </tr>
-                ) : tipos.map((t) => (
-                  <tr key={t.id}>
-                    <td data-titulo className="font-medium text-gray-900">{t.nombre}</td>
-                    <td data-etiqueta="Código" className="font-mono text-xs">{t.codigo}</td>
-                    <td data-etiqueta="Tipo" className="text-gray-600">{TIPO_TEXTO[t.tipo] ?? t.tipo}</td>
-                    <td data-etiqueta="Valor">
-                      {t.porcentaje ? `${(Number(t.porcentaje) * 100).toFixed(2)}%` : t.montoFijo ? formatCurrency(Number(t.montoFijo)) : "Variable"}
-                    </td>
-                    <td data-etiqueta="Legal">{t.esLegal ? "Sí" : "No"}</td>
-                    <td data-etiqueta="Estado">
-                      <EstadoBadge valor={t.activo ? "ACTIVO" : "INACTIVO"} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tipos.length === 0 ? (
+                    <tr>
+                      <td colSpan={puedeConfigurar ? 6 : 5}>
+                        <EstadoVacio titulo="Todavía no hay tipos de deducción." detalle="Cree el primero con Nuevo tipo, o cárguelos todos con Importar tipos." />
+                      </td>
+                    </tr>
+                  ) : tipos.map((t) => (
+                    <tr key={t.id} data-tipo={t.codigo}>
+                      <td data-titulo>
+                        <div className="font-medium text-gray-900">{t.nombre}</div>
+                        {t.descripcion && <div className="text-xs text-gray-500">{t.descripcion}</div>}
+                      </td>
+                      <td data-etiqueta="Código" className="font-mono text-xs">{t.codigo}</td>
+                      <td data-etiqueta="Categoría" className="text-gray-600">{etiquetaCategoria(t.tipo)}</td>
+                      <td data-etiqueta="Valor" className="whitespace-nowrap">
+                        {esDelSistema(t)
+                          ? (t.porcentaje ? `${(Number(t.porcentaje) * 100).toFixed(2)}%` : "Lo calcula la planilla")
+                          : t.montoFijo ? <>{formatCurrency(Number(t.montoFijo))} <span className="text-xs text-gray-500">habitual</span></> : "Variable"}
+                      </td>
+                      <td data-etiqueta="Estado">
+                        <EstadoBadge valor={t.activo ? "ACTIVO" : "INACTIVO"} />
+                      </td>
+                      {puedeConfigurar && (
+                        <td data-etiqueta="Acciones" className="text-right">
+                          {esDelSistema(t)
+                            ? <span className="text-xs text-gray-500">En Parámetros de ley</span>
+                            : (
+                              <button type="button" className="text-sm font-medium text-blue-700 hover:underline" aria-label={`Editar ${t.nombre}`}
+                                onClick={() => setEditando({ id: t.id, nombre: t.nombre, codigo: t.codigo, tipo: t.tipo, montoFijo: t.montoFijo, descripcion: t.descripcion, activo: t.activo })}>
+                                Editar
+                              </button>
+                            )}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -276,7 +311,7 @@ export default function DeduccionesClient({
                     <td data-etiqueta="Monto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(d.monto))}</td>
                     <td data-etiqueta="Por planilla" className="num whitespace-nowrap">{formatCurrency(d.cuotaPeriodo)}</td>
                     <td data-etiqueta="Cuotas" className="text-xs text-gray-500">
-                      {d.cuotasMeses ? `${d.cuotasPagadas}/${d.cuotasMeses}` : d.saldo === null ? "Cada planilla" : "Una vez"}
+                      {d.soloPeriodo ? `Sólo ${d.soloPeriodo}` : d.cuotasMeses ? `${d.cuotasPagadas}/${d.cuotasMeses}` : d.saldo === null ? "Cada planilla" : "Una vez"}
                     </td>
                     <td data-etiqueta="Observación" className="text-xs text-gray-500">{d.observacion ?? "—"}</td>
                   </tr>
@@ -287,54 +322,11 @@ export default function DeduccionesClient({
         </div>
       )}
 
-      {/* Modal nuevo tipo */}
-      {modalTipo && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="panel w-full max-w-md space-y-4 p-6 shadow-2xl">
-            <h3 className="font-semibold text-gray-900">Nuevo tipo de deducción</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="ded-1" className="mb-1 block text-sm font-medium text-gray-800">Nombre</label>
-                <input id="ded-1" value={formTipo.nombre} onChange={(e) => setFormTipo((f) => ({ ...f, nombre: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label htmlFor="ded-2" className="mb-1 block text-sm font-medium text-gray-800">Código</label>
-                <input id="ded-2" value={formTipo.codigo} onChange={(e) => setFormTipo((f) => ({ ...f, codigo: e.target.value }))} className="input" placeholder="EJ: COOP1" />
-              </div>
-              <div>
-                <label htmlFor="ded-3" className="mb-1 block text-sm font-medium text-gray-800">Tipo</label>
-                <select id="ded-3" value={formTipo.tipo} onChange={(e) => setFormTipo((f) => ({ ...f, tipo: e.target.value }))} className="input">
-                  {["LEGAL","VOLUNTARIA","PRESTAMO","ADELANTO","COOPERATIVA","IMPUESTO","AFP","OTRO"].map((t) => (
-                    <option key={t} value={t}>{TIPO_TEXTO[t]}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="ded-4" className="mb-1 block text-sm font-medium text-gray-800">% (si aplica)</label>
-                <input id="ded-4" type="number" step="0.01" value={formTipo.porcentaje} onChange={(e) => setFormTipo((f) => ({ ...f, porcentaje: e.target.value }))} className="input" placeholder="Ej: 2.5" />
-              </div>
-              <div>
-                <label htmlFor="ded-5" className="mb-1 block text-sm font-medium text-gray-800">Monto fijo (si aplica)</label>
-                <input id="ded-5" type="number" step="0.01" value={formTipo.montoFijo} onChange={(e) => setFormTipo((f) => ({ ...f, montoFijo: e.target.value }))} className="input" />
-              </div>
-              <div className="flex items-center gap-2 pt-6">
-                <input type="checkbox" id="esLegal" checked={formTipo.esLegal} onChange={(e) => setFormTipo((f) => ({ ...f, esLegal: e.target.checked }))} />
-                <label htmlFor="esLegal" className="text-sm text-gray-800">Es deducción legal</label>
-              </div>
-            </div>
-            <div>
-              <label htmlFor="ded-6" className="mb-1 block text-sm font-medium text-gray-800">Descripción</label>
-              <input id="ded-6" value={formTipo.descripcion} onChange={(e) => setFormTipo((f) => ({ ...f, descripcion: e.target.value }))} className="input" />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setModalTipo(false)} className="btn btn-secondary flex-1">Cancelar</button>
-              <button onClick={crearTipo} disabled={loading} className="btn btn-primary flex-1">
-                {loading ? "Guardando…" : "Crear"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {editando !== undefined && (
+        <TipoDeduccionModal tipo={editando} codigosOcupados={tipos.map((t) => t.codigo)} onCerrar={() => setEditando(undefined)} />
       )}
+
+      {modalVarios && <AsignarVarios tipos={asignables} etiquetaSucursal={etiquetaSucursal} onCerrar={() => setModalVarios(false)} />}
 
       {/* Modal asignar empleado */}
       {modalEmp && (
@@ -352,12 +344,17 @@ export default function DeduccionesClient({
             </div>
             <div>
               <label htmlFor="ded-8" className="mb-1 block text-sm font-medium text-gray-800">Tipo de deducción</label>
-              <select id="ded-8" value={formEmp.tipoDeduccionId} onChange={(e) => setFormEmp((f) => ({ ...f, tipoDeduccionId: e.target.value }))} className="input">
+              <select id="ded-8" value={formEmp.tipoDeduccionId} onChange={(e) => elegirTipoEmp(e.target.value)} className="input">
                 <option value="">Seleccione…</option>
-                {tipos.map((t) => (
+                {asignables.map((t) => (
                   <option key={t.id} value={t.id}>{t.nombre} ({t.codigo})</option>
                 ))}
               </select>
+              {puedeConfigurar && (
+                <button type="button" className="mt-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => { setModalEmp(false); setEditando(null); }}>
+                  ¿No está en la lista? Crear un tipo nuevo
+                </button>
+              )}
             </div>
             <div>
               <label htmlFor="forma-cobro" className="mb-1 block text-sm font-medium text-gray-800">Forma de cobro</label>
@@ -370,12 +367,13 @@ export default function DeduccionesClient({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="monto-asignar" className="mb-1 block text-sm font-medium text-gray-800">{ETIQUETA_MONTO[formEmp.forma]}</label>
-                <input id="monto-asignar" type="number" min="0" step="0.01" value={formEmp.monto} onChange={(e) => setFormEmp((f) => ({ ...f, monto: e.target.value }))} className="input" />
+                <input id="monto-asignar" inputMode="decimal" value={formEmp.monto} onChange={(e) => setFormEmp((f) => ({ ...f, monto: e.target.value }))} className="input" placeholder="Ej: 1000.00" />
+                {!lecturaMonto.ok && <p className="mt-1 text-xs text-red-700">{lecturaMonto.error}</p>}
               </div>
               {formEmp.forma === "CUOTAS" && (
                 <div>
                   <label htmlFor="cuotas-asignar" className="mb-1 block text-sm font-medium text-gray-800">Número de cuotas</label>
-                  <input id="cuotas-asignar" type="number" min="1" step="1" value={formEmp.cuotasMeses} onChange={(e) => setFormEmp((f) => ({ ...f, cuotasMeses: e.target.value }))} className="input" />
+                  <input id="cuotas-asignar" inputMode="numeric" value={formEmp.cuotasMeses} onChange={(e) => setFormEmp((f) => ({ ...f, cuotasMeses: e.target.value }))} className="input" />
                 </div>
               )}
               <div>

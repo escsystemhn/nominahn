@@ -14,16 +14,20 @@
  *   · Ambos equivalen a un mes de salario por año completo de servicio, y al
  *     proporcional cuando el servicio es menor (ingreso o baja a mitad del
  *     período de devengo).
- *   · Están EXENTOS del ISR hasta el equivalente a diez salarios mínimos
- *     promedio, contados entre los dos (Art. 11 Ley del ISR). El excedente
- *     tributa.
+ *   · Están EXENTOS del ISR «hasta por el monto de diez (10) salarios mínimos
+ *     promedio, en cada caso» (Ley del ISR, Art. 10, tras el literal h; reforma
+ *     del Decreto 51-2003): diez salarios mínimos para el 13.º y otros diez para
+ *     el 14.º. El excedente tributa. Antes se contaban entre los dos.
+ *   · El proporcional se cuenta en días COMERCIALES (meses de 30 días), como manda
+ *     la base de 30 días del Decreto 112-82: de julio a diciembre son 180 días, no
+ *     los 184 del calendario.
  *   · NO cotizan IHSS ni RAP: no son salario ordinario.
  *
  * Es lógica pura (sin Prisma ni red) para poder probarse de forma aislada.
  */
 
 import { money, redondear, maximo, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
-import { calcularISRMensual, type ParametrosLegales, PARAMETROS_DEFAULT } from "./calculos-hn";
+import { calcularISRMensual, diasComerciales, type ParametrosLegales, PARAMETROS_DEFAULT } from "./calculos-hn";
 
 export type TipoDecimo = "DECIMO_TERCERO" | "DECIMO_CUARTO";
 
@@ -31,12 +35,10 @@ export type TipoDecimo = "DECIMO_TERCERO" | "DECIMO_CUARTO";
 export const DIAS_ANIO_COMERCIAL = 360;
 
 /**
- * Número de salarios mínimos promedio exentos de ISR, contando ambos décimos
- * en conjunto (Art. 11 Ley del ISR). Parametrizable por si cambia por decreto.
+ * Número de salarios mínimos promedio exentos de ISR en CADA décimo (Ley del ISR,
+ * Art. 10). Parametrizable por si cambia por decreto.
  */
 export const SALARIOS_MINIMOS_EXENTOS = 10;
-
-const MS_DIA = 24 * 60 * 60 * 1000;
 
 export interface VentanaDevengo {
   desde: Date;
@@ -128,9 +130,10 @@ export function calcularDecimo(entrada: EntradaDecimo): ResultadoDecimo {
   }
 
   // Inclusivo en ambos extremos: el día de ingreso y el de salida se trabajan.
-  const diasEfectivos = Math.floor((fin.getTime() - inicio.getTime()) / MS_DIA) + 1;
+  // Días comerciales sobre 360: contar días de calendario sobre 360 pagaba de más
+  // (julio a diciembre, 184 / 360 = 51.1 % en vez de la mitad).
   // El tope es el año comercial: nadie devenga más de un mes de salario.
-  const diasComputados = Math.min(diasEfectivos, DIAS_ANIO_COMERCIAL);
+  const diasComputados = Math.min(diasComerciales(inicio, fin), DIAS_ANIO_COMERCIAL);
 
   const montoDevengado = redondear(
     salario.times(diasComputados).div(DIAS_ANIO_COMERCIAL)
@@ -164,9 +167,8 @@ export interface DesgloseFiscalDecimo {
 /**
  * Reparte un décimo entre porción exenta y gravada, y calcula la retención.
  *
- * El techo de diez salarios mínimos es CONJUNTO para los dos décimos: si el
- * décimo cuarto ya consumió parte, al décimo tercero le queda el resto. Por eso
- * `exentoYaUsado` es un parámetro y no una constante.
+ * El techo de diez salarios mínimos promedio es de CADA décimo («en cada caso»,
+ * Ley del ISR, Art. 10): lo que exima el 14.º no le quita nada al 13.º.
  *
  * El ISR sobre el excedente se calcula con la misma tabla progresiva anual que
  * el salario, tratando el excedente como renta adicional del año.
@@ -174,8 +176,6 @@ export interface DesgloseFiscalDecimo {
 export function aplicarFiscalidadDecimo(opts: {
   montoDevengado: MoneyInput;
   salarioMinimo: MoneyInput;
-  /** Porción del techo conjunto ya consumida por el otro décimo del mismo año. */
-  exentoYaUsado?: MoneyInput;
   /** Renta gravable anual del trabajador por su salario ordinario. */
   rentaOrdinariaAnual?: MoneyInput;
   salariosMinimosExentos?: number;
@@ -184,15 +184,13 @@ export function aplicarFiscalidadDecimo(opts: {
   const {
     montoDevengado,
     salarioMinimo,
-    exentoYaUsado = 0,
     rentaOrdinariaAnual = 0,
     salariosMinimosExentos = SALARIOS_MINIMOS_EXENTOS,
     parametros = PARAMETROS_DEFAULT,
   } = opts;
 
   const monto = money(montoDevengado);
-  const techoConjunto = money(salarioMinimo).times(salariosMinimosExentos);
-  const techoExento = maximo(techoConjunto.minus(money(exentoYaUsado)), 0);
+  const techoExento = money(salarioMinimo).times(salariosMinimosExentos);
 
   const montoExento = minimo(monto, techoExento);
   const montoGravado = maximo(monto.minus(montoExento), 0);
@@ -229,7 +227,6 @@ export function liquidarDecimo(
   entrada: EntradaDecimo,
   fiscal: {
     salarioMinimo: MoneyInput;
-    exentoYaUsado?: MoneyInput;
     rentaOrdinariaAnual?: MoneyInput;
     parametros?: ParametrosLegales;
   }

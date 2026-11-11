@@ -169,7 +169,7 @@ function Emitir({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ empleadoId, plantillaId: plantillaSel, destinatario: destinatario || null }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo preparar la vista previa");
       setVista(d);
     } catch (e) {
@@ -187,7 +187,7 @@ function Emitir({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ empleadoId, plantillaId: plantillaSel, destinatario: destinatario || null }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo emitir");
       onAviso({ ok: true, texto: `Documento emitido con el folio ${d.folio}.` });
       window.open(`/api/documentos/emitidos/${d.id}/pdf?modo=ver`, "_blank", "noopener");
@@ -284,7 +284,7 @@ function Historial({ onAviso }: { onAviso: (a: { ok: boolean; texto: string } | 
       peligro: true,
     }))) return;
     const res = await fetch(`/api/documentos/emitidos/${e.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anulado: true }) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     onAviso(res.ok ? { ok: true, texto: `Documento ${e.folio} anulado.` } : { ok: false, texto: d.error ?? "No se pudo anular" });
     await cargar();
   }
@@ -395,7 +395,7 @@ function Plantillas({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ empleadoId: empPrueba, contenido: edicion.contenido, titulo: edicion.titulo }),
     });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) onAviso({ ok: false, texto: d.error ?? "No se pudo probar" });
     else setVista(d);
   }
@@ -410,7 +410,7 @@ function Plantillas({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cuerpo),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([d.error ?? "No se pudo guardar", ...campos].join(" "));
@@ -428,7 +428,7 @@ function Plantillas({
   async function borrar() {
     if (!sel || !(await confirmar({ titulo: `¿Borrar la plantilla «${sel.nombre}»?`, accion: "Borrar", peligro: true }))) return;
     const res = await fetch(`/api/documentos/plantillas/${sel.id}`, { method: "DELETE" });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     onAviso(res.ok ? { ok: true, texto: "Plantilla borrada." } : { ok: false, texto: d.error ?? "No se pudo borrar" });
     if (res.ok) {
       await onCambio();
@@ -438,7 +438,7 @@ function Plantillas({
 
   async function guardarFirmante() {
     const res = await fetch("/api/documentos/firmante", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fForm) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     onAviso(res.ok ? { ok: true, texto: "Firmante guardado." } : { ok: false, texto: d.error ?? "No se pudo guardar" });
     if (res.ok) await onCambio();
   }

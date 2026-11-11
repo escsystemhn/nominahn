@@ -8,6 +8,7 @@ import { cerrarContratoVigente } from "@/lib/empleados/contratos-bd";
 import { parsearBody, zId } from "@/lib/http/validar";
 import {
   calcularLiquidacion,
+  CONCEPTO_FONDO_RESERVA,
   salarioOrdinarioPromedio,
   MESES_PROMEDIO_SALARIO,
   MAX_EMPLEADOS_MICROEMPRESA,
@@ -28,6 +29,11 @@ const schemaCalcular = z.object({
   otrosAdeudos: z.number().min(0).optional(),
   /** Anticipos o préstamos a descontar del finiquito. */
   deducciones: z.number().min(0).optional(),
+  /**
+   * Saldo del Fondo de Reserva Laboral certificado por el RAP. Si se omite se
+   * estima con los aportes de las planillas confirmadas (sin rendimientos).
+   */
+  saldoFondoReserva: z.number().min(0).optional(),
   /** Guardar el finiquito. Sin esto sólo se devuelve la simulación. */
   guardar: z.boolean().optional(),
   /**
@@ -75,6 +81,7 @@ export async function POST(req: NextRequest) {
   const {
     empleadoId, causa, fechaSalida, diasVacacionesGozados,
     preavisoOtorgado, salariosPendientes, otrosAdeudos, deducciones, guardar, liquidarPrestamos,
+    saldoFondoReserva,
   } = parsed.data;
 
   const empleado = await prisma.empleado.findUnique({
@@ -167,6 +174,25 @@ export async function POST(req: NextRequest) {
   const totalActivos = await prisma.empleado.count({ where: { estado: "ACTIVO" } });
   const esMicroempresa = totalActivos <= MAX_EMPLEADOS_MICROEMPRESA;
 
+  // ─── Fondo de Reserva Laboral ──────────────────────────────────────────────
+  // Su saldo se descuenta de la cesantía (Decreto 47-2024, Art. 6). Lo correcto
+  // es el saldo que certifica el RAP; sin él se estima con los aportes de las
+  // planillas confirmadas, que no incluyen rendimientos.
+  let fondoEstimado = false;
+  let saldoFondo = saldoFondoReserva !== undefined ? money(saldoFondoReserva) : CERO;
+  if (saldoFondoReserva === undefined) {
+    const aportes = await prisma.planillaDetalle.aggregate({
+      where: {
+        empleadoId,
+        // Incluye la planilla del mes de la salida, que termina después de ella.
+        planilla: { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] }, fechaInicio: { lte: fechaSalida } },
+      },
+      _sum: { reservaLaboral: true },
+    });
+    saldoFondo = money(aportes._sum.reservaLaboral ?? 0);
+    fondoEstimado = true;
+  }
+
   const resultado = calcularLiquidacion({
     fechaIngreso: empleado.fechaIngreso,
     fechaSalida,
@@ -180,7 +206,13 @@ export async function POST(req: NextRequest) {
     salariosPendientes,
     otrosAdeudos,
     deducciones,
+    saldoFondoReserva: saldoFondo,
   });
+  if (fondoEstimado && saldoFondo.greaterThan(0) && resultado.conceptos.some((c) => c.concepto === CONCEPTO_FONDO_RESERVA)) {
+    resultado.observaciones.push(
+      "El saldo del Fondo de Reserva se estimó con los aportes de las planillas, sin rendimientos: anote el saldo que certifica el RAP antes de guardar."
+    );
+  }
 
   // Préstamos y anticipos vigentes: se sugieren como deducción del finiquito.
   const deudasVigentes = await prisma.deduccionEmpleado.findMany({
@@ -207,6 +239,8 @@ export async function POST(req: NextRequest) {
     totalAPagar: aNumero(resultado.totalAPagar),
     observaciones: resultado.observaciones,
     saldoDeduccionesPendientes: aNumero(saldoDeduccionesPendientes),
+    saldoFondoReserva: aNumero(saldoFondo),
+    fondoReservaEstimado: fondoEstimado,
     deudasVigentes: deudasVigentes.map((d) => ({ id: d.id, nombre: d.tipoDeduccion.nombre, saldo: aNumero(d.saldo ?? 0) })),
   };
 

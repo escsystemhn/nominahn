@@ -63,6 +63,8 @@ interface Simulacion {
   observaciones: string[];
   saldoDeduccionesPendientes: number;
   deudasVigentes: { id: string; nombre: string; saldo: number }[];
+  saldoFondoReserva: number;
+  fondoReservaEstimado: boolean;
 }
 
 interface Decimo {
@@ -104,6 +106,7 @@ const formVacio = {
   otrosAdeudos: "",
   deducciones: "",
   liquidarPrestamos: false,
+  saldoFondoReserva: "",
 };
 
 export default function PrestacionesClient({ tabInicial, permisos, empleados, sucursales }: Props) {
@@ -158,6 +161,8 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
     otrosAdeudos: Number(form.otrosAdeudos || 0),
     deducciones: Number(form.deducciones || 0),
     liquidarPrestamos: form.liquidarPrestamos,
+    // En blanco: el servidor lo estima con los aportes de las planillas.
+    ...(form.saldoFondoReserva !== "" ? { saldoFondoReserva: Number(form.saldoFondoReserva) } : {}),
     guardar,
   });
 
@@ -170,7 +175,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
     setAviso(null);
     try {
       const res = await fetch("/api/liquidaciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpoLiquidacion(false)) });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo calcular");
       setSimulacion(d);
     } catch (e) {
@@ -190,7 +195,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
     setOcupado(true);
     try {
       const res = await fetch("/api/liquidaciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpoLiquidacion(true)) });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo guardar");
       setAviso({ ok: true, texto: `Liquidación guardada como borrador por ${formatCurrency(d.totalAPagar)}. Falta aprobarla.` });
       setForm(formVacio);
@@ -206,7 +211,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
 
   async function cambiarEstadoLiquidacion(id: string, cuerpo: Record<string, unknown>) {
     const res = await fetch(`/api/liquidaciones/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) {
       setAviso({ ok: false, texto: d.error ?? "No se pudo actualizar" });
       return false;
@@ -225,7 +230,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tipo: filtroDec.tipo, anio: Number(filtroDec.anio), sucursalId: filtroDec.sucursalId || null }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo calcular");
       setAviso({ ok: true, texto: `Calculado para ${d.empleados} empleado(s): ${formatCurrency(d.totalDevengado)} devengado, ${formatCurrency(d.totalIsr)} de ISR.` });
       await cargarDecimos();
@@ -238,7 +243,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
 
   async function cambiarEstadoDecimos(ids: string[], cuerpo: Record<string, unknown>) {
     const res = await fetch("/api/decimos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, ...cuerpo }) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) {
       setAviso({ ok: false, texto: d.error ?? "No se pudo actualizar" });
       return false;
@@ -355,6 +360,11 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                   <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="liq-ded">Deducciones (préstamos y anticipos)</label>
                   <input id="liq-ded" type="number" min={0} step="0.01" className="input" value={form.deducciones} onChange={(e) => { set("deducciones", e.target.value); set("liquidarPrestamos", false); }} />
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="liq-fondo">Fondo de Reserva Laboral (saldo del RAP)</label>
+                  <input id="liq-fondo" type="number" min={0} step="0.01" className="input" value={form.saldoFondoReserva} placeholder="En blanco: se estima" aria-describedby="liq-fondo-ayuda" onChange={(e) => set("saldoFondoReserva", e.target.value)} />
+                  <p id="liq-fondo-ayuda" className="mt-1 text-xs text-gray-500">Se rebaja de la cesantía (Decreto 47-2024, Art. 6).</p>
+                </div>
               </div>
 
               <div className="flex justify-end">
@@ -384,6 +394,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                     <div><dt className="text-xs text-gray-500">Salario promedio</dt><dd className="tnum text-gray-900">{formatCurrency(simulacion.salarioPromedio)}</dd></div>
                     <div><dt className="text-xs text-gray-500">Salario diario</dt><dd className="tnum text-gray-900">{formatCurrency(simulacion.salarioDiario)}</dd></div>
                     <div><dt className="text-xs text-gray-500">Tamaño de empresa</dt><dd className="text-gray-900">{simulacion.esMicroempresa ? "Hasta 10 trabajadores" : "Más de 10 trabajadores"}</dd></div>
+                    <div><dt className="text-xs text-gray-500">Fondo de Reserva Laboral</dt><dd className="tnum text-gray-900">{formatCurrency(simulacion.saldoFondoReserva)}{simulacion.fondoReservaEstimado ? " (estimado)" : ""}</dd></div>
                   </dl>
                   <div className="overflow-x-auto">
                     <table className="table-base">

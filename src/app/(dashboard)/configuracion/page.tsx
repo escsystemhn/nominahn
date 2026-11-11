@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede, puedeAlguno } from "@/lib/auth/guard";
 import ConfiguracionClient from "@/components/config/ConfiguracionClient";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 
 export default async function ConfiguracionPage() {
@@ -16,13 +16,13 @@ export default async function ConfiguracionPage() {
 
   // Quien entra sólo por el correo saliente o los parámetros de ley no recibe los datos de la empresa:
   // se consultan únicamente si los puede ver.
-  const [empresa, sucursales, divisiones, departamentos, puestos, divisionesActivas, salarioMinimo, configs] = !puedeVer
-    ? [null, [], [], [], [], false, null, []] as const
+  const [empresa, sucursales, divisiones, departamentos, puestos, divisionesActivas, jerarquiaActiva, salarioMinimo, configs] = !puedeVer
+    ? [null, [], [], [], [], false, false, null, []] as const
     : await Promise.all([
     prisma.empresa.findFirst({ orderBy: ORDEN_EMPRESA_PRINCIPAL }),
-    prisma.sucursal.findMany({ orderBy: { nombre: "asc" } }),
+    prisma.sucursal.findMany({ orderBy: { nombre: "asc" }, include: { logo: { select: { updatedAt: true } } } }),
     prisma.division.findMany({
-      select: { id: true, nombre: true, codigo: true, activa: true, sucursalId: true, _count: { select: { departamentos: true } } },
+      select: { id: true, nombre: true, codigo: true, rtn: true, activa: true, sucursalId: true, _count: { select: { departamentos: true } } },
       orderBy: [{ sucursal: { nombre: "asc" } }, { nombre: "asc" }],
     }),
     prisma.departamento.findMany({
@@ -37,6 +37,7 @@ export default async function ConfiguracionPage() {
       orderBy: { nombre: "asc" },
     }),
     divisionesHabilitadas(prisma),
+    jerarquiaNominaHabilitada(prisma),
     prisma.salarioMinimo.findFirst({ where: { activo: true }, orderBy: { anio: "desc" } }),
     // Las claves SISTEMA_* (registro de la evaluación y activación de la licencia)
     // son firmas que el programa administra: no se muestran ni se editan aquí.
@@ -53,7 +54,7 @@ export default async function ConfiguracionPage() {
   return (
     <ConfiguracionClient
       empresa={empresa}
-      sucursales={[...sucursales]}
+      sucursales={sucursales.map(({ logo, ...s }) => ({ ...s, logoVersion: logo?.updatedAt.getTime() ?? null }))}
       divisiones={divisiones.map(({ _count, ...v }) => ({ ...v, departamentos: _count.departamentos }))}
       departamentos={departamentos.map(({ _count, ...d }) => ({ ...d, empleados: _count.empleados }))}
       puestos={puestos.map(({ _count, salarioMinimo: minimo, salarioMaximo: maximo, ...p }) => ({
@@ -65,6 +66,7 @@ export default async function ConfiguracionPage() {
         coberturas: _count.coberturas,
       }))}
       divisionesHabilitadas={divisionesActivas}
+      jerarquiaHabilitada={jerarquiaActiva}
       salarioMinimo={salarioMinimoSerial}
       configs={[...configs]}
       puedeVer={puedeVer}

@@ -9,14 +9,49 @@
  * de verdad para ese reporte: si se cambia allá, hay que cambiarla aquí.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 import PageHeader from "@/components/ui/PageHeader";
-import { columnasNumericas, metaFila, type MetaFila } from "@/lib/reportes/salida-celdas";
+import { columnasNumericas, leerPapel, metaFila, PAPELES, type MetaFila, type Papel } from "@/lib/reportes/salida-celdas";
+
+// ─── Papel elegido por reporte ───────────────────────────────────────────────
+// En localStorage, como store externo: el valor no existe al dibujar en el servidor.
+const CLAVE_PAPEL = "nominahn.reportes.papel";
+const SIN_PAPELES = "{}";
+const avisosPapel = new Set<() => void>();
+let papelesEnMemoria = SIN_PAPELES; // Respaldo cuando localStorage no está disponible.
+
+function leerPapeles() {
+  try {
+    return localStorage.getItem(CLAVE_PAPEL) ?? papelesEnMemoria;
+  } catch {
+    return papelesEnMemoria;
+  }
+}
+
+function guardarPapeles(valor: Record<string, string>) {
+  papelesEnMemoria = JSON.stringify(valor);
+  try {
+    localStorage.setItem(CLAVE_PAPEL, papelesEnMemoria);
+  } catch {
+    // Sin persistencia, la elección vale mientras la página esté abierta.
+  }
+  avisosPapel.forEach((avisar) => avisar());
+}
+
+function suscribirPapeles(avisar: () => void) {
+  avisosPapel.add(avisar);
+  return () => { avisosPapel.delete(avisar); };
+}
+
+/** Los que no caben en carta: arrancan en legal. */
+const REPORTES_ANCHOS = new Set(["planilla-detallada"]);
 
 interface Props {
   /** El administrador habilitó el nivel División (Configuración, Estructura organizacional). */
   conDivisiones: boolean;
+  conJerarquia: boolean;
   sucursales: Array<{ id: string; nombre: string }>;
   /** Vacío si el administrador no habilitó el nivel División. */
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
@@ -43,7 +78,7 @@ interface DefReporte {
 }
 
 const reportes: DefReporte[] = [
-  { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Deducciones por empleado, agrupadas por sucursal, división y departamento con subtotales.", categoria: "Planillas", periodo: "opcional", planilla: "opcional" },
+  { id: "planilla-detallada", nombre: "Planilla detallada", descripcion: "Días trabajados, lo devengado, cada deducción y el neto a pagar por empleado, agrupados por sucursal, división y departamento con subtotales.", categoria: "Planillas", periodo: "opcional", planilla: "opcional" },
   { id: "resumen-planilla", nombre: "Resumen de planilla", descripcion: "Totales por sucursal, división y departamento, en árbol.", categoria: "Planillas", periodo: "opcional", planilla: "opcional" },
   { id: "nomina-banco", nombre: "Nómina para banco", descripcion: "Transferencias bancarias para pagar una planilla aprobada o pagada.", categoria: "Planillas", periodo: "ninguno", planilla: "requerida" },
   { id: "ihss-planilla", nombre: "Planilla IHSS (proyectada)", descripcion: "Aportes IHSS EM/IVM estimados sobre el salario actual de los empleados activos.", categoria: "Legal", periodo: "ninguno", planilla: "no" },
@@ -98,12 +133,20 @@ function nombreDescarga(res: Response, reporteId: string): string {
 
 const etiquetaCampo = "mb-1 block text-xs font-medium text-gray-700";
 
-export default function ReportesClient({ conDivisiones, sucursales, divisiones, departamentos, planillas, reporteInicial, planillaInicial }: Props) {
+export default function ReportesClient({ conDivisiones, conJerarquia, sucursales, divisiones, departamentos, planillas, reporteInicial, planillaInicial }: Props) {
   const [elegido, setElegido] = useState(() => reportes.find((r) => r.id === reporteInicial)?.id ?? reportes[0].id);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visor, setVisor] = useState<Visor | null>(null);
-  const [porDivision, setPorDivision] = useState(false);
+  // Papel por reporte: la planilla detallada (quince columnas) arranca en legal; lo
+  // que se elija se recuerda en este navegador.
+  const crudoPapeles = useSyncExternalStore(suscribirPapeles, leerPapeles, () => SIN_PAPELES);
+  const papeles = useMemo<Record<string, string>>(() => {
+    try { return JSON.parse(crudoPapeles); } catch { return {}; }
+  }, [crudoPapeles]);
+  const niveles = etiquetasNiveles(conJerarquia);
+  // Con la jerarquía de nómina, lo normal es imprimir cada empresa aparte.
+  const [porDivision, setPorDivision] = useState(conJerarquia);
   // Los valores se conservan al pasar de un reporte a otro: lo usual es sacar varios del mismo período.
   const [filtros, setFiltros] = useState({
     fechaDesde: "",
@@ -117,7 +160,10 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
   const panel = useRef<HTMLElement>(null);
 
   const reporte = reportes.find((r) => r.id === elegido) ?? reportes[0];
-  const descripcion = conDivisiones ? reporte.descripcion : reporte.descripcion.replace("sucursal, división y departamento", "sucursal y departamento");
+  const papel: Papel = leerPapel(papeles[reporte.id]) ?? (REPORTES_ANCHOS.has(reporte.id) ? "LEGAL" : "CARTA");
+  const elegirPapel = (p: Papel) => guardarPapeles({ ...papeles, [reporte.id]: p });
+  const nivelesDescripcion = `${niveles.sucursalCorta.toLowerCase()}${conDivisiones ? `, ${niveles.division.toLowerCase()}` : ""} y departamento`;
+  const descripcion = reporte.descripcion.replace("sucursal, división y departamento", nivelesDescripcion);
   // El archivo del banco sólo admite una planilla aprobada o pagada.
   const planillasDelReporte = reporte.planilla === "requerida" ? planillas.filter((p) => p.dispersable) : planillas;
 
@@ -174,6 +220,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
     if (reporte.planilla !== "no" && filtros.planillaId) q.set("planillaId", filtros.planillaId);
     // Sólo cambia lo que se imprime: en pantalla se sigue viendo el árbol completo.
     if (reporte.id === "planilla-detallada" && conDivisiones && porDivision && formato !== "JSON") q.set("porDivision", "1");
+    if (formato === "PDF" || formato === "XLSX") q.set("papel", papel);
     return `/api/reportes?${q.toString()}`;
   }
 
@@ -295,7 +342,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
               </div>
             )}
             <div>
-              <label htmlFor="rep-sucursal" className={etiquetaCampo}>Sucursal</label>
+              <label htmlFor="rep-sucursal" className={etiquetaCampo}>{niveles.sucursal}</label>
               <select id="rep-sucursal" value={filtros.sucursalId} onChange={(e) => cambiarSucursal(e.target.value)} className="input">
                 <option value="">Todas</option>
                 {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
@@ -303,7 +350,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
             </div>
             {conDivisiones && (
               <div>
-                <label htmlFor="rep-division" className={etiquetaCampo}>División</label>
+                <label htmlFor="rep-division" className={etiquetaCampo}>{niveles.division}</label>
                 <select id="rep-division" value={filtros.divisionId} onChange={(e) => cambiarDivision(e.target.value)} className="input">
                   <option value="">Todas</option>
                   {divisionesVisibles.map((v) => (
@@ -326,7 +373,7 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
           {reporte.id === "planilla-detallada" && conDivisiones && (
             <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
               <input type="checkbox" checked={porDivision} onChange={(e) => setPorDivision(e.target.checked)} />
-              Imprimir cada división en hoja aparte (PDF y Excel)
+              Imprimir cada {niveles.division.toLowerCase()} en hoja aparte (PDF y Excel)
             </label>
           )}
 
@@ -346,6 +393,12 @@ export default function ReportesClient({ conDivisiones, sucursales, divisiones, 
             <button type="button" onClick={() => descargar("PDF")} disabled={ocupado !== null} className="btn btn-secondary">
               {ocupado === `${reporte.id}:PDF` ? "Generando…" : "PDF"}
             </button>
+            <label className="ml-auto flex items-center gap-2 text-sm text-gray-700" htmlFor="rep-papel">
+              <span className="whitespace-nowrap">Papel</span>
+              <select id="rep-papel" className="input h-9 py-1" value={papel} onChange={(e) => elegirPapel(e.target.value as Papel)}>
+                {(Object.keys(PAPELES) as Papel[]).map((p) => <option key={p} value={p}>{PAPELES[p].etiqueta}</option>)}
+              </select>
+            </label>
           </div>
         </section>
       </div>

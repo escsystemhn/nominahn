@@ -7,7 +7,7 @@ import { requerirPermiso, puede } from "@/lib/auth/guard";
 import { redondear } from "@/lib/payroll/money";
 import { audit, getClientInfo } from "@/lib/audit";
 import { z } from "zod";
-import { zCorreoOpcional, zMontoAnulable } from "@/lib/http/validar";
+import { parsearBody, zCorreoOpcional, zMontoAnulable } from "@/lib/http/validar";
 import { validarUbicacionEmpleado } from "@/lib/organizacion/estructura-bd";
 import { crearContratoInicial } from "@/lib/empleados/contratos-bd";
 
@@ -140,12 +140,8 @@ export async function POST(req: NextRequest) {
   const g = await requerirPermiso("empleados.crear");
   if (!g.ok) return g.response;
 
-  const body = await req.json();
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
-  }
-
+  const parsed = await parsearBody(req, createSchema);
+  if (!parsed.ok) return parsed.response;
   const data = parsed.data;
 
   const ubicacion = await validarUbicacionEmpleado(prisma, {
@@ -156,9 +152,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Esa ubicación está fuera del alcance de su cuenta." }, { status: 403 });
   }
 
-  // Generar código único
-  const count = await prisma.empleado.count();
-  const codigo = `EMP-${String(count + 1).padStart(4, "0")}`;
+  // `identidad` es UNIQUE: un campo en blanco debe guardarse como NULL, que no choca.
+  // Como texto vacío, el segundo empleado sin identidad reventaba contra el primero.
+  const identidad = data.identidad?.trim() || null;
+  if (identidad && (await prisma.empleado.findUnique({ where: { identidad }, select: { id: true } }))) {
+    return NextResponse.json({ error: "Ya existe otro empleado con ese número de identidad." }, { status: 409 });
+  }
+
+  // El correlativo salta los códigos ocupados: una importación puede haber usado ese número.
+  let correlativo = await prisma.empleado.count();
+  let codigo: string;
+  do {
+    correlativo++;
+    codigo = `EMP-${String(correlativo).padStart(4, "0")}`;
+  } while (await prisma.empleado.findUnique({ where: { codigo }, select: { id: true } }));
 
   // Decimal exacto, igual que en el PUT: `salarioBase / 30 / 8` en float deja
   // residuo binario en una columna Decimal(12,2).
@@ -169,6 +176,7 @@ export async function POST(req: NextRequest) {
   const empleado = await prisma.empleado.create({
     data: {
       codigo,
+      identidad,
       primerNombre: data.primerNombre,
       segundoNombre: data.segundoNombre,
       primerApellido: data.primerApellido,
@@ -176,7 +184,6 @@ export async function POST(req: NextRequest) {
       fechaNacimiento: new Date(data.fechaNacimiento),
       genero: data.genero,
       estadoCivil: data.estadoCivil,
-      identidad: data.identidad,
       rtn: data.rtn,
       ihssNro: data.ihssNro,
       rapNro: data.rapNro,
@@ -199,7 +206,14 @@ export async function POST(req: NextRequest) {
       emailCorporativo: data.emailCorporativo ?? null,
       ihssMontoFijo: data.ihssMontoFijo ?? null,
     },
+  }).catch((e: unknown) => {
+    // Dos altas simultáneas pueden pasar las comprobaciones de arriba.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return null;
+    throw e;
   });
+  if (!empleado) {
+    return NextResponse.json({ error: "Otro registro acaba de usar esos datos. Revise el número de identidad e intente de nuevo." }, { status: 409 });
+  }
 
   // Registrar historial de salario inicial
   await prisma.historialSalario.create({

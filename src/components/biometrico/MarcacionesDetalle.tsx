@@ -94,7 +94,7 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
 
       try {
         const res = await fetch(`/api/biometrico/eventos?${q}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!vivo) return;
 
         if (!res.ok) throw new Error(data.error ?? "No se pudieron cargar las marcaciones");

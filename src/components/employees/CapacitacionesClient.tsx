@@ -114,7 +114,7 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
     e.preventDefault(); setMsg("");
     if (!f.nombre.trim() || !f.fechaInicio) { setMsg("Nombre y fecha de inicio son obligatorios."); return; }
     const res = await fetch("/api/capacitaciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
-    if (!res.ok) { setMsg((await res.json()).error ?? "Error al crear."); return; }
+    if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "Error al crear."); return; }
     setF({ nombre: "", tipo: "INTERNA", proveedor: "", fechaInicio: "", fechaFin: "", costoPresupuestado: "", descripcion: "" });
     setCreando(false); await cargar();
   }
@@ -129,7 +129,7 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
   async function inscribir() {
     if (!sel || !nuevoEmp) return;
     const res = await fetch(`/api/capacitaciones/${sel}/participantes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empleadoId: nuevoEmp }) });
-    if (!res.ok) { avisar.error((await res.json()).error ?? "No se pudo inscribir."); return; }
+    if (!res.ok) { avisar.error((await res.json().catch(() => ({}))).error ?? "No se pudo inscribir."); return; }
     setNuevoEmp(""); await cargarDetalle(sel); await cargar();
   }
 

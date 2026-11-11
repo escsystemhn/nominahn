@@ -109,19 +109,8 @@ export async function POST(req: NextRequest) {
   // La tabla ISR vigente, del mismo cargador que la planilla y los reportes.
   const parametros = await cargarParametrosLegales();
 
-  // El OTRO décimo del mismo año ya pudo consumir parte del techo exento, que es
-  // conjunto para ambos (Art. 11 Ley del ISR).
-  const otroTipo: TipoDecimo = tipo === "DECIMO_TERCERO" ? "DECIMO_CUARTO" : "DECIMO_TERCERO";
-  const yaExentos = await prisma.liquidacionDecimo.findMany({
-    where: {
-      anio,
-      tipo: otroTipo,
-      estado: { in: ["CALCULADA", "PAGADA"] },
-      empleadoId: { in: empleados.map((e) => e.id) },
-    },
-    select: { empleadoId: true, montoExento: true },
-  });
-  const exentoUsadoPorEmp = new Map(yaExentos.map((l) => [l.empleadoId, money(l.montoExento)]));
+  // El techo exento es de CADA décimo («en cada caso», Ley del ISR, Art. 10): lo
+  // que eximió el otro décimo del año no se descuenta.
 
   const filas: Prisma.LiquidacionDecimoCreateManyInput[] = [];
   let totalDevengado = CERO;
@@ -146,7 +135,6 @@ export async function POST(req: NextRequest) {
     const fiscal = aplicarFiscalidadDecimo({
       montoDevengado: devengo.montoDevengado,
       salarioMinimo: salMin.monto,
-      exentoYaUsado: exentoUsadoPorEmp.get(emp.id) ?? 0,
       // Renta ordinaria anual estimada: doce veces el salario promedio.
       rentaOrdinariaAnual: money(salarioPromedio).times(12),
       parametros,

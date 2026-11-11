@@ -19,7 +19,7 @@ import FranjaCifras from "@/components/ui/FranjaCifras";
 import FormFiltros from "@/components/ui/FormFiltros";
 import EstadoBadge, { etiquetaEstado } from "@/components/ui/EstadoBadge";
 import FiltroEstructura from "@/components/organizacion/FiltroEstructura";
-import { aplanarEstructura, agruparPorEstructura, describirAlcance, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
+import { aplanarEstructura, agruparPorEstructura, describirAlcance, etiquetasNiveles, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
 import { cargarOpcionesEstructura } from "@/lib/organizacion/estructura-bd";
 import { ubicacionDeLinea } from "@/lib/reportes/planilla-estructura";
 import { sumarPor } from "@/lib/payroll/money";
@@ -43,6 +43,7 @@ export default async function DetallePlanillaPage({
   const parcial = acceso === "parcial";
   const enAlcance = filtroPorEmpleado(usuario);
   const opciones = await cargarOpcionesEstructura(prisma);
+  const niveles = etiquetasNiveles(opciones.jerarquia);
   // Filtro DENTRO de la planilla: por dónde estaba cada quien al pagarse.
   const alcance = normalizarAlcance({ ...sp, divisionId: opciones.conDivisiones ? sp.divisionId : null });
   const hayFiltro = !!(alcance.sucursalId || alcance.divisionId || alcance.departamentoId);
@@ -108,7 +109,7 @@ export default async function DetallePlanillaPage({
 
   // Sucursal → División → Departamento → Empleado, con subtotal en cada nivel.
   // Sin el nivel División habilitado, Sucursal → Departamento.
-  const entradas = aplanarEstructura(agruparPorEstructura(planilla.detalles, (d) => ubicacionDeLinea(d, opciones.conDivisiones)));
+  const entradas = aplanarEstructura(agruparPorEstructura(planilla.detalles, (d) => ubicacionDeLinea(d, opciones.conDivisiones), niveles.sinDivision));
   const montos = (ds: Detalle[]) => [
     sumarPor(ds, (d) => d.totalBruto),
     sumarPor(ds, (d) => d.ihssEmpleado),
@@ -140,6 +141,9 @@ export default async function DetallePlanillaPage({
   };
   const puedeImprimir = planilla.estado !== "ANULADA" && puede(usuario, "reportes.ver");
   const divisionesEnPlanilla = new Set(planilla.detalles.map((d) => ubicacionDeLinea(d, opciones.conDivisiones).division?.id ?? null));
+  const variasDivisiones = divisionesEnPlanilla.size > 1;
+  // Con la jerarquía de nómina se imprime por empresa de entrada; el consolidado queda como la otra opción.
+  const separarDeEntrada = opciones.jerarquia && variasDivisiones;
 
   // Con acceso parcial, la suma de las personas que ve: el total de la planilla no le corresponde.
   const resumen = parcial
@@ -162,7 +166,7 @@ export default async function DetallePlanillaPage({
         description={
           <>
             Del {formatDate(planilla.fechaInicio)} al {formatDate(planilla.fechaFin)}. {planilla.empresa.nombre},{" "}
-            {planilla.sucursal ? describirAlcance(planilla) : "toda la empresa"},{" "}
+            {planilla.sucursal ? describirAlcance(planilla) : niveles.todaLaEmpresa.toLowerCase()},{" "}
             {totalLineas === 1 ? "1 empleado" : `${totalLineas} empleados`}.
             {planilla.detalles.some((d) => d.isrDetalle) && " ISR por cálculo personalizado."}
           </>
@@ -255,9 +259,9 @@ export default async function DetallePlanillaPage({
         )}
         {puedeImprimir && (
           <span className="ml-auto flex flex-wrap items-center gap-2">
-            <a href={urlImprimir(false)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">Imprimir planilla</a>
-            {divisionesEnPlanilla.size > 1 && (
-              <a href={urlImprimir(true)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">Imprimir cada división en hoja aparte</a>
+            <a href={urlImprimir(separarDeEntrada)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">{separarDeEntrada ? "Imprimir por empresa" : "Imprimir planilla"}</a>
+            {variasDivisiones && (
+              <a href={urlImprimir(!separarDeEntrada)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">{separarDeEntrada ? "Imprimir todo junto" : "Imprimir cada división en hoja aparte"}</a>
             )}
           </span>
         )}

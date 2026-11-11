@@ -110,4 +110,36 @@ describe("plantilla", () => {
     const ayuda = libro.getWorksheet("Instrucciones")!;
     expect(ayuda.getRow(4).values).toEqual([undefined, "Codigo Empleado", "Sí", "Código.", "EMP-0001"]);
   });
+
+  describe("con filas de personas reales", () => {
+    const COLS: ColumnaCsv[] = [
+      { clave: "codigo", etiqueta: "Codigo", descripcion: "Código." },
+      { clave: "fecha_ingreso", etiqueta: "Ingreso", descripcion: "Fecha." },
+      { clave: "salario_base", etiqueta: "Salario", descripcion: "Monto." },
+    ];
+    const FILAS = [["0012", "03/04/2026", "15000.50"], ["=SUMA(A1)", "01/02/2026", ""]];
+
+    async function datos() {
+      const libro = new ExcelJS.Workbook();
+      await libro.xlsx.load((await plantillaXlsx(COLS, FILAS)) as unknown as Parameters<typeof libro.xlsx.load>[0]);
+      return libro.getWorksheet("Datos")!;
+    }
+
+    it("los códigos y fechas quedan como texto, y el salario como número", async () => {
+      const hoja = await datos();
+      expect(hoja.getCell("A2").value).toBe("0012");
+      expect(hoja.getCell("B2").value).toBe("03/04/2026");
+      expect(hoja.getCell("C2").value).toBe(15000.5);
+      expect(hoja.getCell("A2").numFmt).toBe("@");
+    });
+
+    it("un texto que parece fórmula no se ejecuta", async () => {
+      expect((await datos()).getCell("A3").value).toBe("=SUMA(A1)");
+    });
+
+    it("el mismo archivo se puede volver a importar", async () => {
+      const r = await leer(await plantillaXlsx(COLS, FILAS));
+      expect(r.filas.map((f) => f.celdas)).toEqual([["0012", "03/04/2026", "15000.50"], ["=SUMA(A1)", "01/02/2026", ""]]);
+    });
+  });
 });

@@ -17,6 +17,7 @@ import {
   calcularPlanilla,
   calcularRAP,
   diasConDerechoASalario,
+  semanasDistintas,
   totalHorasExtra,
   type EntradaCalculoPlanilla,
   type HorasExtraPorJornada,
@@ -29,8 +30,12 @@ import {
 } from "./isr-personalizado";
 import { cargarHistorialIsr, leerConfigIsr } from "./isr-personalizado-bd";
 import { descuentoIncapacidades, fechasCubiertas, type IncapacidadParaPlanilla } from "@/lib/asistencia/incapacidades";
-import { CERO, sumar, type Money } from "./money";
-import { aplicarDeducciones, registrosDeAmortizacion, type Amortizacion } from "./deducciones";
+import { CERO, money, sumar, type Money } from "./money";
+import { aplicarDeducciones, CODIGO_ISR_FIJO, conMontosDelPeriodo, cuotaDelPeriodo, registrosDeAmortizacion, topesDelPeriodo, type Amortizacion } from "./deducciones";
+import { numeroDeQuincena, otraQuincena } from "./distribucion-quincenal";
+
+/** Art. 371: sin salario mínimo configurado, lo inembargable literal son los primeros L 100 del mes. */
+const MINIMO_INEMBARGABLE_LITERAL = 100;
 import { ESTADOS_OCUPAN_PERIODO } from "./estado-planilla";
 import { calcularAniosTrabajados, nombreCompleto, formatDate } from "@/lib/utils";
 import { calcularBonosPorLote } from "@/lib/evaluaciones/bonus-engine";
@@ -193,23 +198,38 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   // dos veces sería quitarle al trabajador un salario que nadie le debe.
   const incapacidades = await prisma.incapacidad.findMany({
     where: { empleadoId: { in: empleadoIds }, anulada: false, fechaInicio: { lte: hasta }, fechaFin: { gte: desde } },
-    select: { empleadoId: true, fechaInicio: true, fechaFin: true, diasPatrono: true, porcentajeComplemento: true },
+    select: { empleadoId: true, fechaInicio: true, fechaFin: true, diasPatrono: true, porcentajeSubsidio: true },
   });
   const incapacidadesPorEmp = new Map<string, IncapacidadParaPlanilla[]>();
   const fechasIncapacidad = new Set<string>();
   for (const inc of incapacidades) {
     const lista = incapacidadesPorEmp.get(inc.empleadoId) ?? [];
-    lista.push({ ...inc, porcentajeComplemento: Number(inc.porcentajeComplemento) });
+    lista.push({ ...inc, porcentajeSubsidio: Number(inc.porcentajeSubsidio) });
     incapacidadesPorEmp.set(inc.empleadoId, lista);
     for (const t of fechasCubiertas(inc, desde, hasta)) fechasIncapacidad.add(`${inc.empleadoId}|${t}`);
   }
 
-  const ausenciasPorEmp = new Map<string, number>();
+  // Salario mínimo vigente: lo inembargable para el tope de deducciones (Art. 371).
+  const salarioMinimo = await prisma.salarioMinimo.findFirst({
+    where: { activo: true },
+    orderBy: { anio: "desc" },
+    select: { monto: true },
+  });
+  const minimoMensual = salarioMinimo ? money(salarioMinimo.monto) : money(MINIMO_INEMBARGABLE_LITERAL);
+  const factorPeriodo = tipo === "SEMANAL" ? money(12).div(52) : tipo === "QUINCENAL" ? money(0.5) : money(1);
+  // Mes de la quincena (para los aportes que se deducen completos en una sola).
+  const numeroQuincena = numeroDeQuincena(desde);
+  const laOtra = otraQuincena(desde);
+  const inicioMes = new Date(Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth(), 1));
+  const finMes = new Date(Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth() + 1, 0));
+
+  // Fechas de ausencia por persona: cada semana con faltas pierde UN séptimo día.
+  const ausenciasPorEmp = new Map<string, Date[]>();
   const extraPorEmp = new Map<string, HorasExtraPorJornada>();
 
   for (const m of marcajes) {
     if (m.esAusencia && !fechasIncapacidad.has(`${m.empleadoId}|${m.fecha.getTime()}`)) {
-      ausenciasPorEmp.set(m.empleadoId, (ausenciasPorEmp.get(m.empleadoId) ?? 0) + 1);
+      ausenciasPorEmp.set(m.empleadoId, [...(ausenciasPorEmp.get(m.empleadoId) ?? []), m.fecha]);
     }
 
     const acc = extraPorEmp.get(m.empleadoId) ?? { diurnas: 0, mixtas: 0, nocturnas: 0, feriado: 0 };
@@ -255,8 +275,11 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   for (const emp of empleados) {
     // El salario viaja como Decimal desde Prisma hasta el motor, sin Number().
     const salario = emp.salarioBase;
-    const anios = calcularAniosTrabajados(emp.fechaIngreso);
-    const diasAusentes = ausenciasPorEmp.get(emp.id) ?? 0;
+    // Años de servicio al cierre del PERÍODO, no a hoy: recalcular un mes pasado
+    // o calcular uno futuro no debe cambiar la antigüedad con que se provisiona.
+    const anios = calcularAniosTrabajados(emp.fechaIngreso, hasta);
+    const fechasAusencia = ausenciasPorEmp.get(emp.id) ?? [];
+    const diasAusentes = fechasAusencia.length;
     const horasExtra = extraPorEmp.get(emp.id) ?? {};
 
     // Días CON DERECHO A SALARIO. Antes se pasaba `diasMes` fijo, de modo que
@@ -271,17 +294,36 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
     // Nadie con cero días entra en la planilla: generaría una línea en blanco.
     if (diasPagables <= 0) continue;
 
-    const ded = aplicarDeducciones(
-      emp.deducciones.map((d) => ({
-        id: d.id,
-        monto: d.monto,
-        saldo: d.saldo,
-        cuotasMeses: d.cuotasMeses,
-        cuotasPagadas: d.cuotasPagadas,
-        tipo: d.tipoDeduccion.tipo,
-      }))
-    );
-    amortizaciones.push(...ded.amortizaciones);
+    // Un monto del período reemplaza, en este período, a la deducción de cada planilla del mismo tipo.
+    const todas = conMontosDelPeriodo(emp.deducciones).map((d) => ({
+      id: d.id,
+      monto: d.monto,
+      saldo: d.saldo,
+      cuotasMeses: d.cuotasMeses,
+      cuotasPagadas: d.cuotasPagadas,
+      tipo: d.tipoDeduccion.tipo,
+      codigo: d.tipoDeduccion.codigo,
+    }));
+    // La retención fija de ISR no es una deducción más: reemplaza el ISR calculado.
+    const isrFijo = todas.filter((d) => d.codigo === CODIGO_ISR_FIJO);
+    const vigentes = todas.filter((d) => d.codigo !== CODIGO_ISR_FIJO);
+    // La AFP no lleva tope: se resuelve antes, porque baja la base del ISR.
+    const afp = aplicarDeducciones(vigentes.filter((d) => d.tipo === "AFP")).afp;
+
+    // Planilla quincenal: qué quincena es, cuánto del mes tiene derecho a salario y
+    // si también está en la otra quincena, para los aportes que se deducen
+    // completos en una sola quincena.
+    const quincena = tipo === "QUINCENAL"
+      ? {
+          numero: numeroQuincena,
+          diasPagablesMes: diasConDerechoASalario({
+            fechaIngreso: emp.fechaIngreso, fechaSalida: emp.fechaSalida, desde: inicioMes, hasta: finMes, diasMes: 30,
+          }),
+          enOtraQuincena: diasConDerechoASalario({
+            fechaIngreso: emp.fechaIngreso, fechaSalida: emp.fechaSalida, desde: laOtra.desde, hasta: laOtra.hasta, diasMes: 15,
+          }) > 0,
+        }
+      : null;
 
     // Lectura de memoria: ninguna consulta dentro del bucle.
     const bonoEval = bonos.get(emp.id);
@@ -294,9 +336,9 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       });
     }
 
-    // Días a cargo del IHSS en el período: el patrono no los paga (salvo el
-    // complemento de maternidad); el IHSS paga el subsidio al trabajador.
-    const inc = descuentoIncapacidades(Number(salario), incapacidadesPorEmp.get(emp.id) ?? [], desde, hasta);
+    // Días a cargo del IHSS en el período: se descuenta sólo el subsidio que el
+    // IHSS paga directo; la diferencia hasta el salario la paga el patrono (Art. 73).
+    const inc = descuentoIncapacidades(Number(salario), incapacidadesPorEmp.get(emp.id) ?? [], desde, hasta, parametros.ihssTope);
 
     const entradaCalculo: EntradaCalculoPlanilla = {
       salarioMensual: salario,
@@ -309,20 +351,29 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       bonificaciones,
       otrosIngresos: 0,
       diasAusentes,
+      semanasConAusencia: semanasDistintas(fechasAusencia),
       incapacidad: inc.descuento,
-      otrosDeducciones: ded.total,
+      // Primero sin las demás deducciones: lo que queda después de las de ley
+      // fija los topes de los Arts. 371 y 372.
+      otrosDeducciones: 0,
       // Importe real de la deducción AFP del empleado, no un porcentaje global.
-      afpEmpleado: ded.afp,
+      afpEmpleado: afp,
       aniosTrabajados: anios,
       // IHSS mensual pactado en la ficha; null = por porcentaje.
       ihssMontoFijoMensual: emp.ihssMontoFijo,
+      quincena,
     };
     let result = calcularPlanilla(entradaCalculo, parametros);
 
     // Cálculo personalizado: el ISR sale de la proyección anual y la línea se
-    // rehace con él, para que deducciones y neto cuadren.
+    // rehace con él, para que deducciones y neto cuadren. Una retención fija de
+    // ISR asignada al empleado manda sobre los dos métodos.
     let isrDetalle: DetalleIsrPersonalizado | null = null;
-    if (isrPersonalizado) {
+    let isrDelPeriodo: Money | null = null;
+    if (isrFijo.length > 0) {
+      isrDelPeriodo = sumar(...isrFijo.map((d) => cuotaDelPeriodo(d)));
+      result = calcularPlanilla({ ...entradaCalculo, isrDelPeriodo }, parametros);
+    } else if (isrPersonalizado) {
       const x = calcularIsrPersonalizado({
         periodosAnio: periodoIsr.periodosAnio,
         indicePeriodo: periodoIsr.indice,
@@ -345,8 +396,18 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
         tabla: parametros.tablaISRAnual,
         config: configIsr.personalizado,
       });
-      result = calcularPlanilla({ ...entradaCalculo, isrDelPeriodo: x.retencion }, parametros);
+      isrDelPeriodo = x.retencion;
+      result = calcularPlanilla({ ...entradaCalculo, isrDelPeriodo }, parametros);
       isrDetalle = x.detalle;
+    }
+
+    // Préstamos, adelantos, cooperativa y demás, en orden y hasta sus topes: el
+    // neto nunca queda negativo y lo que no alcanza sigue en el saldo.
+    const minimoPeriodo = minimoMensual.times(factorPeriodo).times(diasPagables).div(diasMes);
+    const ded = aplicarDeducciones(vigentes, topesDelPeriodo(result.salarioNeto, minimoPeriodo));
+    amortizaciones.push(...ded.amortizaciones);
+    if (!ded.total.isZero()) {
+      result = calcularPlanilla({ ...entradaCalculo, otrosDeducciones: ded.total, isrDelPeriodo }, parametros);
     }
 
     detalles.push({

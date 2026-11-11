@@ -17,7 +17,10 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import FranjaCifras from "@/components/ui/FranjaCifras";
-import type { InformeValidacion, ModoImportacion, RecursoImportacion, ResultadoImportacion } from "@/lib/importacion/tipos";
+import SelectorPeriodo, { periodoInicial } from "@/components/payroll/SelectorPeriodo";
+import { errorDePeriodo, frasePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
+import { CATEGORIAS } from "@/lib/deducciones/tipos";
+import type { InformeValidacion, ModoImportacion, RecursoImportacion, ResultadoImportacion, TipoSugerido } from "@/lib/importacion/tipos";
 
 interface Props {
   /** Completa las rutas de la API. */
@@ -25,8 +28,15 @@ interface Props {
   titulo: string;
   /** Se muestra en el primer paso, antes de elegir archivo. */
   ayuda: string;
+  /**
+   * Ofrece además importar los montos de un período (deducciones por empleado), que
+   * pasa a ser la opción inicial. `puedeDescargar`: puede bajar el archivo del período.
+   */
+  montosDelPeriodo?: { tipoPlanilla: TipoPlanillaPeriodo; puedeDescargar: boolean; puedeCrearTipos: boolean };
   onCerrar: () => void;
 }
+
+type Variante = "montos" | "filas";
 
 type Paso = "subir" | "revisar" | "hecho";
 
@@ -48,16 +58,26 @@ const MODOS: Array<{ valor: ModoImportacion; etiqueta: string; detalle: string }
   },
 ];
 
-export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar }: Props) {
+export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDelPeriodo, onCerrar }: Props) {
   const router = useRouter();
   const inputArchivo = useRef<HTMLInputElement>(null);
 
   const [paso, setPaso] = useState<Paso>("subir");
   const [modo, setModo] = useState<ModoImportacion>("CREAR_O_ACTUALIZAR");
+  const [variante, setVariante] = useState<Variante>(montosDelPeriodo ? "montos" : "filas");
+  const [periodo, setPeriodo] = useState(() => periodoInicial(montosDelPeriodo?.tipoPlanilla));
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [informe, setInforme] = useState<InformeValidacion | null>(null);
   const [resultado, setResultado] = useState<ResultadoImportacion | null>(null);
+  // El archivo de la última revisión: al crear los tipos que faltan se vuelve a revisar sin pedirlo otra vez.
+  const [archivoActual, setArchivoActual] = useState<File | null>(null);
+  const [nuevos, setNuevos] = useState<TipoSugerido[]>([]);
+
+  const porPeriodo = variante === "montos";
+  const ruta = porPeriodo ? `/api/importar/${recurso}/periodo` : `/api/importar/${recurso}`;
+  const errorPeriodo = porPeriodo ? errorDePeriodo(periodo) : null;
+  const archivoDelPeriodo = `/api/exportar/${recurso}?${new URLSearchParams({ tipoPlanilla: periodo.tipo, desde: periodo.desde, hasta: periodo.hasta })}`;
 
   async function validar(archivo: File) {
     setCargando(true);
@@ -65,13 +85,21 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
     try {
       const cuerpo = new FormData();
       cuerpo.append("archivo", archivo);
-      cuerpo.append("modo", modo);
+      if (porPeriodo) {
+        cuerpo.append("tipoPlanilla", periodo.tipo);
+        cuerpo.append("desde", periodo.desde);
+        cuerpo.append("hasta", periodo.hasta);
+      } else {
+        cuerpo.append("modo", modo);
+      }
 
-      const res = await fetch(`/api/importar/${recurso}`, { method: "POST", body: cuerpo });
-      const datos = await res.json();
+      const res = await fetch(ruta, { method: "POST", body: cuerpo });
+      const datos = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(datos.error ?? "No se pudo leer el archivo.");
 
+      setArchivoActual(archivo);
       setInforme(datos as InformeValidacion);
+      setNuevos((datos as InformeValidacion).tiposNuevos ?? []);
       setPaso("revisar");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo leer el archivo.");
@@ -85,12 +113,12 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
     setCargando(true);
     setError(null);
     try {
-      const res = await fetch(`/api/importar/${recurso}/confirmar`, {
+      const res = await fetch(`${ruta}/confirmar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ loteId: informe.loteId }),
       });
-      const datos = await res.json();
+      const datos = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(datos.error ?? "No se pudo aplicar la importación.");
 
       setResultado(datos as ResultadoImportacion);
@@ -103,6 +131,31 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
     }
   }
 
+  async function crearTiposYRevisar() {
+    if (!archivoActual) return;
+    const elegidos = nuevos.filter((t) => t.crear);
+    setCargando(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/deducciones/tipos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipos: elegidos.map(({ nombre, codigo, tipo }) => ({ nombre, codigo, tipo })) }),
+      });
+      const datos = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(datos.error ?? "No se pudieron crear los tipos de deducción.");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudieron crear los tipos de deducción.");
+      setCargando(false);
+      return;
+    }
+    await validar(archivoActual);
+  }
+
+  const cambiarNuevo = (i: number, cambio: Partial<TipoSugerido>) =>
+    setNuevos((lista) => lista.map((t, j) => (j === i ? { ...t, ...cambio } : t)));
+
   function reiniciar() {
     setPaso("subir");
     setInforme(null);
@@ -111,6 +164,8 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
     if (inputArchivo.current) inputArchivo.current.value = "";
   }
 
+  // Columnas nuevas marcadas para crear: aplicar antes perdería sus montos sin que nadie lo note.
+  const tiposPendientes = porPeriodo && !!montosDelPeriodo?.puedeCrearTipos && nuevos.some((t) => t.crear);
   const errores = informe?.incidencias.filter((i) => i.severidad === "ERROR") ?? [];
   const avisos = informe?.incidencias.filter((i) => i.severidad === "AVISO") ?? [];
 
@@ -146,6 +201,55 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
           {/* ─── PASO 1 ─────────────────────────────────────────────────── */}
           {paso === "subir" && (
             <div className="space-y-5">
+              {montosDelPeriodo && (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium text-gray-700 mb-2">¿Qué trae el archivo?</legend>
+                  {([
+                    {
+                      valor: "montos" as const,
+                      etiqueta: "Montos del período",
+                      detalle: "Una fila por empleado y una columna por tipo de deducción, como el archivo que se exporta. Pone o corrige lo que se descuenta en una quincena o mes, sin tocar las deducciones de cada planilla.",
+                    },
+                    {
+                      valor: "filas" as const,
+                      etiqueta: "Deducciones a asignar",
+                      detalle: "Una fila por deducción, con su forma de cobro: préstamos en cuotas, adelantos o descuentos de cada planilla.",
+                    },
+                  ]).map((v) => (
+                    <label key={v.valor} className={`flex gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${variante === v.valor ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                      <input type="radio" name="variante" className="mt-1" checked={variante === v.valor} onChange={() => setVariante(v.valor)} />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-900">{v.etiqueta}</span>
+                        <span className="block text-xs text-gray-500">{v.detalle}</span>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+
+              {porPeriodo ? (
+                <div className="space-y-3">
+                  <SelectorPeriodo id="importar-periodo" valor={periodo} onCambio={setPeriodo} />
+                  {errorPeriodo
+                    ? <p className="text-sm text-red-700" role="alert">{errorPeriodo}</p>
+                    : (
+                      <p className="text-sm text-gray-600">
+                        Los montos se aplican sólo <span className="font-medium">{frasePeriodo(periodo, "a")}</span>. Cada celda es lo que se
+                        descuenta de ese tipo en el período: escribir otro monto lo reemplaza sólo en ese período, una celda vacía no descuenta
+                        nada y lo que no cambie no se toca. Antes de aplicar verá qué cambia.
+                      </p>
+                    )}
+                  {montosDelPeriodo?.puedeDescargar && !errorPeriodo && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      <a href={`${archivoDelPeriodo}&formato=xlsx`} className="inline-flex items-center gap-2 text-blue-700 hover:text-blue-900 font-medium">
+                        Descargar el archivo de este período, con sus empleados y montos
+                      </a>
+                      <a href={archivoDelPeriodo} className="text-gray-500 hover:text-gray-800">o en CSV</a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <>
               <p className="text-sm text-gray-600">{ayuda}</p>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -185,13 +289,16 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                   </label>
                 ))}
               </fieldset>
+              </>
+              )}
 
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                 <input
                   ref={inputArchivo}
                   type="file"
+                  aria-label="Archivo a importar"
                   accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  disabled={cargando}
+                  disabled={cargando || !!errorPeriodo}
                   onChange={(e) => {
                     const archivo = e.target.files?.[0];
                     if (archivo) validar(archivo);
@@ -213,7 +320,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
             <div className="space-y-5">
               <FranjaCifras
                 etiqueta="Resultado de la revisión"
-                cifras={[
+                cifras={informe.cifras ?? [
                   { label: "Se crearán", valor: informe.totalCrear },
                   { label: "Se actualizarán", valor: informe.totalActualizar },
                   { label: "Se omitirán", valor: informe.totalOmitir },
@@ -227,8 +334,53 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                 Archivo <span className="font-medium">{informe.nombreArchivo}</span>:{" "}
                 {informe.totalFilas} fila(s) leídas. Todavía no se ha guardado ningún cambio.
               </p>
+              {informe.resumen && <p className="text-sm text-gray-700" data-resumen>{informe.resumen}</p>}
 
-              {informe.columnasDesconocidas.length > 0 && (
+              {porPeriodo && nuevos.length > 0 && (
+                <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950" data-tipos-nuevos>
+                  <div>
+                    <p className="font-medium">
+                      {nuevos.length === 1 ? "1 columna del archivo todavía no es" : `${nuevos.length} columnas del archivo todavía no son`} un tipo de deducción
+                    </p>
+                    <p className="mt-0.5 text-xs text-blue-900">
+                      {montosDelPeriodo?.puedeCrearTipos
+                        ? "Marque las que sí son descuentos y revise la categoría: decide hasta cuánto se cobra. Al crearlas se vuelve a revisar el archivo; nada se aplica todavía."
+                        : `Mientras no existan, se ignoran: ${nuevos.map((t) => t.cabecera).join(", ")}. Pida a quien configura las deducciones que las cree (Tipos de deducción → Nuevo tipo o Importar tipos) y vuelva a subir el archivo.`}
+                    </p>
+                  </div>
+                  {montosDelPeriodo?.puedeCrearTipos && (
+                    <>
+                      <ul className="divide-y divide-blue-100 rounded-md border border-blue-100 bg-white">
+                        {nuevos.map((t, i) => {
+                          const ayuda = CATEGORIAS.find((c) => c.valor === t.tipo)?.ayuda;
+                          return (
+                            <li key={t.cabecera} className="space-y-1.5 px-3 py-2" data-columna={t.cabecera}>
+                              <div className="grid items-center gap-2 sm:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
+                                <input type="checkbox" className="h-4 w-4" aria-label={`Crear «${t.cabecera}»`} checked={t.crear} onChange={(e) => cambiarNuevo(i, { crear: e.target.checked })} />
+                                <input className="input h-8" aria-label={`Nombre de «${t.cabecera}»`} value={t.nombre} disabled={!t.crear} onChange={(e) => cambiarNuevo(i, { nombre: e.target.value })} />
+                                <input className="input h-8 font-mono text-xs uppercase" aria-label={`Código de «${t.cabecera}»`} value={t.codigo} disabled={!t.crear} onChange={(e) => cambiarNuevo(i, { codigo: e.target.value.toUpperCase() })} />
+                                <select className="input h-8" aria-label={`Categoría de «${t.cabecera}»`} value={t.tipo} disabled={!t.crear} onChange={(e) => cambiarNuevo(i, { tipo: e.target.value })}>
+                                  {CATEGORIAS.map((c) => <option key={c.valor} value={c.valor}>{c.etiqueta}</option>)}
+                                </select>
+                              </div>
+                              <p className="text-xs text-gray-500 sm:pl-6">
+                                {t.conMontos} monto(s) en el archivo.{t.motivo && <span className="text-amber-800"> {t.motivo}</span>}{t.crear && ayuda && <> {ayuda}</>}
+                              </p>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <div className="flex justify-end">
+                        <button type="button" className="btn btn-primary" disabled={cargando || !nuevos.some((t) => t.crear)} onClick={() => void crearTiposYRevisar()}>
+                          {cargando ? "Creando…" : `Crear ${nuevos.filter((t) => t.crear).length} tipo(s) y volver a revisar`}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {informe.columnasDesconocidas.length > 0 && !(porPeriodo && nuevos.length > 0) && (
                 <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
                   <p className="font-medium">Columnas que no se reconocen y se ignorarán:</p>
                   <p className="mt-1">{informe.columnasDesconocidas.join(", ")}</p>
@@ -268,11 +420,11 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
                         </tr>
                       </thead>
                       <tbody>
-                        {informe.filas.map((fila) => (
-                          <tr key={fila.linea}>
+                        {informe.filas.map((fila, i) => (
+                          <tr key={`${fila.linea}-${i}`}>
                             <td className="font-mono text-xs text-gray-500">{fila.linea}</td>
                             <td>
-                              <EtiquetaAccion accion={fila.accion} />
+                              <EtiquetaAccion accion={fila.accion} porPeriodo={porPeriodo} />
                             </td>
                             <td className="text-gray-800">{fila.referencia}</td>
                             <td className="text-xs text-gray-500">
@@ -293,7 +445,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
             <div className="py-6 text-center space-y-3">
               <h3 className="text-lg font-semibold text-gray-900">Importación aplicada</h3>
               <p className="text-sm text-gray-600">
-                {resultado.creados} registro(s) creado(s) y {resultado.actualizados} actualizado(s).
+                {resultado.mensaje ?? `${resultado.creados} registro(s) creado(s) y ${resultado.actualizados} actualizado(s).`}
               </p>
               <p className="text-xs text-gray-500">
                 La operación quedó registrada en la auditoría del sistema.
@@ -315,14 +467,16 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, onCerrar 
               </button>
               <button
                 onClick={confirmar}
-                disabled={cargando || !informe?.aplicable}
+                disabled={cargando || !informe?.aplicable || tiposPendientes}
                 className="btn btn-primary"
               >
                 {cargando
                   ? "Aplicando…"
+                  : tiposPendientes
+                    ? "Primero cree o desmarque las columnas nuevas"
                   : informe?.aplicable
                     ? `Aplicar ${(informe.totalCrear + informe.totalActualizar).toLocaleString("es-HN")} cambio(s)`
-                    : "Corrija los errores para continuar"}
+                    : informe && informe.totalErrores === 0 ? "No hay cambios que aplicar" : "Corrija los errores para continuar"}
               </button>
             </>
           )}
@@ -361,11 +515,12 @@ const TONOS = {
   ambar: "bg-amber-50 border-amber-200 text-amber-900",
 } as const;
 
-function EtiquetaAccion({ accion }: { accion: string }) {
+function EtiquetaAccion({ accion, porPeriodo }: { accion: string; porPeriodo?: boolean }) {
   const texto: Record<string, { etiqueta: string; tono: "ok" | "marca" | "neutro" }> = {
-    CREAR: { etiqueta: "Alta", tono: "ok" },
-    ACTUALIZAR: { etiqueta: "Actualizar", tono: "marca" },
+    CREAR: { etiqueta: porPeriodo ? "Nuevo" : "Alta", tono: "ok" },
+    ACTUALIZAR: { etiqueta: porPeriodo ? "Cambia" : "Actualizar", tono: "marca" },
     OMITIR: { etiqueta: "Omitir", tono: "neutro" },
+    QUITAR: { etiqueta: "Se quita", tono: "neutro" },
   };
   const t = texto[accion];
   return <EstadoBadge valor={accion} etiqueta={t?.etiqueta ?? accion} tono={t?.tono ?? "neutro"} />;

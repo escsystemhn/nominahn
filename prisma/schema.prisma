@@ -56,6 +56,10 @@ enum TipoDeduccion {
   IMPUESTO
   AFP
   OTRO
+  /// Pensión alimenticia por orden judicial: hasta el 50 % del salario, incluso del mínimo (Art. 371, 1.º).
+  PENSION_ALIMENTICIA
+  /// Embargo judicial ordinario: sólo la cuarta parte del excedente del salario mínimo (Art. 371).
+  EMBARGO
 }
 
 enum ModoCalculoDeduccion {
@@ -159,6 +163,8 @@ model Sucursal {
   direccion    String?
   telefono     String?
   email        String?
+  /// Para qué sirve, cuando la sucursal funciona como grupo de nómina (ver «Jerarquía de nómina»).
+  descripcion  String?
   activa       Boolean  @default(true)
   /// Sucursal (BPLID) equivalente en SAP Business One, si SAP usa varias sucursales.
   sapBplId     Int?
@@ -175,6 +181,26 @@ model Sucursal {
   coberturas       CoberturaSucursal[]
   horariosAtencion HorarioAtencion[]
   detallesPlanilla PlanillaDetalle[]
+  logo             LogoSucursal?
+}
+
+/**
+ * Logo de una sucursal, opcional. Sale en sus comprobantes y documentos.
+ *
+ * En la base y no en disco: el disco de Seenode se borra en cada despliegue, y
+ * así el logo entra en el respaldo y se conserva al reinstalar. En tabla aparte
+ * y no en `Sucursal`: decenas de consultas hacen `sucursal.findMany()` sin
+ * `select`, y arrastrarían los bytes hasta las pantallas.
+ *
+ * Es siempre un PNG ya recortado y reducido: ver `lib/organizacion/logo.ts`.
+ */
+model LogoSucursal {
+  sucursalId String   @id
+  sucursal   Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Cascade)
+  png        Bytes
+  ancho      Int
+  alto       Int
+  updatedAt  DateTime @updatedAt
 }
 
 /**
@@ -192,6 +218,8 @@ model Division {
   nombre      String
   codigo      String?
   descripcion String?
+  /// RTN propio, cuando la división es una empresa con razón social aparte (ver «Jerarquía de nómina»).
+  rtn         String?
   activa      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

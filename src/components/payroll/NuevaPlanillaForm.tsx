@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 
 interface Props {
   empresas: Array<{ id: string; nombre: string }>;
@@ -10,6 +11,7 @@ interface Props {
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   conDivisiones: boolean;
+  conJerarquia: boolean;
 }
 
 const tiposPlanilla = [
@@ -18,7 +20,8 @@ const tiposPlanilla = [
   { value: "SEMANAL", label: "Semanal", desc: "4 pagos por mes, 7 días c/u" },
 ];
 
-export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, departamentos, conDivisiones }: Props) {
+export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, departamentos, conDivisiones, conJerarquia }: Props) {
+  const niveles = etiquetasNiveles(conJerarquia);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -69,7 +72,7 @@ export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, de
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Error al crear planilla");
       router.push(`/planillas/${data.id}`);
     } catch (e) {
@@ -105,7 +108,7 @@ export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, de
       </div>
 
       <div>
-        <label htmlFor="pl-empresa" className="mb-1 block text-sm font-medium text-gray-700">Empresa</label>
+        <label htmlFor="pl-empresa" className="mb-1 block text-sm font-medium text-gray-700">{niveles.empresaLegal}</label>
         <select
           id="pl-empresa"
           value={form.empresaId}
@@ -124,20 +127,20 @@ export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, de
         </p>
         <div className={`grid gap-3 ${conDivisiones ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <div>
-            <label htmlFor="pl-sucursal" className="mb-1 block text-xs font-medium text-gray-700">Sucursal</label>
+            <label htmlFor="pl-sucursal" className="mb-1 block text-xs font-medium text-gray-700">{niveles.sucursal}</label>
             <select
               id="pl-sucursal"
               value={form.sucursalId}
               onChange={(e) => setForm((f) => ({ ...f, sucursalId: e.target.value, divisionId: "", departamentoId: "" }))}
               className="input"
             >
-              <option value="">Todas las sucursales</option>
+              <option value="">{niveles.todasSucursales}</option>
               {sucursalesEmpresa.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
             </select>
           </div>
           {conDivisiones && (
             <div>
-              <label htmlFor="pl-division" className="mb-1 block text-xs font-medium text-gray-700">División</label>
+              <label htmlFor="pl-division" className="mb-1 block text-xs font-medium text-gray-700">{niveles.division}</label>
               <select
                 id="pl-division"
                 value={form.divisionId}
@@ -145,7 +148,7 @@ export default function NuevaPlanillaForm({ empresas, sucursales, divisiones, de
                 onChange={(e) => setForm((f) => ({ ...f, divisionId: e.target.value, departamentoId: "" }))}
                 className="input"
               >
-                <option value="">{form.sucursalId && divisionesSucursal.length === 0 ? "Sin divisiones" : "Todas las divisiones"}</option>
+                <option value="">{form.sucursalId && divisionesSucursal.length === 0 ? niveles.sinDivisiones : niveles.todasDivisiones}</option>
                 {divisionesSucursal.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
               </select>
             </div>

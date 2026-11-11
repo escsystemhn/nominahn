@@ -10,6 +10,8 @@
  */
 
 import { money, redondear, sumar, minimo, maximo, CERO, type Money, type MoneyInput } from "./money";
+import { tipoJornada as tipoJornadaLegal, type TipoJornada as TipoJornadaLegal } from "@/lib/horarios/ley";
+import { DISTRIBUCION_POR_OMISION, tramoQuincenal, type DistribucionQuincenal, type ModoQuincenal } from "./distribucion-quincenal";
 
 export type { Money, MoneyInput };
 
@@ -49,8 +51,10 @@ export const RESERVA_LABORAL_TECHO_MENSUAL = 57896.16;
 // Deducción anual por gastos médicos sin comprobante (Ley del ISR)
 export const DEDUCCION_MEDICA_ANUAL = 40000;
 
-// Días de salario descontados por cada día de ausencia injustificada:
-// 1 día ordinario + 1 día de descanso (Art. 322 Código de Trabajo).
+// Descuento por ausencia injustificada: el día ausente más el séptimo día (el
+// descanso semanal pagado) de la semana en que faltó. Con factor 2 se pierde un
+// séptimo por SEMANA con ausencias, no uno por cada ausencia (ver
+// `calcularDescuentoAusencia`). Con factor 1 sólo se descuenta el día.
 // PARAMETRIZABLE: ajustar desde configuración si el criterio legal cambia.
 export const FACTOR_DESCUENTO_AUSENCIA = 2;
 
@@ -210,6 +214,8 @@ export interface ParametrosLegales {
   tablaVecinalAnual: TramoVecinal[];
   /** Conceptos configurados como monto fijo. Ver `MontosFijos`. */
   fijos: MontosFijos;
+  /** Planilla quincenal: IHSS, RAP y vecinal divididos o completos en la segunda quincena. */
+  distribucionQuincenal: DistribucionQuincenal;
 }
 
 export const PARAMETROS_DEFAULT: ParametrosLegales = {
@@ -233,6 +239,7 @@ export const PARAMETROS_DEFAULT: ParametrosLegales = {
   tablaISRAnual: TABLA_ISR_ANUAL_2026,
   tablaVecinalAnual: TABLA_VECINAL_SPS,
   fijos: SIN_MONTOS_FIJOS,
+  distribucionQuincenal: DISTRIBUCION_POR_OMISION,
 };
 
 // ─── CÁLCULO IHSS ─────────────────────────────────────────────────────────────
@@ -451,41 +458,59 @@ export function calcularProvision14vo(salarioMensual: MoneyInput, diasTrabajados
 
 // ─── CÁLCULO VACACIONES ───────────────────────────────────────────────────────
 
-// A diferencia de las provisiones de 13vo/14vo, esta NO recibe `diasMes`: el
-// devengo de vacaciones se prorratea sobre el año (365) y el salario diario sobre
-// 30, así que la longitud del mes concreto no interviene en la fórmula.
+/**
+ * Provisión MENSUAL de vacaciones, proporcional a los días con derecho a salario
+ * del período: se multiplica por el factor de la planilla igual que la de 13vo y
+ * 14vo, y en un año completo suma exactamente el valor de las vacaciones.
+ *
+ * Se provisiona el derecho del año de servicio EN CURSO (Art. 346): en el primer
+ * año se van ganando los 10 días que se cobran al cumplirlo, en el segundo los 12,
+ * etc. `aniosTrabajados` son los años COMPLETOS al cierre del período.
+ *
+ * Antes se dividía entre 365 días y luego se volvía a prorratear por el factor de
+ * la planilla: la mensual quedaba 1.4 % corta, la quincenal en la mitad, la
+ * semanal en una cuarta parte, y el primer año no provisionaba nada.
+ */
 export function calcularProvisionVacaciones(
   salarioMensual: MoneyInput,
   aniosTrabajados: number,
-  diasTrabajadosMes: number
+  diasPagables: number,
+  diasMes: number
 ): Money {
-  const diasVac = calcularDiasVacaciones(aniosTrabajados);
-  // Valor de vacaciones devengado por día trabajado: se ganan `diasVac` días de
-  // salario diario por cada 365 días de servicio.
-  const salarioDiario = money(salarioMensual).div(30);
-  const provisionDiaria = salarioDiario.times(diasVac).div(365);
-  return redondear(provisionDiaria.times(diasTrabajadosMes));
+  const diasDelAnio = diasVacacionesPorAnio(Math.max(0, Math.floor(aniosTrabajados)) + 1);
+  const valorAnual = money(salarioMensual).div(30).times(diasDelAnio);
+  return redondear(valorAnual.div(12).times(diasPagables).div(diasMes));
 }
 
 // ─── CÁLCULO HORAS EXTRA ──────────────────────────────────────────────────────
 
 /**
- * Recargos sobre la hora extraordinaria — Art. 330 del Código del Trabajo.
+ * Recargos sobre la hora extraordinaria — Art. 330 del Código del Trabajo:
  *
- * Son RECARGOS sobre el valor de la hora ordinaria, no multiplicadores: la hora
- * extra se paga a `salarioHora × (1 + recargo)`.
+ *   1.º +25 % sobre el salario de la jornada DIURNA, si se trabaja en el período
+ *       diurno (05:00 a 19:00).
+ *   2.º +50 % sobre el salario de la jornada DIURNA, si se trabaja en el período
+ *       nocturno (19:00 a 05:00).
+ *   3.º +75 % sobre el salario de la jornada NOCTURNA, cuando la extra prolonga
+ *       una jornada nocturna.
  *
- * CORRECCIÓN: antes se usaban multiplicadores 1.5 / 1.75 / 2.0, es decir
- * recargos del 50 %, 75 % y 100 %. Los legales son 25 %, 50 % y 75 %, y además
- * corresponden a la JORNADA en que se trabaja la hora (diurna, mixta,
- * nocturna), no a una escala arbitraria. La hora extra diurna —la más
- * frecuente— se estaba pagando al doble de su recargo legal.
+ * Los nombres de las claves (y de las columnas `horasExtraDiurna`, `…Mixta` y
+ * `…Nocturna`) vienen de cuando el recargo se asignaba por jornada; hoy cada
+ * cubeta es un recargo: DIURNA = 1.º, MIXTA = 2.º, NOCTURNA = 3.º. Es lo que dicen
+ * las columnas «Extra 25 %», «Extra 50 %» y «Extra 75 %» de la plantilla.
+ *
+ * Antes la extra de un trabajador diurno después de las 19:00 se pagaba al 75 %
+ * (la ley da 50 %), un bloque que cruzaba las 19:00 iba entero al 50 %, y la
+ * prolongación de una jornada nocturna se valoraba con la hora diurna.
  */
 export const RECARGO_EXTRA = {
-  DIURNA: 0.25,   // 125 % de la hora ordinaria
-  MIXTA: 0.50,    // 150 %
-  NOCTURNA: 0.75, // 175 %
+  DIURNA: 0.25,   // período diurno: 125 % de la hora diurna
+  MIXTA: 0.50,    // período nocturno: 150 % de la hora diurna
+  NOCTURNA: 0.75, // prolongación de jornada nocturna: 175 % de la hora nocturna
 } as const;
+
+/** Jornada nocturna ordinaria (Art. 322): base de la hora del recargo del 75 %. */
+export const HORAS_JORNADA_NOCTURNA = 6;
 
 /**
  * Art. 339: el trabajo en día de descanso semanal o feriado se remunera al
@@ -496,15 +521,18 @@ export const RECARGO_FERIADO = 1.0;
 export type TipoJornadaExtra = keyof typeof RECARGO_EXTRA;
 
 /**
- * Horas extraordinarias del período, desglosadas por jornada.
+ * Horas extraordinarias del período, desglosadas por recargo (Art. 330).
  *
- * El desglose es obligatorio para liquidar bien: cada jornada lleva su propio
- * recargo. Un `number` suelto se acepta como atajo y se interpreta como jornada
- * DIURNA, que es el caso mayoritario y el único que el sistema capturaba antes.
+ * El desglose es obligatorio para liquidar bien: cada cubeta lleva su propio
+ * recargo. Un `number` suelto se acepta como atajo y se interpreta como extra en
+ * período diurno, que es el caso mayoritario y el único que el sistema capturaba antes.
  */
 export interface HorasExtraPorJornada {
+  /** Extra en período diurno: +25 % sobre la hora diurna. */
   diurnas?: number;
+  /** Extra en período nocturno de una jornada diurna o mixta: +50 % sobre la hora diurna. */
   mixtas?: number;
+  /** Prolongación de una jornada nocturna: +75 % sobre la hora nocturna. */
   nocturnas?: number;
   /** Horas trabajadas en feriado o día de descanso semanal. */
   feriado?: number;
@@ -519,23 +547,31 @@ export function salarioHora(salarioMensual: MoneyInput, jornadaHoras: number = J
   return money(salarioMensual).div(30).div(jornadaHoras);
 }
 
+/**
+ * Importe de las horas extra del período.
+ *
+ * `jornadaHoras` es la jornada DIURNA ordinaria (8 h por omisión): da la hora de
+ * los recargos 1.º y 2.º del Art. 330 y la del feriado. La prolongación de la
+ * jornada nocturna (3.º) se paga sobre la hora NOCTURNA, salario ÷ 30 ÷ 6.
+ */
 export function calcularMontoHorasExtra(
   salarioMensual: MoneyInput,
   horas: HorasExtraPorJornada | number,
   jornadaHoras: number = JORNADA_HORAS
 ): Money {
   const h = normalizarHorasExtra(horas);
-  const hora = salarioHora(salarioMensual, jornadaHoras);
+  const horaDiurna = salarioHora(salarioMensual, jornadaHoras);
+  const horaNocturna = salarioHora(salarioMensual, HORAS_JORNADA_NOCTURNA);
 
-  const tramo = (cantidad: number | undefined, recargo: number): Money =>
+  const tramo = (hora: Money, cantidad: number | undefined, recargo: number): Money =>
     cantidad && cantidad > 0 ? hora.times(cantidad).times(1 + recargo) : CERO;
 
   return redondear(
     sumar(
-      tramo(h.diurnas, RECARGO_EXTRA.DIURNA),
-      tramo(h.mixtas, RECARGO_EXTRA.MIXTA),
-      tramo(h.nocturnas, RECARGO_EXTRA.NOCTURNA),
-      tramo(h.feriado, RECARGO_FERIADO)
+      tramo(horaDiurna, h.diurnas, RECARGO_EXTRA.DIURNA),
+      tramo(horaDiurna, h.mixtas, RECARGO_EXTRA.MIXTA),
+      tramo(horaNocturna, h.nocturnas, RECARGO_EXTRA.NOCTURNA),
+      tramo(horaDiurna, h.feriado, RECARGO_FERIADO)
     )
   );
 }
@@ -589,14 +625,11 @@ export interface ClasificacionJornada {
 }
 
 /**
- * Clasifica un bloque de horas extraordinarias según la franja en que se trabaja.
+ * Describe un bloque de horas según la franja en que cae: todo diurno, todo
+ * nocturno o mixto, con las horas de cada período.
  *
- * Criterio: si todo el bloque cae en franja diurna es DIURNA; si todo cae en
- * franja nocturna es NOCTURNA; si abarca ambas es MIXTA. Es la lectura directa
- * de los Arts. 322-325 aplicada al bloque extraordinario.
- *
- * Antes esta distinción no existía en absoluto: el sistema guardaba un único
- * total de horas extra y el motor las liquidaba todas como diurnas.
+ * NO decide el recargo: el Art. 330 lo fija hora por hora según el período y según
+ * si la extra prolonga una jornada nocturna. Eso lo hace `repartirJornada`.
  */
 export function clasificarJornadaExtra(desdeHora: number, hastaHora: number): ClasificacionJornada {
   const horas = Math.max(0, hastaHora - desdeHora);
@@ -624,6 +657,12 @@ export function clasificarJornadaExtra(desdeHora: number, hastaHora: number): Cl
  * Se resta del lapso entre entrada y salida. Sin él, el horario por defecto del
  * propio sistema —08:00 a 17:00 con jornada de 8 h— generaba una hora extra
  * diaria a cada persona: la del almuerzo.
+ *
+ * Recargo de la extra (Art. 330): si la jornada ordinaria es NOCTURNA, la extra la
+ * prolonga y va toda al 75 % (cubeta `nocturnas`). Si es diurna o mixta, cada hora
+ * va según el período en que cae: del período diurno al 25 % (`diurnas`) y del
+ * nocturno al 50 % (`mixtas`). `tipoJornada` es la del turno; sin él se deduce de
+ * la jornada ordinaria marcada con la regla del Art. 321.
  */
 export function repartirJornada(opts: {
   horaEntrada: Date;
@@ -631,6 +670,7 @@ export function repartirJornada(opts: {
   jornadaHoras?: number;
   esFeriado?: boolean;
   minutosDescanso?: number;
+  tipoJornada?: TipoJornadaLegal;
 }): { horasNormales: number; extra: HorasExtraPorJornada; totalExtra: number } {
   const {
     horaEntrada, horaSalida, jornadaHoras = JORNADA_HORAS, esFeriado = false, minutosDescanso = 0,
@@ -653,18 +693,25 @@ export function repartirJornada(opts: {
   // El bloque extraordinario empieza cuando termina la jornada ordinaria, que
   // se completa DESPUÉS del descanso: con entrada a las 07:00, 8 h de jornada y
   // una hora de almuerzo, la extra arranca a las 16:00, no a las 15:00. Importa
-  // porque la franja (diurna / mixta / nocturna) decide el recargo.
+  // porque el período en que cae cada hora decide el recargo.
   const inicioDecimal = horaEntrada.getHours() + horaEntrada.getMinutes() / 60;
   const inicioExtra = inicioDecimal + jornadaHoras + descansoHoras;
   const finExtra = inicioDecimal + lapsoHoras;
-
-  const { tipo } = clasificarJornadaExtra(inicioExtra, finExtra);
   const cantidad = redondearHoras(horasExtra);
 
-  const extra: HorasExtraPorJornada =
-    tipo === "DIURNA" ? { diurnas: cantidad }
-    : tipo === "NOCTURNA" ? { nocturnas: cantidad }
-    : { mixtas: cantidad };
+  const tipoOrdinaria = opts.tipoJornada
+    ?? tipoJornadaLegal(Math.round(inicioDecimal * 60), Math.round(inicioExtra * 60));
+  if (tipoOrdinaria === "NOCTURNA") {
+    return { horasNormales: redondearHoras(horasNormales), extra: { nocturnas: cantidad }, totalExtra: cantidad };
+  }
+
+  // Las dos partes suman exactamente la cantidad redondeada.
+  const diurnas = Math.min(cantidad, redondearHoras(horasDiurnasEnIntervalo(inicioExtra, finExtra)));
+  const nocturnas = redondearHoras(cantidad - diurnas);
+  const extra: HorasExtraPorJornada = {
+    ...(diurnas > 0 ? { diurnas } : {}),
+    ...(nocturnas > 0 ? { mixtas: nocturnas } : {}),
+  };
 
   return { horasNormales: redondearHoras(horasNormales), extra, totalExtra: cantidad };
 }
@@ -678,6 +725,25 @@ function redondearHoras(h: number): number {
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
+/** Día comercial de una fecha: el 31 cuenta como 30 y el último de febrero también. */
+function diaComercial(f: Date): number {
+  const d = f.getUTCDate();
+  const ultimo = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + 1, 0)).getUTCDate();
+  return d === ultimo || d > 30 ? 30 : d;
+}
+
+/**
+ * Días COMERCIALES entre dos fechas de calendario, ambos inclusive: cada mes vale
+ * 30 días, como en la nómina, los décimos (Decreto 112-82) y las vacaciones. Del
+ * 1 al 31 de cualquier mes son 30; del 16 al último de febrero, 15; del 1 de julio
+ * al 31 de diciembre, 180.
+ */
+export function diasComerciales(inicio: Date, fin: Date): number {
+  if (fin < inicio) return 0;
+  const meses = (fin.getUTCFullYear() - inicio.getUTCFullYear()) * 12 + (fin.getUTCMonth() - inicio.getUTCMonth());
+  return Math.max(0, meses * 30 + diaComercial(fin) - diaComercial(inicio) + 1);
+}
+
 /**
  * Días del período en los que el empleado tuvo relación laboral vigente.
  *
@@ -688,6 +754,12 @@ const MS_DIA = 24 * 60 * 60 * 1000;
  * Las fechas son de CALENDARIO (medianoche UTC): se comparan en UTC y el tramo
  * es inclusivo en ambos extremos, porque el día de ingreso y el de salida son
  * días trabajados.
+ *
+ * En planillas mensuales y quincenales el tramo parcial se cuenta en días
+ * comerciales (`diasComerciales`): quien sale el 20 cobra 20 días y quien entra el
+ * 16 cobra 15, sea el mes de 28, 30 o 31 días. Antes se prorrateaban los días de
+ * calendario y salía el 20 de un mes de 31 cobraba 19. La semanal sigue en días
+ * de calendario.
  */
 export function diasConDerechoASalario(opts: {
   fechaIngreso: Date;
@@ -713,8 +785,9 @@ export function diasConDerechoASalario(opts: {
   const diasCalendario = Math.floor((hasta.getTime() - desde.getTime()) / MS_DIA) + 1;
   if (diasEfectivos >= diasCalendario) return diasMes;
 
-  // Tramo parcial: se prorratea sobre la convención del período.
-  return Math.min(diasMes, Math.round((diasEfectivos * diasMes) / diasCalendario));
+  // Tramo parcial de la semanal: días de calendario.
+  if (diasMes === 7) return Math.min(diasMes, diasEfectivos);
+  return Math.min(diasMes, diasComerciales(inicio, fin));
 }
 
 // ─── DESCUENTO POR AUSENCIA DOBLE ────────────────────────────────────────────
@@ -729,17 +802,59 @@ export function diasConDerechoASalario(opts: {
  *
  * Recibe SIEMPRE el salario mensual íntegro: el valor de un día de ausencia no
  * depende de si la planilla es semanal, quincenal o mensual.
+ *
+ * Se descuentan los días ausentes más `(factor − 1)` séptimos por cada SEMANA con
+ * ausencias (`semanasConAusencia`): dos faltas en la misma semana pierden un solo
+ * descanso semanal. Sin ese dato se asume una semana por ausencia, el peor caso.
  */
 export function calcularDescuentoAusencia(
   salarioMensual: MoneyInput,
   diasAusentes: number,
-  factor: number = FACTOR_DESCUENTO_AUSENCIA
+  factor: number = FACTOR_DESCUENTO_AUSENCIA,
+  semanasConAusencia?: number
 ): Money {
+  if (diasAusentes <= 0) return CERO;
   const salarioDiario = money(salarioMensual).div(30);
-  return redondear(salarioDiario.times(diasAusentes).times(factor));
+  const semanas = Math.min(diasAusentes, Math.max(0, semanasConAusencia ?? diasAusentes));
+  const dias = diasAusentes + Math.max(0, factor - 1) * semanas;
+  return redondear(salarioDiario.times(dias));
+}
+
+/**
+ * Cuántas semanas (de lunes a domingo) tienen al menos una de estas fechas de
+ * calendario. Es el número de séptimos días que se pierden por ausencias.
+ */
+export function semanasDistintas(fechas: Date[]): number {
+  const semanas = new Set<number>();
+  for (const f of fechas) {
+    const lunes = Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), f.getUTCDate()) - ((f.getUTCDay() + 6) % 7) * MS_DIA;
+    semanas.add(lunes);
+  }
+  return semanas.size;
 }
 
 // ─── CÁLCULO PLANILLA COMPLETA ────────────────────────────────────────────────
+
+/** Los montos fijos MENSUALES de Parámetros de ley, llevados a una fracción del mes. */
+function escalarMontosFijos(p: ParametrosLegales, fraccion: Money): ParametrosLegales {
+  const f = p.fijos ?? SIN_MONTOS_FIJOS;
+  const x = (n: number) => aNumeroExacto(money(n).times(fraccion));
+  const par = (v: { empleado: number; empleador: number } | null) => (v ? { empleado: x(v.empleado), empleador: x(v.empleador) } : null);
+  return {
+    ...p,
+    fijos: {
+      ihss: par(f.ihss),
+      ivm: par(f.ivm),
+      rap: par(f.rap),
+      infop: f.infop ? { empleador: x(f.infop.empleador) } : null,
+      reservaLaboral: f.reservaLaboral ? { empleador: x(f.reservaLaboral.empleador) } : null,
+    },
+  };
+}
+
+function aNumeroExacto(m: Money): number {
+  return Number(m.toString());
+}
 
 export interface EntradaCalculoPlanilla {
   /** Acepta el Decimal que devuelve Prisma sin conversión intermedia. */
@@ -757,6 +872,11 @@ export interface EntradaCalculoPlanilla {
   bonificaciones: MoneyInput;
   otrosIngresos: MoneyInput;
   diasAusentes: number;
+  /**
+   * Semanas del período con al menos una ausencia: cada una pierde UN séptimo día.
+   * Sin el dato se asume una semana por ausencia (ver `calcularDescuentoAusencia`).
+   */
+  semanasConAusencia?: number;
   /**
    * Salario que el patrono no paga por días de incapacidad a cargo del IHSS,
    * ya calculado (ver `lib/asistencia/incapacidades.ts`). Va en su propia
@@ -776,6 +896,13 @@ export interface EntradaCalculoPlanilla {
    * por porcentaje. Es MENSUAL: se prorratea al período igual que el calculado.
    */
   ihssMontoFijoMensual?: MoneyInput | null;
+  /**
+   * Sólo en planilla quincenal: qué quincena es, los días con derecho a salario
+   * de TODO el mes y si la persona también tiene días en la otra quincena del mes.
+   * Lo usan los aportes que se deducen completos en una sola quincena
+   * (`distribucionQuincenal`). Sin el dato, se dividen en las dos.
+   */
+  quincena?: { numero: 1 | 2; diasPagablesMes: number; enOtraQuincena: boolean } | null;
   /**
    * ISR del PERÍODO ya calculado por otro método (el cálculo personalizado,
    * `isr-personalizado.ts`). Si viene, reemplaza al del método estándar y los
@@ -851,12 +978,54 @@ export function calcularPlanilla(
 
   // Base ORDINARIA mensual: sobre ella cotizan IHSS, RAP y AFP, cuyas bases
   // legales son el salario ordinario y no las remuneraciones extraordinarias.
-  const salarioMensualEquivalente = salarioMensual;
+  //
+  // Dos bases distintas:
+  //  · La PROYECCIÓN del ISR usa el mes completo: el impuesto anualiza el salario
+  //    de un mes normal, aunque éste sea parcial.
+  //  · Los APORTES del período (IHSS, RAP, Reserva, INFOP) se calculan sobre lo
+  //    DEVENGADO: el salario mensual por la fracción del período con derecho a
+  //    salario, con los techos mensuales. Quien entra el 16 con 20,000 cotiza
+  //    sobre 10,000. Antes cotizaba sobre los 20,000 del mes completo.
+  const fraccion = diasMes > 0 ? money(Math.min(diasPagables, diasMes)).div(diasMes) : money(1);
+  const completo = fraccion.equals(1);
+  const baseDevengada = salarioMensual.times(fraccion);
+  const parametrosDevengados = completo ? parametros : escalarMontosFijos(parametros, fraccion);
+  const ihssFijoDevengado = entrada.ihssMontoFijoMensual === undefined || entrada.ihssMontoFijoMensual === null || completo
+    ? entrada.ihssMontoFijoMensual
+    : money(entrada.ihssMontoFijoMensual).times(fraccion);
 
   // Con monto fijo, el ISR de abajo resta ESE monto de su base: es el IHSS que
   // realmente se le descuenta al trabajador.
-  const ihss = calcularIHSS(salarioMensualEquivalente, parametros, entrada.ihssMontoFijoMensual);
-  const rap = calcularRAP(salarioMensualEquivalente, parametros);
+  const ihssProyeccion = calcularIHSS(salarioMensual, parametros, entrada.ihssMontoFijoMensual);
+  const rapProyeccion = calcularRAP(salarioMensual, parametros);
+  const ihssPeriodo = completo ? ihssProyeccion : calcularIHSS(baseDevengada, parametrosDevengados, ihssFijoDevengado);
+  const rapPeriodo = completo ? rapProyeccion : calcularRAP(baseDevengada, parametrosDevengados);
+
+  // Planilla quincenal con aportes «completos en una quincena»: en la elegida se
+  // deduce el mes entero sobre lo devengado EN EL MES; en la otra, nada. Quien no
+  // tiene días en la otra quincena paga el mes en ésta.
+  const q = tipoPlanilla === "QUINCENAL" ? entrada.quincena ?? null : null;
+  const fraccionMes = q ? money(Math.min(Math.max(q.diasPagablesMes, 0), 30)).div(30) : money(1);
+  const mesCompleto = fraccionMes.equals(1);
+  const parametrosMes = mesCompleto ? parametros : escalarMontosFijos(parametros, fraccionMes);
+  const ihssFijoMes = entrada.ihssMontoFijoMensual === undefined || entrada.ihssMontoFijoMensual === null || mesCompleto
+    ? entrada.ihssMontoFijoMensual
+    : money(entrada.ihssMontoFijoMensual).times(fraccionMes);
+  const distribucion = parametros.distribucionQuincenal ?? DISTRIBUCION_POR_OMISION;
+  /** `null` = en esta quincena no se deduce; `mes` = el mes entero, sin prorratear. */
+  const tramo = (modo: ModoQuincenal): { mes: boolean; factor: Money } | null => {
+    if (!q) return { mes: false, factor: factorPlanilla };
+    const t = tramoQuincenal(modo, q.numero, q.enOtraQuincena);
+    return t === "quincena" ? { mes: false, factor: factorPlanilla } : t === "mes" ? { mes: true, factor: money(1) } : null;
+  };
+  const tramoIhss = tramo(distribucion.ihss);
+  const tramoRap = tramo(distribucion.rap);
+  const tramoVecinal = tramo(distribucion.vecinal);
+  const ihss = tramoIhss?.mes ? calcularIHSS(salarioMensual.times(fraccionMes), parametrosMes, ihssFijoMes) : ihssPeriodo;
+  const rap = tramoRap?.mes ? calcularRAP(salarioMensual.times(fraccionMes), parametrosMes) : rapPeriodo;
+  const factorIhss = tramoIhss ? tramoIhss.factor : CERO;
+  const factorRap = tramoRap ? tramoRap.factor : CERO;
+  const factorVecinal = tramoVecinal ? tramoVecinal.factor : CERO;
 
   // La AFP llega ya resuelta como importe DEL PERÍODO (cuota de la deducción
   // individual del empleado). Para la base del ISR —que es mensual— se lleva a
@@ -881,7 +1050,7 @@ export function calcularPlanilla(
     : ingresosGravablesPeriodo.div(factorPlanilla);
   const baseImponibleMensual = salarioMensual.plus(ingresosGravablesMensual);
 
-  const baseISR = baseImponibleMensual.minus(ihss.empleado).minus(rap.empleado).minus(afpMensual);
+  const baseISR = baseImponibleMensual.minus(ihssProyeccion.empleado).minus(rapProyeccion.empleado).minus(afpMensual);
   const isrMensual = calcularISRMensual(baseISR, parametros);
 
   // Impuesto vecinal: su base son los ingresos totales SIN DEDUCCIONES (Art. 77
@@ -891,16 +1060,21 @@ export function calcularPlanilla(
   const impVecinal = calcularImpuestoVecinal(baseImponibleMensual, parametros.tablaVecinalAnual);
 
   // Proporcionar al período de pago
-  const ihssEmp = redondear(ihss.empleado.times(factorPlanilla));
-  const rapEmp = redondear(rap.empleado.times(factorPlanilla));
+  const ihssEmp = redondear(ihss.empleado.times(factorIhss));
+  const rapEmp = redondear(rap.empleado.times(factorRap));
   // La AFP NO se prorratea: ya viene como importe del período.
   const afpEmp = afpPeriodo;
   const isrProp = entrada.isrDelPeriodo !== undefined && entrada.isrDelPeriodo !== null
     ? redondear(entrada.isrDelPeriodo)
     : redondear(isrMensual.times(factorPlanilla));
-  const impVecProp = redondear(impVecinal.times(factorPlanilla));
-  const ausencias = calcularDescuentoAusencia(salarioMensual, diasAusentes, parametros.factorDescuentoAusencia);
-  const incapacidad = redondear(entrada.incapacidad ?? 0);
+  const impVecProp = redondear(impVecinal.times(factorVecinal));
+  // Lo que se deja de pagar por ausencias e incapacidad nunca pasa del sueldo
+  // del período: ocho faltas en una quincena no pueden descontar más que la quincena.
+  const ausencias = minimo(
+    calcularDescuentoAusencia(salarioMensual, diasAusentes, parametros.factorDescuentoAusencia, entrada.semanasConAusencia),
+    salarioBase
+  );
+  const incapacidad = minimo(redondear(entrada.incapacidad ?? 0), maximo(salarioBase.minus(ausencias), 0));
 
   const totalDeducciones = redondear(
     sumar(ihssEmp, rapEmp, afpEmp, isrProp, impVecProp, ausencias, incapacidad, otrosDeducciones)
@@ -908,28 +1082,28 @@ export function calcularPlanilla(
   const salarioNeto = redondear(totalBruto.minus(totalDeducciones));
 
   // Aportaciones empleador
-  const ihssEmpleador = redondear(ihss.empleador.times(factorPlanilla));
-  const rapEmpleador = redondear(rap.empleador.times(factorPlanilla));
-  const infopMensual = parametros.fijos?.infop
-    ? money(parametros.fijos.infop.empleador)
-    : salarioMensual.times(parametros.infopEmpleador);
+  const ihssEmpleador = redondear(ihss.empleador.times(factorIhss));
+  const rapEmpleador = redondear(rap.empleador.times(factorRap));
+  const infopMensual = parametrosDevengados.fijos?.infop
+    ? money(parametrosDevengados.fijos.infop.empleador)
+    : baseDevengada.times(parametros.infopEmpleador);
   const infop = redondear(infopMensual.times(factorPlanilla));
   // El Fondo de Reserva Laboral es mensual como los demás aportes: se prorratea.
   const reservaLaboral = redondear(
-    calcularReservaLaboral(salarioMensual, parametros).empleador.times(factorPlanilla)
+    calcularReservaLaboral(baseDevengada, parametrosDevengados).empleador.times(factorPlanilla)
   );
 
   // Desglose IVM proporcionado al período
-  const ivmEmpleadoProp = redondear(ihss.ivmEmpleado.times(factorPlanilla));
-  const ivmEmpleadorProp = redondear(ihss.ivmEmpleador.times(factorPlanilla));
-  const ivmEstadoProp = redondear(ihss.ivmEstado.times(factorPlanilla));
+  const ivmEmpleadoProp = redondear(ihss.ivmEmpleado.times(factorIhss));
+  const ivmEmpleadorProp = redondear(ihss.ivmEmpleador.times(factorIhss));
+  const ivmEstadoProp = redondear(ihss.ivmEstado.times(factorIhss));
 
   // Provisiones
   // Las provisiones devengan sobre el tiempo de servicio (días con derecho a
   // salario), en la misma base que `salarioBase`.
   const provision13vo = calcularProvision13vo(salarioMensual, diasPagables, diasMes).times(factorPlanilla);
   const provision14vo = calcularProvision14vo(salarioMensual, diasPagables, diasMes).times(factorPlanilla);
-  const provisionVacaciones = calcularProvisionVacaciones(salarioMensual, aniosTrabajados, diasPagables).times(factorPlanilla);
+  const provisionVacaciones = calcularProvisionVacaciones(salarioMensual, aniosTrabajados, diasPagables, diasMes).times(factorPlanilla);
 
   return {
     salarioBase,
@@ -1001,6 +1175,7 @@ export function construirParametros(opts: {
   jornadaHoras?: number | null;
   /** Conceptos en modo monto fijo; lo que no venga se calcula por porcentaje. */
   fijos?: Partial<MontosFijos>;
+  distribucionQuincenal?: DistribucionQuincenal | null;
 }): ParametrosLegales {
   const tablaISRAnual: TramoISR[] =
     opts.filasISR && opts.filasISR.length > 0
@@ -1047,6 +1222,7 @@ export function construirParametros(opts: {
     tablaISRAnual,
     tablaVecinalAnual,
     fijos: { ...SIN_MONTOS_FIJOS, ...opts.fijos },
+    distribucionQuincenal: opts.distribucionQuincenal ?? DISTRIBUCION_POR_OMISION,
   };
 }
 

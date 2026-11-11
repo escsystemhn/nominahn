@@ -96,7 +96,7 @@ export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departa
     if (!edicion || !validacion || validacion.errores.length) return;
     const { id, ...cuerpo } = edicion;
     const res = await fetch(id ? `/api/turnos/${id}` : "/api/turnos", { method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) {
       const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
       setAviso({ ok: false, texto: [d.error ?? "No se pudo guardar", ...campos].join(" ") });
@@ -110,7 +110,7 @@ export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departa
   async function borrar(t: Turno) {
     if (!(await confirmar({ titulo: `¿Borrar el turno ${t.nombre}?`, accion: "Borrar", peligro: true }))) return;
     const res = await fetch(`/api/turnos/${t.id}`, { method: "DELETE" });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     setAviso(res.ok ? { ok: true, texto: "Turno borrado." } : { ok: false, texto: d.error ?? "No se pudo borrar" });
     await cargar();
   }
@@ -121,7 +121,7 @@ export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departa
     if (asig.alcance === "departamento") cuerpo.departamentoId = asig.departamentoId;
     if (asig.alcance === "sucursal") cuerpo.sucursalId = asig.sucursalId;
     const res = await fetch("/api/turnos/asignaciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     setAviso(res.ok ? { ok: true, texto: `Turno asignado a ${d.asignados} empleado(s) desde el ${formatDate(asig.desde)}.` } : { ok: false, texto: d.error ?? "No se pudo asignar" });
     if (res.ok) {
       setSeleccion(new Set());

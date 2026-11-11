@@ -20,19 +20,26 @@ type Db = PrismaClient | Prisma.TransactionClient;
 export const CLAVE_DIVISIONES = "ORGANIZACION_DIVISIONES";
 const DESCRIPCION_DIVISIONES = "Usa el nivel División entre la sucursal y el departamento (Sucursal → División → Departamento)";
 
-export async function divisionesHabilitadas(db: Db): Promise<boolean> {
-  const fila = await db.configuracionSistema.findUnique({ where: { clave: CLAVE_DIVISIONES }, select: { valor: true } });
+export const CLAVE_JERARQUIA_NOMINA = "ORGANIZACION_JERARQUIA_NOMINA";
+const DESCRIPCION_JERARQUIA_NOMINA = "Muestra la nómina como Frecuencia → Grupo → Empresa → Departamento → Empleados";
+
+async function leerOpcion(db: Db, clave: string): Promise<boolean> {
+  const fila = await db.configuracionSistema.findUnique({ where: { clave }, select: { valor: true } });
   return fila?.valor.trim().toLowerCase() === "true";
 }
 
-export async function guardarDivisionesHabilitadas(db: Db, habilitar: boolean): Promise<void> {
+async function guardarOpcion(db: Db, clave: string, descripcion: string, habilitar: boolean): Promise<void> {
   const valor = habilitar ? "true" : "false";
-  await db.configuracionSistema.upsert({
-    where: { clave: CLAVE_DIVISIONES },
-    update: { valor },
-    create: { clave: CLAVE_DIVISIONES, valor, descripcion: DESCRIPCION_DIVISIONES },
-  });
+  await db.configuracionSistema.upsert({ where: { clave }, update: { valor }, create: { clave, valor, descripcion } });
 }
+
+export const divisionesHabilitadas = (db: Db) => leerOpcion(db, CLAVE_DIVISIONES);
+export const jerarquiaNominaHabilitada = (db: Db) => leerOpcion(db, CLAVE_JERARQUIA_NOMINA);
+
+export const guardarDivisionesHabilitadas = (db: Db, habilitar: boolean) =>
+  guardarOpcion(db, CLAVE_DIVISIONES, DESCRIPCION_DIVISIONES, habilitar);
+export const guardarJerarquiaNominaHabilitada = (db: Db, habilitar: boolean) =>
+  guardarOpcion(db, CLAVE_JERARQUIA_NOMINA, DESCRIPCION_JERARQUIA_NOMINA, habilitar);
 
 /**
  * Opciones de los selectores Sucursal → División → Departamento. Sin el nivel
@@ -40,6 +47,7 @@ export async function guardarDivisionesHabilitadas(db: Db, habilitar: boolean): 
  */
 export async function cargarOpcionesEstructura(db: Db, filtroSucursales: Prisma.SucursalWhereInput = {}) {
   const conDivisiones = await divisionesHabilitadas(db);
+  const jerarquia = await jerarquiaNominaHabilitada(db);
   const [sucursales, divisiones, departamentos] = await Promise.all([
     db.sucursal.findMany({ where: filtroSucursales, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
     conDivisiones
@@ -49,6 +57,7 @@ export async function cargarOpcionesEstructura(db: Db, filtroSucursales: Prisma.
   ]);
   return {
     conDivisiones,
+    jerarquia,
     sucursales,
     divisiones,
     departamentos: departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null })),
@@ -120,6 +129,15 @@ export async function validarUbicacionEmpleado(
   }
   return null;
 }
+
+/** RTN de una empresa del grupo: 14 dígitos, con guiones o espacios si se quiere. Vacío = sin RTN. */
+export const zRtnEmpresaOpcional = z
+  .string()
+  .trim()
+  .regex(/^[\d\s-]*$/, "sólo dígitos, guiones o espacios")
+  .refine((v) => v === "" || v.replace(/\D/g, "").length === 14, { error: "debe tener 14 dígitos" })
+  .nullable()
+  .optional();
 
 /** Campos de un puesto en las rutas de Configuración → Estructura organizacional. */
 export const zDatosPuesto = z.object({

@@ -1,8 +1,9 @@
 /**
- * Opción de estructura organizacional: usar o no el nivel División
- * (Sucursal → División → Departamento). La enciende o apaga el administrador.
- * Apagarla no borra divisiones ni asignaciones: sólo deja de mostrarlas y de
- * aceptarlas (ver `src/lib/organizacion/estructura-bd.ts`).
+ * Opciones de estructura organizacional: el nivel División
+ * (Sucursal → División → Departamento) y la jerarquía de nómina
+ * (Frecuencia → Grupo → Empresa → Departamento → Empleados). Las enciende o apaga
+ * el administrador. Apagarlas no borra divisiones ni asignaciones: sólo deja de
+ * mostrarlas (ver `src/lib/organizacion/estructura-bd.ts`).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -11,14 +12,29 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
-import { CLAVE_DIVISIONES, divisionesHabilitadas, guardarDivisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { aplicarCambioOpciones } from "@/lib/organizacion/estructura";
+import {
+  CLAVE_DIVISIONES,
+  CLAVE_JERARQUIA_NOMINA,
+  divisionesHabilitadas,
+  guardarDivisionesHabilitadas,
+  guardarJerarquiaNominaHabilitada,
+  jerarquiaNominaHabilitada,
+} from "@/lib/organizacion/estructura-bd";
 
-const schema = z.object({ divisiones: z.boolean() });
+const schema = z
+  .object({ divisiones: z.boolean().optional(), jerarquia: z.boolean().optional() })
+  .refine((c) => c.divisiones !== undefined || c.jerarquia !== undefined, "Indique qué opción cambia");
+
+const leerOpciones = async () => {
+  const [divisiones, jerarquia] = await Promise.all([divisionesHabilitadas(prisma), jerarquiaNominaHabilitada(prisma)]);
+  return { divisiones, jerarquia };
+};
 
 export async function GET() {
   const g = await requerirPermiso(["configuracion.ver", "configuracion.editar"]);
   if (!g.ok) return g.response;
-  return NextResponse.json({ divisiones: await divisionesHabilitadas(prisma) });
+  return NextResponse.json(await leerOpciones());
 }
 
 export async function PUT(req: NextRequest) {
@@ -28,21 +44,25 @@ export async function PUT(req: NextRequest) {
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
 
-  const antes = await divisionesHabilitadas(prisma);
-  await guardarDivisionesHabilitadas(prisma, parsed.data.divisiones);
+  const antes = await leerOpciones();
+  const nuevas = aplicarCambioOpciones(antes, parsed.data);
+  await prisma.$transaction(async (tx) => {
+    await guardarDivisionesHabilitadas(tx, nuevas.divisiones);
+    await guardarJerarquiaNominaHabilitada(tx, nuevas.jerarquia);
+  });
 
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "UPDATE",
     tabla: "ConfiguracionSistema",
-    registroId: CLAVE_DIVISIONES,
+    registroId: parsed.data.jerarquia !== undefined ? CLAVE_JERARQUIA_NOMINA : CLAVE_DIVISIONES,
     usuarioId: g.usuario.id,
     usuarioEmail: g.usuario.email ?? undefined,
-    valorAnterior: { divisiones: antes },
-    valorNuevo: { divisiones: parsed.data.divisiones },
+    valorAnterior: antes,
+    valorNuevo: nuevas,
     ip,
     userAgent,
   });
 
-  return NextResponse.json({ divisiones: parsed.data.divisiones });
+  return NextResponse.json(nuevas);
 }

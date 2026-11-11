@@ -1,24 +1,19 @@
+/**
+ * Catálogo de tipos de deducción.
+ *   GET  → todos
+ *   POST → uno nuevo { nombre, codigo, tipo, montoFijo?, descripcion? }
+ *
+ * Hasta el 2026-11-11 la ventana «Nuevo tipo» mandaba `null` en los campos vacíos y el
+ * esquema lo rechazaba: no se podía crear ningún tipo sin porcentaje ni monto. Ahora
+ * la validación es la de `lib/deducciones/tipos-bd.ts`, con mensajes en palabras, y no
+ * se crean tipos de ley ni de impuesto (los maneja Parámetros de ley).
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
-import { z } from "zod";
-import { parsearBody, zFraccion, zMontoPositivo } from "@/lib/http/validar";
-import { TipoDeduccion } from "@prisma/client";
-
-const schema = z.object({
-  nombre: z.string().trim().min(1),
-  codigo: z.string().trim().min(1),
-  tipo: z.enum(TipoDeduccion),
-  porcentaje: zFraccion.optional(),          // 0.025 = 2.5%
-  montoFijo: zMontoPositivo.optional(),
-  aplicaEmpleado: z.boolean().optional(),
-  aplicaEmpleador: z.boolean().optional(),
-  porcentajeEmpleador: zFraccion.optional(),
-  topeMaximo: zMontoPositivo.optional(),
-  esLegal: z.boolean().optional(),
-  descripcion: z.string().trim().max(500).optional(),
-});
+import { conflictosDeTipos, datosParaCrear, leerDatosTipo } from "@/lib/deducciones/tipos-bd";
 
 export async function GET() {
   const g = await requerirPermiso("deducciones.ver");
@@ -34,29 +29,15 @@ export async function POST(req: NextRequest) {
   const g = await requerirPermiso("deducciones.configurar");
   if (!g.ok) return g.response;
 
-  const parsed = await parsearBody(req, schema);
-  if (!parsed.ok) return parsed.response;
-  const { nombre, codigo, tipo, porcentaje, montoFijo, aplicaEmpleado, aplicaEmpleador,
-    porcentajeEmpleador, topeMaximo, esLegal, descripcion } = parsed.data;
+  const cuerpo = await req.json().catch(() => null);
+  if (!cuerpo || typeof cuerpo !== "object") return NextResponse.json({ error: "Cuerpo JSON inválido" }, { status: 400 });
+  const datos = leerDatosTipo(cuerpo as Record<string, unknown>);
+  if (!datos.ok) return NextResponse.json({ error: datos.error }, { status: 400 });
+  const conflicto = await conflictosDeTipos(prisma, [datos.valor]);
+  if (conflicto) return NextResponse.json({ error: conflicto }, { status: 409 });
 
-  const deduccion = await prisma.tipoDeduccionConfig.create({
-    data: {
-      nombre,
-      codigo: codigo.toUpperCase(),
-      tipo,
-      porcentaje: porcentaje ?? null,
-      montoFijo: montoFijo ?? null,
-      aplicaEmpleado: aplicaEmpleado ?? true,
-      aplicaEmpleador: aplicaEmpleador ?? false,
-      porcentajeEmpleador: porcentajeEmpleador ?? null,
-      topeMaximo: topeMaximo ?? null,
-      esLegal: esLegal ?? false,
-      descripcion,
-    },
-  });
+  const deduccion = await prisma.tipoDeduccionConfig.create({ data: datosParaCrear(datos.valor) });
 
-  // Un tipo de deducción legal (IHSS, RAP, INFOP) altera el cálculo de TODA la
-  // plantilla: es de los cambios que más importa poder rastrear.
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "CREATE",
@@ -64,10 +45,7 @@ export async function POST(req: NextRequest) {
     registroId: deduccion.id,
     usuarioId: g.usuario.id,
     usuarioEmail: g.usuario.email ?? undefined,
-    valorNuevo: {
-      nombre, codigo: deduccion.codigo, tipo, porcentaje, porcentajeEmpleador,
-      montoFijo, topeMaximo, esLegal,
-    },
+    valorNuevo: { ...datos.valor },
     ip,
     userAgent,
   });

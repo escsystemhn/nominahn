@@ -71,6 +71,45 @@ export function puestosPorCopiar<T extends { nombre: string }>(origen: T[], dest
   });
 }
 
+/**
+ * En qué divisiones se puede crear un departamento con ese nombre: `omitir` son
+ * las que ya tienen uno, activo o no. Comparar sin acentos ni mayúsculas evita
+ * un «Administracion» junto a un «Administración» en la misma división.
+ */
+export function divisionesSinDepartamento(
+  nombre: string,
+  divisionIds: readonly string[],
+  existentes: readonly { nombre: string; divisionId: string | null }[]
+): { crear: string[]; omitir: string[] } {
+  const clave = claveNombre(nombre);
+  const ocupadas = new Set(existentes.filter((d) => clave && claveNombre(d.nombre) === clave).map((d) => d.divisionId));
+  const unicas = [...new Set(divisionIds)];
+  return { crear: unicas.filter((id) => !ocupadas.has(id)), omitir: unicas.filter((id) => ocupadas.has(id)) };
+}
+
+export interface ResultadoCopia {
+  destino: string;
+  departamentoNuevo: boolean;
+  puestosCreados: number;
+  puestosOmitidos: number;
+}
+
+const agregados = (n: number) => (n === 1 ? "se agregó 1 puesto" : `se agregaron ${n} puestos`);
+
+/** Lo que pasó al copiar un departamento, en una frase. `plural` nombra los destinos: «empresas», «divisiones». */
+export function mensajeCopia(nombre: string, plural: string, resultados: ResultadoCopia[]): string {
+  if (resultados.length === 1) {
+    const r = resultados[0];
+    if (r.departamentoNuevo) return `Se creó ${nombre} en ${r.destino} con ${cuenta(r.puestosCreados, "puesto", "puestos")}.`;
+    const yaTenia = r.puestosOmitidos ? ` y ya tenía ${cuenta(r.puestosOmitidos, "puesto", "puestos")}` : "";
+    return `${r.destino} ya tenía ${nombre}: ${agregados(r.puestosCreados)}${yaTenia}.`;
+  }
+  const total = resultados.reduce((suma, r) => suma + r.puestosCreados, 0);
+  const lugares = enumerar(resultados.map((r) => r.destino));
+  const detalle = total ? agregados(total) : "no faltaba ningún puesto";
+  return `Se copió ${nombre} a ${resultados.length} ${plural} (${lugares}): ${detalle}.`;
+}
+
 /** El rango es opcional: 0 significa «sin definir» y sólo se compara si están los dos. */
 export function rangoSalarialValido(minimo: number, maximo: number): boolean {
   return minimo <= 0 || maximo <= 0 || minimo <= maximo;

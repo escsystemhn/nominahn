@@ -1,12 +1,16 @@
+import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirSesion, puede } from "@/lib/auth/guard";
-import { templateBoletaPago } from "@/lib/email/send";
-import { construirBoleta } from "@/lib/payroll/boleta";
+import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, nombreArchivoComprobante, sucursalDeBoleta, UBICACION_BOLETA } from "@/lib/payroll/boleta";
+import { comprobanteHtml } from "@/lib/payroll/comprobante-html";
+import { pdfComprobante } from "@/lib/payroll/comprobante-pdf";
+import { logosDeSucursales, pngComoDataUri } from "@/lib/organizacion/logo-bd";
 
-// GET: descarga la boleta (comprobante de pago) de un detalle de planilla.
-// El empleado sólo puede descargar la suya; RRHH/admin/contador cualquier boleta.
+// GET: el comprobante de pago de una línea de planilla, en PDF para descargarlo o,
+// con `?modo=ver`, en pantalla. El empleado sólo puede abrir el suyo; RRHH, admin y
+// contador, cualquiera de su alcance.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const g = await requerirSesion();
   if (!g.ok) return g.response;
@@ -16,17 +20,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const detalle = await prisma.planillaDetalle.findUnique({
     where: { id },
     include: {
-      empleado: {
-        select: {
-          id: true, codigo: true, identidad: true, sucursalId: true, departamentoId: true,
-          primerNombre: true, segundoNombre: true,
-          primerApellido: true, segundoApellido: true,
-        },
-      },
+      ...UBICACION_BOLETA,
+      empleado: { select: { ...EMPLEADO_BOLETA, sucursalId: true, departamentoId: true } },
       planilla: {
         select: {
-          tipo: true, fechaInicio: true, fechaFin: true, estado: true,
-          empresa: { select: { nombre: true, rtn: true } },
+          tipo: true, fechaInicio: true, fechaFin: true, fechaPago: true, estado: true,
+          empresa: EMPRESA_BOLETA,
         },
       },
     },
@@ -51,36 +50,51 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     );
   }
 
-  // Desglose completo: cada deducción con su nombre e importe. La versión
-  // anterior sólo mostraba bruto, total de deducciones y neto.
-  const html = templateBoletaPago({
-    ...construirBoleta(detalle, {
-      empresa: detalle.planilla.empresa,
-      empleado: detalle.empleado,
-      planilla: detalle.planilla,
-    }),
-    borrador: detalle.planilla.estado === "BORRADOR",
+  const ubicacion = { sucursal: detalle.sucursal, division: detalle.division, departamento: detalle.departamento };
+  // Desglose completo: cada deducción con su nombre e importe.
+  const datos = construirBoleta(detalle, {
+    empresa: detalle.planilla.empresa,
+    empleado: detalle.empleado,
+    planilla: detalle.planilla,
+    ubicacion,
   });
+  const sucursalId = sucursalDeBoleta(ubicacion, detalle.empleado)?.id;
+  const logo = sucursalId ? (await logosDeSucursales(prisma, [sucursalId])).get(sucursalId) : null;
 
-  // `?modo=ver` la muestra en el navegador en vez de descargarla: es lo que usa
-  // el botón «Ver» de la planilla y del expediente del empleado.
-  const ver = new URL(req.url).searchParams.get("modo") === "ver";
+  // Documento con datos salariales: nunca en caché compartida.
+  const comunes = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
+
+  if (new URL(req.url).searchParams.get("modo") !== "ver") {
+    const pdf = await pdfComprobante(datos, logo);
+    return new NextResponse(new Uint8Array(pdf), {
+      headers: {
+        ...comunes,
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${nombreArchivoComprobante(detalle.empleado.codigo, detalle.planilla.fechaFin)}"`,
+      },
+    });
+  }
+
+  const nonce = randomBytes(16).toString("base64");
+  const html = comprobanteHtml(datos, {
+    modo: "pantalla",
+    logo: logo ? { src: pngComoDataUri(logo.png), ancho: logo.ancho, alto: logo.alto, alt: `Logo de ${datos.sucursal ?? datos.empresa}` } : null,
+    nonce,
+    urlPdf: `/api/mis-boletas/${id}`,
+  });
 
   return new NextResponse(html, {
     headers: {
+      ...comunes,
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Disposition": ver
-        ? `inline; filename="boleta-${id}.html"`
-        : `attachment; filename="boleta-${id}.html"`,
-      // Documento con datos salariales: nunca en caché compartida.
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-      // Mostrada en línea, la boleta se ejecuta en el dominio de la aplicación y
-      // con la sesión de quien la abre. La plantilla ya escapa lo que escriben
-      // los usuarios; esta política impide además cualquier script, conexión o
-      // recurso externo, por si algún día una línea se cuela sin escapar.
+      "Content-Disposition": `inline; filename="comprobante-${id}.html"`,
+      // La boleta se ejecuta en el dominio de la aplicación y con la sesión de quien
+      // la abre. La plantilla ya escapa lo que escriben los usuarios; esta política
+      // impide además cualquier conexión o recurso externo, y todo script salvo el
+      // del botón de imprimir, por si algún día una línea se cuela sin escapar.
       "Content-Security-Policy":
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     },
   });
 }

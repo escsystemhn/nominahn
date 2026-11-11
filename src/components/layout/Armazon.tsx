@@ -14,6 +14,7 @@ import TopBar from "./TopBar";
 export default function Armazon({
   permisos,
   conEmpleado,
+  jerarquiaNomina,
   user,
   empresa,
   bloqueado,
@@ -23,6 +24,8 @@ export default function Armazon({
   permisos: readonly string[];
   /** Sin empleado vinculado, Mi espacio no tiene nada que mostrar. */
   conEmpleado: boolean;
+  /** El administrador activó la jerarquía de nómina: su pantalla entra al menú. */
+  jerarquiaNomina: boolean;
   user: Session["user"];
   empresa?: string | null;
   /** Con una contraseña temporal no se dibuja el menú: sólo puede cambiarla. */
@@ -73,6 +76,7 @@ export default function Armazon({
           <Sidebar
             permisos={permisos}
             conEmpleado={conEmpleado}
+            jerarquiaNomina={jerarquiaNomina}
             abierto={abierto}
             refCerrar={botonCerrar}
             onCerrar={cerrar}
@@ -91,9 +95,15 @@ export default function Armazon({
           onAbrirMenu={() => setAbierto(true)}
           permisos={permisos}
           conEmpleado={conEmpleado}
+          jerarquiaNomina={jerarquiaNomina}
         />
         {avisos}
-        <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto px-4 py-5 focus:outline-none sm:px-6 sm:py-6 lg:px-8">
+        {/* `relative`: lo posicionado dentro del contenido (p. ej. los textos `sr-only`
+            de los encabezados de tabla) toma a <main> como referencia. Sin esto se
+            posicionaba contra la ventana y, al final de una página larga, alargaba
+            el documento: aparecía una segunda barra de desplazamiento y el menú
+            lateral se cortaba al llegar abajo. */}
+        <main id="contenido" tabIndex={-1} className="relative flex-1 overflow-y-auto px-4 py-5 focus:outline-none sm:px-6 sm:py-6 lg:px-8">
           {children}
         </main>
       </div>

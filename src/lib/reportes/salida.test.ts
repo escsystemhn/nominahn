@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
-import { valorCelda, esFilaTotal, columnasNumericas, nombreHoja, aXlsx, aPdf, metaFila, contarDetalles, type MetaFila } from "./salida";
+import { valorCelda, esFilaTotal, columnasNumericas, nombreHoja, aXlsx, aPdf, metaFila, contarDetalles, leerPapel, papelPorOmision, PAPELES, tamanoLetra, type MetaFila } from "./salida";
 
 describe("valorCelda", () => {
   it("lee lempiras con separador de miles y signo", () => {
@@ -82,6 +82,50 @@ describe("aPdf", () => {
   it("un reporte vacío también genera documento", async () => {
     const buf = await aPdf({ ...REPORTE, datos: [] });
     expect(buf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+  });
+});
+
+describe("papel", () => {
+  /** El MediaBox de la primera página, en puntos: [ancho, alto]. */
+  const medida = (buf: Buffer) => {
+    const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(buf.toString("latin1"));
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+  const ANCHO = { ...REPORTE, cabeceras: Array.from({ length: 15 }, (_, i) => (i ? `C${i}` : "Empleado")), datos: [["Ana", ...Array(14).fill("L 1,000.00")]] };
+
+  it("sin elegir: carta, y legal si el reporte es muy ancho", async () => {
+    expect(papelPorOmision(10)).toBe("CARTA");
+    expect(papelPorOmision(15)).toBe("LEGAL");
+    expect(medida(await aPdf(ANCHO))).toEqual([1008, 612]);
+  });
+
+  it("el papel elegido, apaisado: oficio, legal y doble carta", async () => {
+    expect(medida(await aPdf({ ...ANCHO, papel: "OFICIO" }))).toEqual([936, 612]);
+    expect(medida(await aPdf({ ...ANCHO, papel: "DOBLE_CARTA" }))).toEqual([1224, 792]);
+    expect(medida(await aPdf({ ...ANCHO, papel: "CARTA" }))).toEqual([792, 612]);
+  });
+
+  it("la letra crece con el papel; en carta no pasa de los tamaños de siempre", () => {
+    const util = (p: keyof typeof PAPELES) => PAPELES[p].largo - 72;
+    expect(tamanoLetra(15, util("CARTA"), true)).toBe(6);
+    expect(tamanoLetra(15, util("OFICIO"), false)).toBe(7.5);
+    expect(tamanoLetra(15, util("LEGAL"), false)).toBe(8);
+    expect(tamanoLetra(15, util("DOBLE_CARTA"), false)).toBe(9);
+    expect(tamanoLetra(10, util("CARTA"), true)).toBe(7);
+    expect(tamanoLetra(6, PAPELES.CARTA.corto - 72, true)).toBe(8);
+  });
+
+  it("lee sólo papeles conocidos", () => {
+    expect(leerPapel("LEGAL")).toBe("LEGAL");
+    expect(leerPapel("A0")).toBeUndefined();
+    expect(leerPapel(null)).toBeUndefined();
+  });
+
+  it("el Excel queda listo para imprimir en ese papel, apaisado y a lo ancho", async () => {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load((await aXlsx({ ...ANCHO, papel: "LEGAL" })) as unknown as ArrayBuffer);
+    const ps = libro.worksheets[0].pageSetup;
+    expect([ps.paperSize, ps.orientation, ps.fitToWidth]).toEqual([5, "landscape", 1]);
   });
 });
 

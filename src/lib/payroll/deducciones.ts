@@ -11,7 +11,55 @@
  * capa de datos aplica el resultado dentro de la transacción de la planilla.
  */
 
-import { money, minimo, redondear, sumar, CERO, type Money, type MoneyInput } from "./money";
+import { money, minimo, maximo, redondear, sumar, CERO, type Money, type MoneyInput } from "./money";
+
+/**
+ * Código del tipo de deducción «Retención de ISR fija por período» (tipo IMPUESTO).
+ * Quien la tiene asignada retiene ese monto como ISR del período en lugar del
+ * cálculo (estándar o personalizado): sirve para respetar la retención que el
+ * contador ya proyectó para el año. No es una deducción más: va en la columna ISR.
+ */
+export const CODIGO_ISR_FIJO = "ISR-FIJO";
+
+// ─── MONTOS DEL PERÍODO ──────────────────────────────────────────────────────
+
+/**
+ * Así empieza la observación de un «monto del período»: lo que se descuenta de un
+ * tipo sólo en un período (la cooperativa o el préstamo de banco que cambia cada
+ * quincena). Se importa desde el archivo de deducciones por empleado.
+ *
+ * Es una deducción sin saldo ni cuotas con `fechaFin`: vale sólo entre sus dos
+ * fechas. La marca va en la observación porque una deducción de cada planilla con
+ * fecha final también existe (importación por filas) y esa no reemplaza a nadie.
+ */
+export const MARCA_MONTO_PERIODO = "Monto del período";
+
+export function esMontoDelPeriodo(d: { observacion: string | null; fechaFin: Date | string | null }): boolean {
+  return d.fechaFin !== null && (d.observacion ?? "").startsWith(MARCA_MONTO_PERIODO);
+}
+
+/** Se cobra en cada planilla, sin saldo ni plazo (cuota sindical, seguro, cooperativa fija). */
+export function esCadaPlanilla(d: { saldo: unknown; cuotasMeses: number | null }): boolean {
+  return d.saldo === null && d.cuotasMeses === null;
+}
+
+/**
+ * En un período con monto del período de un tipo, las deducciones de CADA PLANILLA de
+ * ese mismo tipo no se cobran: el monto importado las reemplaza sólo en ese período, y
+ * en el siguiente vuelven solas. Las de saldo o cuotas (préstamos) siguen su curso: no
+ * cobrarlas alargaría la deuda sin que nadie lo decidiera.
+ */
+export function conMontosDelPeriodo<T extends {
+  tipoDeduccionId: string;
+  observacion: string | null;
+  fechaFin: Date | string | null;
+  saldo: unknown;
+  cuotasMeses: number | null;
+}>(deducciones: readonly T[]): T[] {
+  const reemplazados = new Set(deducciones.filter(esMontoDelPeriodo).map((d) => d.tipoDeduccionId));
+  if (reemplazados.size === 0) return [...deducciones];
+  return deducciones.filter((d) => esMontoDelPeriodo(d) || !(reemplazados.has(d.tipoDeduccionId) && esCadaPlanilla(d)));
+}
 
 /** Una deducción ya filtrada por vigencia de fechas por la capa de datos. */
 export interface DeduccionVigente {
@@ -69,14 +117,18 @@ export interface ResultadoDeducciones {
   /** Suma de las cuatro categorías no-AFP: lo que entra al motor como `otrosDeducciones`. */
   total: Money;
   amortizaciones: Amortizacion[];
+  /** Cuotas que no se cobraron completas por los topes de los Arts. 371 y 372. */
+  recortadas: CuotaRecortada[];
 }
 
-/** Una deducción está liquidada cuando agotó su saldo o completó su plazo. */
+/**
+ * Una deducción está liquidada cuando agotó su saldo o, si no lleva saldo, cuando
+ * completó su plazo. Con saldo manda el saldo: una cuota que el tope del Art. 372
+ * recortó deja deuda pendiente aunque ya se hayan contado todas las cuotas.
+ */
 export function estaLiquidada(d: Pick<DeduccionVigente, "saldo" | "cuotasMeses" | "cuotasPagadas">): boolean {
-  const saldo = d.saldo === null ? null : money(d.saldo);
-  if (saldo !== null && saldo.lessThanOrEqualTo(0)) return true;
-  if (d.cuotasMeses !== null && d.cuotasPagadas >= d.cuotasMeses) return true;
-  return false;
+  if (d.saldo !== null) return money(d.saldo).lessThanOrEqualTo(0);
+  return d.cuotasMeses !== null && d.cuotasPagadas >= d.cuotasMeses;
 }
 
 /**
@@ -97,10 +149,47 @@ export function cuotaDelPeriodo(d: Pick<DeduccionVigente, "monto" | "saldo" | "c
   if (monto.lessThanOrEqualTo(0)) return CERO;
   if (d.saldo === null) return monto;
   const saldo = money(d.saldo);
-  const restantes = d.cuotasMeses === null ? 1 : d.cuotasMeses - d.cuotasPagadas;
+  const restantes = d.cuotasMeses === null ? 1 : Math.max(1, d.cuotasMeses - d.cuotasPagadas);
   const esElTotal = d.cuotasPagadas === 0 ? monto.equals(saldo) : monto.greaterThan(saldo);
   if (restantes > 1 && esElTotal) return redondear(saldo.div(restantes));
   return minimo(monto, saldo);
+}
+
+/**
+ * Topes del período para las deducciones que no son de ley (Código del Trabajo):
+ *
+ *  · `disponible`: lo que queda del salario tras IHSS, RAP, ISR, vecinal, AFP,
+ *    ausencias e incapacidad. Ninguna deducción lo pasa: el neto nunca es negativo.
+ *  · `embargable`: la cuarta parte de lo que excede al salario mínimo del período
+ *    (Art. 371). Lo comparten los embargos ordinarios y las deudas con el patrono,
+ *    que «sólo pueden amortizarse en la proporción en que sean embargables»
+ *    (Art. 372).
+ *  · `alimentos`: hasta el 50 % del salario, incluso del mínimo (Art. 371, 1.º).
+ *
+ * Los anticipos por cuenta de salario (ADELANTO) y las cuotas de cooperativa
+ * (Art. 373) no entran en la cuarta parte, sólo en lo disponible.
+ */
+export interface TopesDeducciones {
+  disponible: MoneyInput;
+  embargable: MoneyInput;
+  alimentos: MoneyInput;
+}
+
+/** Orden de cobro: primero lo judicial, luego las deudas con el patrono, al final lo voluntario. */
+const PRIORIDAD: Record<string, number> = {
+  PENSION_ALIMENTICIA: 1,
+  EMBARGO: 2,
+  PRESTAMO: 3,
+  ADELANTO: 4,
+  COOPERATIVA: 5,
+};
+
+/** Una cuota que el tope dejó corta: la diferencia queda en el saldo. */
+export interface CuotaRecortada {
+  id: string;
+  tipo: string;
+  cuota: Money;
+  aplicado: Money;
 }
 
 /**
@@ -110,13 +199,41 @@ export function cuotaDelPeriodo(d: Pick<DeduccionVigente, "monto" | "saldo" | "c
  * Sólo amortizan las deducciones con plazo o saldo definido. Una recurrente
  * indefinida (cuota sindical, seguro voluntario) se cobra cada período y no
  * lleva contador.
+ *
+ * Con `topes`, cada cuota se cobra en orden de prioridad y hasta donde alcancen
+ * (ver `TopesDeducciones`). Lo que no se cobra sigue en el saldo y se cobra en
+ * los períodos siguientes. La AFP no lleva tope: es un aporte de pensión que ya
+ * está restado de lo disponible.
  */
-export function aplicarDeducciones(deducciones: DeduccionVigente[]): ResultadoDeducciones {
+export function aplicarDeducciones(deducciones: DeduccionVigente[], topes?: TopesDeducciones): ResultadoDeducciones {
   let prestamos = CERO, adelantos = CERO, cooperativa = CERO, afp = CERO, otros = CERO;
   const amortizaciones: Amortizacion[] = [];
+  const recortadas: CuotaRecortada[] = [];
 
-  for (const d of deducciones) {
-    const aplicado = cuotaDelPeriodo(d);
+  let disponible = topes ? maximo(money(topes.disponible), 0) : null;
+  let embargable = topes ? maximo(money(topes.embargable), 0) : null;
+  let alimentos = topes ? maximo(money(topes.alimentos), 0) : null;
+
+  const ordenadas = deducciones
+    .map((d, i) => ({ d, i }))
+    .sort((a, b) => (PRIORIDAD[a.d.tipo] ?? 6) - (PRIORIDAD[b.d.tipo] ?? 6) || a.i - b.i)
+    .map((x) => x.d);
+
+  for (const d of ordenadas) {
+    const cuota = cuotaDelPeriodo(d);
+    if (cuota.lessThanOrEqualTo(0)) continue;
+
+    let aplicado = cuota;
+    if (disponible !== null && d.tipo !== "AFP") {
+      aplicado = minimo(aplicado, disponible);
+      if (d.tipo === "PENSION_ALIMENTICIA") aplicado = minimo(aplicado, alimentos!);
+      if (d.tipo === "EMBARGO" || d.tipo === "PRESTAMO") aplicado = minimo(aplicado, embargable!);
+      aplicado = maximo(redondear(aplicado), 0);
+      disponible = disponible.minus(aplicado);
+      if (d.tipo === "PENSION_ALIMENTICIA") alimentos = alimentos!.minus(aplicado);
+      if (d.tipo === "EMBARGO" || d.tipo === "PRESTAMO") embargable = embargable!.minus(aplicado);
+      if (aplicado.lessThan(cuota)) recortadas.push({ id: d.id, tipo: d.tipo, cuota, aplicado });
+    }
     if (aplicado.lessThanOrEqualTo(0)) continue;
 
     if (d.tipo === "PRESTAMO") prestamos = prestamos.plus(aplicado);
@@ -134,9 +251,10 @@ export function aplicarDeducciones(deducciones: DeduccionVigente[]): ResultadoDe
       id: d.id,
       cuotasPagadas: nuevasCuotas,
       saldo: nuevoSaldo,
-      desactivar:
-        (d.cuotasMeses !== null && nuevasCuotas >= d.cuotasMeses) ||
-        (nuevoSaldo !== null && nuevoSaldo.lessThanOrEqualTo(0)),
+      // Con saldo, se cierra cuando se agota; sin saldo, al completar el plazo.
+      desactivar: nuevoSaldo !== null
+        ? nuevoSaldo.lessThanOrEqualTo(0)
+        : d.cuotasMeses !== null && nuevasCuotas >= d.cuotasMeses,
       montoAplicado: aplicado,
     });
   }
@@ -151,6 +269,22 @@ export function aplicarDeducciones(deducciones: DeduccionVigente[]): ResultadoDe
     // porque se resta de la base del ISR antes de aplicar la tabla.
     total: sumar(prestamos, adelantos, cooperativa, otros),
     amortizaciones,
+    recortadas,
+  };
+}
+
+/**
+ * Topes del período a partir de lo que queda tras las deducciones de ley.
+ * `salarioMinimoPeriodo` es el mínimo mensual llevado al período; sin él rige el
+ * piso literal del Art. 371 (los primeros L 100 del mes, también al período).
+ */
+export function topesDelPeriodo(netoDeLey: MoneyInput, salarioMinimoPeriodo: MoneyInput): TopesDeducciones {
+  const neto = maximo(money(netoDeLey), 0);
+  const excedente = maximo(neto.minus(salarioMinimoPeriodo), 0);
+  return {
+    disponible: neto,
+    embargable: redondear(excedente.div(4)),
+    alimentos: redondear(neto.div(2)),
   };
 }
 

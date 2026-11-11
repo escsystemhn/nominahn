@@ -30,9 +30,15 @@ describe("estaLiquidada — una deducción a plazo se agota", () => {
     expect(estaLiquidada(prestamo())).toBe(false);
   });
 
-  it("se liquida al completar el plazo de cuotas", () => {
-    expect(estaLiquidada(prestamo({ cuotasPagadas: 3 }))).toBe(true);
-    expect(estaLiquidada(prestamo({ cuotasPagadas: 4 }))).toBe(true);
+  it("sin saldo, se liquida al completar el plazo de cuotas", () => {
+    expect(estaLiquidada(prestamo({ saldo: null, cuotasPagadas: 3 }))).toBe(true);
+    expect(estaLiquidada(prestamo({ saldo: null, cuotasPagadas: 4 }))).toBe(true);
+  });
+
+  it("con saldo pendiente no se liquida aunque ya se contaron todas las cuotas", () => {
+    // Una cuota que el tope del Art. 372 recortó deja deuda: se sigue cobrando.
+    expect(estaLiquidada(prestamo({ cuotasPagadas: 3, saldo: 200 }))).toBe(false);
+    expect(n(cuotaDelPeriodo(prestamo({ cuotasPagadas: 3, saldo: 200 })))).toBe(200);
   });
 
   it("se liquida al agotar el saldo aunque queden cuotas", () => {
@@ -58,7 +64,7 @@ describe("cuotaDelPeriodo — la última cuota no sobrecobra", () => {
   });
 
   it("una deducción liquidada no cobra nada", () => {
-    expect(n(cuotaDelPeriodo(prestamo({ cuotasPagadas: 3 })))).toBe(0);
+    expect(n(cuotaDelPeriodo(prestamo({ saldo: null, cuotasPagadas: 3 })))).toBe(0);
     expect(n(cuotaDelPeriodo(prestamo({ saldo: 0 })))).toBe(0);
   });
 

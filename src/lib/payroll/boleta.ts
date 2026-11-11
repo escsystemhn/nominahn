@@ -1,18 +1,19 @@
 /**
  * Armado del comprobante de pago a partir de una línea de planilla.
  *
- * Vive aquí y no en cada ruta porque la boleta se emite desde DOS sitios —la
- * descarga del empleado (`/api/mis-boletas/[id]`) y el envío por correo
- * (`/api/planillas/[id]/email`)— y ambas deben producir exactamente el mismo
- * documento. Antes cada una construía su propio objeto con tres cifras.
+ * Vive aquí y no en cada ruta porque la boleta se emite desde TRES salidas —la
+ * vista en pantalla y el PDF (`/api/mis-boletas/[id]`) y el envío por correo
+ * (`/api/planillas/[id]/email`)— y todas deben decir exactamente lo mismo. Antes
+ * cada una construía su propio objeto con tres cifras.
  *
  * Los conceptos en cero no se imprimen: una boleta con diez líneas a L 0.00 es
  * más difícil de leer que una con las tres que aplican.
  */
 
 import { money, aNumero, type MoneyInput } from "./money";
-import { formatCurrency, formatDate, nombreCompleto } from "@/lib/utils";
-import type { DatosBoleta } from "@/lib/email/send";
+import type { DatosBoleta } from "./comprobante";
+import { montoALetras } from "@/lib/documentos/numero-letras";
+import { formatCurrency, formatDate, formatDateTime, nombreCompleto } from "@/lib/utils";
 
 /** Campos de PlanillaDetalle que necesita la boleta. */
 export interface DetalleBoleta {
@@ -43,8 +44,22 @@ export interface DetalleBoleta {
   ihssFijo?: boolean;
 }
 
+interface SucursalBoleta {
+  id?: string;
+  nombre: string;
+  direccion?: string | null;
+  telefono?: string | null;
+}
+
+/** Dónde estaba la persona al pagarle. Las líneas muy antiguas no lo guardaron. */
+export interface UbicacionBoleta {
+  sucursal?: SucursalBoleta | null;
+  division?: { nombre: string } | null;
+  departamento?: { nombre: string } | null;
+}
+
 export interface ContextoBoleta {
-  empresa: { nombre: string; rtn: string };
+  empresa: { nombre: string; rtn: string; direccion?: string | null; telefono?: string | null };
   empleado: {
     codigo: string;
     identidad: string | null;
@@ -52,13 +67,51 @@ export interface ContextoBoleta {
     segundoNombre?: string | null;
     primerApellido: string;
     segundoApellido?: string | null;
+    sucursal?: SucursalBoleta | null;
+    departamento?: { nombre: string } | null;
   };
-  planilla: { tipo: string; fechaInicio: Date; fechaFin: Date };
+  planilla: { tipo: string; fechaInicio: Date; fechaFin: Date; fechaPago?: Date | null; estado?: string };
+  /** La de la línea de planilla: un período cerrado no cambia si la persona se traslada. */
+  ubicacion?: UbicacionBoleta;
+  /** Sólo para probar: por omisión, ahora. */
+  emitido?: Date;
 }
+
+/** Lo que la boleta consulta de la sucursal. */
+const SUCURSAL_BOLETA = { select: { id: true, nombre: true, direccion: true, telefono: true } } as const;
+
+/** Lo que la boleta consulta de la línea de planilla, además de sus montos. */
+export const UBICACION_BOLETA = {
+  sucursal: SUCURSAL_BOLETA,
+  division: { select: { nombre: true } },
+  departamento: { select: { nombre: true } },
+} as const;
+
+/** Lo que la boleta consulta del empleado. */
+export const EMPLEADO_BOLETA = {
+  id: true, codigo: true, identidad: true,
+  primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
+  sucursal: SUCURSAL_BOLETA,
+  departamento: { select: { nombre: true } },
+} as const;
+
+export const EMPRESA_BOLETA = { select: { nombre: true, rtn: true, direccion: true, telefono: true } } as const;
+
+const TIPO_PLANILLA: Record<string, string> = { SEMANAL: "Planilla semanal", QUINCENAL: "Planilla quincenal", MENSUAL: "Planilla mensual" };
 
 /** Una línea de la boleta, omitida cuando el importe es cero. */
 function linea(nombre: string, valor: MoneyInput): Array<[string, string]> {
   return money(valor).isZero() ? [] : [[nombre, formatCurrency(aNumero(valor))]];
+}
+
+/** «14.5», no «15»: redondear los días de una media jornada cambia lo que se pagó. */
+function cantidad(valor: MoneyInput): string {
+  return money(valor).toDecimalPlaces(2).toString();
+}
+
+/** Mismo trato que el reporte: lo de la línea primero; si no lo guardó, lo actual del empleado. */
+export function sucursalDeBoleta(ubicacion: UbicacionBoleta | undefined, empleado: ContextoBoleta["empleado"]): SucursalBoleta | null {
+  return ubicacion?.sucursal ?? empleado.sucursal ?? null;
 }
 
 export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): DatosBoleta {
@@ -76,16 +129,28 @@ export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): Da
         ...linea("IHSS — Invalidez, Vejez y Muerte", detalle.ivmEmpleado),
       ];
 
+  const sucursal = sucursalDeBoleta(ctx.ubicacion, ctx.empleado);
+  const departamento = ctx.ubicacion?.departamento ?? ctx.empleado.departamento;
+  const neto = money(detalle.salarioNeto);
+
   return {
+    estado: ctx.planilla.estado,
     empresa: ctx.empresa.nombre,
     empresaRtn: ctx.empresa.rtn,
+    // Una instalación con una sola sucursal suele llamarla igual que la empresa.
+    sucursal: sucursal && sucursal.nombre.trim().toLowerCase() !== ctx.empresa.nombre.trim().toLowerCase() ? sucursal.nombre : null,
+    direccion: sucursal?.direccion || ctx.empresa.direccion || null,
+    telefono: sucursal?.telefono || ctx.empresa.telefono || null,
+    division: ctx.ubicacion?.division?.nombre ?? null,
+    departamento: departamento?.nombre ?? null,
     nombreEmpleado: nombreCompleto(ctx.empleado),
     codigoEmpleado: ctx.empleado.codigo,
     identidad: ctx.empleado.identidad ?? "—",
     periodo: `${formatDate(ctx.planilla.fechaInicio)} al ${formatDate(ctx.planilla.fechaFin)}`,
-    tipoPlanilla: ctx.planilla.tipo,
-    diasTrabajados: money(detalle.diasTrabajados).toFixed(0),
-    horasExtra: money(detalle.horasExtra).toFixed(2),
+    tipoPlanilla: TIPO_PLANILLA[ctx.planilla.tipo] ?? ctx.planilla.tipo,
+    fechaPago: ctx.planilla.fechaPago ? formatDate(ctx.planilla.fechaPago) : null,
+    diasTrabajados: cantidad(detalle.diasTrabajados),
+    horasExtra: cantidad(detalle.horasExtra),
 
     ingresos: [
       ...linea("Salario base", detalle.salarioBase),
@@ -111,32 +176,14 @@ export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): Da
     totalBruto: formatCurrency(aNumero(detalle.totalBruto)),
     totalDeducciones: formatCurrency(aNumero(detalle.totalDeducciones)),
     salarioNeto: formatCurrency(aNumero(detalle.salarioNeto)),
+    // Un neto negativo se imprime en cifras, pero no tiene forma de leerse en letras.
+    netoEnLetras: neto.isNegative() ? null : montoALetras(aNumero(detalle.salarioNeto)),
+    emitido: formatDateTime(ctx.emitido ?? new Date()),
   };
 }
 
-/** Campos que la boleta necesita de PlanillaDetalle, para el `select` de Prisma. */
-export const SELECT_BOLETA = {
-  salarioBase: true,
-  montoHorasExtra: true,
-  bonificaciones: true,
-  otrosIngresos: true,
-  ihssEmpleado: true,
-  ivmEmpleado: true,
-  rapEmpleado: true,
-  afpEmpleado: true,
-  isr: true,
-  impuestoVecinal: true,
-  cooperativa: true,
-  prestamos: true,
-  adelantos: true,
-  ausencias: true,
-  incapacidad: true,
-  diasIncapacidadIhss: true,
-  otrosDeducciones: true,
-  totalBruto: true,
-  totalDeducciones: true,
-  salarioNeto: true,
-  diasTrabajados: true,
-  horasExtra: true,
-  ihssFijo: true,
-} as const;
+/** «comprobante-EMP-0001-2026-08-31.pdf». El código lo escriben los usuarios y va en un encabezado. */
+export function nombreArchivoComprobante(codigo: string, fechaFin: Date): string {
+  const limpio = codigo.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "empleado";
+  return `comprobante-${limpio}-${fechaFin.toISOString().slice(0, 10)}.pdf`;
+}

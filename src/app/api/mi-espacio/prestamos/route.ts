@@ -14,6 +14,7 @@ import { cuotaDelPeriodo } from "@/lib/payroll/deducciones";
 import { aNumero } from "@/lib/payroll/money";
 import { evaluarSolicitud } from "@/lib/payroll/prestamos";
 import { limiteDeEmpleado, tipoDeduccionPara } from "@/lib/payroll/prestamos-bd";
+import { hoyHN } from "@/lib/utils";
 
 const schema = z.object({
   tipo: z.enum(["PRESTAMO", "ADELANTO"]),
@@ -32,7 +33,7 @@ export async function GET() {
 
   const [vigentes, solicitudes, lim, tPrestamo, tAdelanto] = await Promise.all([
     prisma.deduccionEmpleado.findMany({
-      where: { empleadoId, activo: true, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO", "COOPERATIVA"] } } },
+      where: { empleadoId, activo: true, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO", "COOPERATIVA"] } }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyHN() } }] },
       select: {
         id: true, monto: true, saldo: true, cuotasMeses: true, cuotasPagadas: true, fechaInicio: true,
         tipoDeduccion: { select: { nombre: true, tipo: true } },

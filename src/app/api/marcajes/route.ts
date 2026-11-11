@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
     ...parsed.data,
     horaSalida,
     jornadaHoras: turno.jornadaHoras,
+    tipoJornada: turno.tipoJornada,
     minutosDescanso: descanso,
   });
 

@@ -71,7 +71,7 @@ export default function FormatosBancoConfig() {
   async function previsualizar() {
     if (!edicion) return;
     const r = await fetch("/api/formatos-banco/vista-previa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo(edicion)) });
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
       setVista({ contenido: "", errores: [[d.error ?? "Formato inválido", ...campos].join(" ")], avisos: [] });
@@ -81,7 +81,7 @@ export default function FormatosBancoConfig() {
   async function guardar() {
     if (!edicion) return;
     const r = await fetch(edicion.id ? `/api/formatos-banco/${edicion.id}` : "/api/formatos-banco", { method: edicion.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo(edicion)) });
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
     if (!r.ok) {
       const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
       setAviso({ ok: false, texto: [d.error ?? "No se pudo guardar", ...campos].join(" ") });
@@ -96,7 +96,7 @@ export default function FormatosBancoConfig() {
   async function borrar(f: Formato) {
     if (!(await confirmar({ titulo: `¿Borrar el formato «${f.nombre}»?`, accion: "Borrar", peligro: true }))) return;
     const r = await fetch(`/api/formatos-banco/${f.id}`, { method: "DELETE" });
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
     setAviso(r.ok ? { ok: true, texto: "Formato borrado." } : { ok: false, texto: d.error ?? "No se pudo borrar" });
     await cargar();
   }

@@ -37,7 +37,6 @@ const csp = [
 ].join("; ");
 
 const cabecerasSeguridad = [
-  { key: "Content-Security-Policy", value: csp },
   // Nada de esta aplicación debe cargarse dentro de un iframe ajeno: cierra el
   // clickjacking sobre las acciones de aprobar y pagar planilla.
   { key: "X-Frame-Options", value: "DENY" },
@@ -133,13 +132,18 @@ const nextConfig: NextConfig = {
         headers: cabecerasSeguridad,
       },
       {
+        // Lo de aquí pisa lo que ponga la ruta, así que el comprobante queda fuera:
+        // trae su propia política, más estricta, y con la general nunca llegaba al
+        // navegador. Es HTML armado a mano con lo que escriben los usuarios, y se
+        // abre con la sesión de quien lo mira.
+        source: "/:path((?!api/mis-boletas/).*)",
+        headers: [{ key: "Content-Security-Policy", value: csp }],
+      },
+      {
         // Las respuestas de la API llevan salarios, identidades y cuentas
         // bancarias: no deben quedar en ninguna caché intermedia.
         source: "/api/:path*",
-        headers: [
-          ...cabecerasSeguridad,
-          { key: "Cache-Control", value: "private, no-store, max-age=0" },
-        ],
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },
     ];
   },

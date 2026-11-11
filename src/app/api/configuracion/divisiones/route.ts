@@ -10,12 +10,13 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { divisionesHabilitadas, zRtnEmpresaOpcional } from "@/lib/organizacion/estructura-bd";
 
 const schema = z.object({
   nombre: z.string().trim().min(1).max(150),
   codigo: z.string().trim().max(50).optional(),
   descripcion: z.string().trim().max(300).optional(),
+  rtn: zRtnEmpresaOpcional,
   sucursalId: zId,
 });
 
@@ -48,12 +49,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const division = await prisma.division.create({
-      data: { nombre: d.nombre, codigo: d.codigo || null, descripcion: d.descripcion || null, sucursalId: d.sucursalId },
+      data: { nombre: d.nombre, codigo: d.codigo || null, descripcion: d.descripcion || null, rtn: d.rtn || null, sucursalId: d.sucursalId },
     });
     const { ip, userAgent } = getClientInfo(req);
     await audit({
       accion: "CREATE", tabla: "Division", registroId: division.id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
-      valorNuevo: { nombre: division.nombre, codigo: division.codigo, sucursalId: division.sucursalId }, ip, userAgent,
+      valorNuevo: { nombre: division.nombre, codigo: division.codigo, rtn: division.rtn, sucursalId: division.sucursalId }, ip, userAgent,
     });
     return NextResponse.json(division, { status: 201 });
   } catch (e) {

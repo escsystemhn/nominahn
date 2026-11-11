@@ -31,7 +31,7 @@ export default function SaludFamilia({ endpoint, descripcionPropia = false }: { 
 
   const cargar = useCallback(async () => {
     const res = await fetch(endpoint, { cache: "no-store" });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) return;
     setPermisos(d.permisos);
     if (d.fichaMedica) setFicha({ ...fichaVacia, ...d.fichaMedica });
@@ -62,7 +62,7 @@ export default function SaludFamilia({ endpoint, descripcionPropia = false }: { 
       : { beneficiarios: beneficiarios.filter((b) => b.nombre.trim()).map((b) => ({ ...b, porcentaje: Number(b.porcentaje) })) };
     try {
       const res = await fetch(endpoint, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([d.error ?? "No se pudo guardar", ...campos].join(" "));

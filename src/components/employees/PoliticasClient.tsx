@@ -102,7 +102,7 @@ export default function PoliticasClient({ puedeGestionar }: { puedeGestionar: bo
     e.preventDefault(); setMsg("");
     if (!fNueva.titulo.trim() || !fNueva.contenido.trim()) { setMsg("Título y contenido son obligatorios."); return; }
     const res = await fetch("/api/politicas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fNueva) });
-    if (!res.ok) { setMsg((await res.json()).error ?? "Error al crear."); return; }
+    if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "Error al crear."); return; }
     setFNueva({ titulo: "", categoria: "General", descripcion: "", contenido: "" });
     setCreando(false); await cargar();
   }
@@ -111,7 +111,7 @@ export default function PoliticasClient({ puedeGestionar }: { puedeGestionar: bo
     e.preventDefault();
     if (!sel || !nuevaVersion.contenido.trim()) return;
     const res = await fetch(`/api/politicas/${sel}/versiones`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nuevaVersion) });
-    if (!res.ok) { avisar.error((await res.json()).error ?? "Error."); return; }
+    if (!res.ok) { avisar.error((await res.json().catch(() => ({}))).error ?? "Error."); return; }
     setNuevaVersion({ contenido: "", notasCambio: "" });
     setMostrarNuevaVersion(false);
     await cargarDetalle(sel); await cargar();

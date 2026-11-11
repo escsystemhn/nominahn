@@ -2,11 +2,12 @@ import { prisma } from "@/lib/prisma";
 import NuevaPlanillaForm from "@/components/payroll/NuevaPlanillaForm";
 import PageHeader from "@/components/ui/PageHeader";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 export default async function NuevaPlanillaPage() {
   await requerirPermisoPagina("planillas.calcular");
   const conDivisiones = await divisionesHabilitadas(prisma);
+  const conJerarquia = await jerarquiaNominaHabilitada(prisma);
 
   const [empresas, sucursales, divisiones, departamentos] = await Promise.all([
     prisma.empresa.findMany({ where: { activa: true }, select: { id: true, nombre: true } }),
@@ -27,6 +28,7 @@ export default async function NuevaPlanillaPage() {
         divisiones={divisiones}
         departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
         conDivisiones={conDivisiones}
+        conJerarquia={conJerarquia}
       />
       </div>
     </div>

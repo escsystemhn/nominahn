@@ -62,7 +62,7 @@ export default function SolicitudesPrestamoPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion, observacion, confirmarExceso }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo resolver");
       setAviso({ ok: true, texto: accion === "aprobar" ? `Aprobada. Se descuenta desde la próxima planilla de ${nombre(s.empleado)}.` : "Solicitud rechazada." });
       setRechazo(null);

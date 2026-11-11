@@ -150,7 +150,7 @@ export default function BiometricoClient({
     setProbandoId(id);
     try {
       const res = await fetch(`/api/biometrico/probar/${id}`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "No se pudo probar la conexión");
 
       const resultado =
@@ -172,7 +172,7 @@ export default function BiometricoClient({
     setSyncingId(id);
     try {
       const res = await fetch(`/api/biometrico/sync/${id}`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
       const enCuarentena =
         data.enCuarentena > 0

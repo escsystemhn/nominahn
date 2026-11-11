@@ -126,7 +126,7 @@ export default function DotacionesClient({ empleados, articulos: articulosInicia
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fAsig),
     });
-    if (!res.ok) { setMsg((await res.json()).error ?? "No se pudo asignar."); return; }
+    if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "No se pudo asignar."); return; }
     setFAsig({ empleadoId: "", articuloId: "", cantidad: 1, talla: "", fechaEntrega: "", observacion: "" });
     await cargarAsignaciones();
   }
@@ -140,7 +140,7 @@ export default function DotacionesClient({ empleados, articulos: articulosInicia
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fArt),
     });
-    if (!res.ok) { setMsg((await res.json()).error ?? "No se pudo crear el artículo."); return; }
+    if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "No se pudo crear el artículo."); return; }
     const nuevo = await res.json();
     setArticulos((prev) => [nuevo, ...prev]);
     setFArt({ nombre: "", categoria: "UNIFORME", descripcion: "", requiereTalla: false, vidaUtilMeses: "" });
@@ -152,7 +152,7 @@ export default function DotacionesClient({ empleados, articulos: articulosInicia
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado }),
     });
-    if (!res.ok) { avisar.error((await res.json()).error ?? "No se pudo actualizar."); return; }
+    if (!res.ok) { avisar.error((await res.json().catch(() => ({}))).error ?? "No se pudo actualizar."); return; }
     await cargarAsignaciones();
     if (tab === "porvencer") await cargarPorVencer(dias);
   }

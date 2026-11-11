@@ -244,7 +244,7 @@ export default function SapConexionConfig() {
   const cargar = useCallback(async () => {
     try {
       const res = await fetch("/api/configuracion/sap", { cache: "no-store" });
-      const d: Estado & { error?: string } = await res.json();
+      const d: Estado & { error?: string } = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo cargar la configuración");
       setEstado(d);
       setError(null);
@@ -283,7 +283,7 @@ export default function SapConexionConfig() {
   const cargarMapeo = useCallback(async () => {
     try {
       const res = await fetch("/api/configuracion/sap/mapeo", { cache: "no-store" });
-      const d: Mapeo & { error?: string } = await res.json();
+      const d: Mapeo & { error?: string } = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo cargar el mapeo");
       aplicarMapeo(d);
     } catch (e) {
@@ -339,7 +339,7 @@ export default function SapConexionConfig() {
           dbPassword: form.dbPassword === "" ? undefined : form.dbPassword,
         }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([d.error ?? "No se pudo guardar", ...campos].join("\n"));
@@ -364,7 +364,7 @@ export default function SapConexionConfig() {
         // Si todavía no hay contraseña guardada, se prueba con la tecleada.
         body: JSON.stringify({ password: form.password || undefined }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       setAviso(d.ok ? { ok: true, texto: d.detalle } : { ok: false, texto: `${d.error ?? "No se pudo conectar."}${d.detalleTecnico ? `\n${d.detalleTecnico}` : ""}` });
       await cargar();
     } catch {
@@ -396,7 +396,7 @@ export default function SapConexionConfig() {
           companyDb: form.companyDb.trim() || null,
         }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         const campos = d.detalles ? Object.entries(d.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([d.error ?? "No se pudo consultar la base", ...campos].join("\n"));
@@ -418,7 +418,7 @@ export default function SapConexionConfig() {
     setCargandoSucursales(true);
     try {
       const res = await fetch("/api/configuracion/sap/sucursales", { cache: "no-store" });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!d.ok) throw new Error(d.error ?? "No se pudieron leer las sucursales de SAP");
       setSucursalesSap(d.sucursales);
       setAviso({ ok: true, texto: `${d.sucursales.length} sucursal(es) leídas de SAP.` });
@@ -439,7 +439,7 @@ export default function SapConexionConfig() {
     setBusqueda({ cuentaId, resultados: [], error: null, cargando: true });
     try {
       const res = await fetch(`/api/configuracion/sap/cuentas?q=${encodeURIComponent(q)}`, { cache: "no-store" });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!d.ok) throw new Error(d.error ?? "No se pudo buscar");
       setBusqueda({ cuentaId, resultados: d.cuentas, error: d.cuentas.length ? null : "Ninguna cuenta de SAP empieza así.", cargando: false });
     } catch (e) {
@@ -463,7 +463,7 @@ export default function SapConexionConfig() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cuentas, centros, sucursales, verificar }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo guardar el mapeo");
       aplicarMapeo(d);
       if (verificar) {
@@ -497,7 +497,7 @@ export default function SapConexionConfig() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: "previsualizar" }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok || !d.ok) throw new Error(d.error ?? "No se pudo leer el plan de cuentas de SAP");
       setImportacion({ cargando: false, vista: d.vista, resultado: null, error: null, confirmacion: "" });
     } catch (e) {
@@ -514,7 +514,7 @@ export default function SapConexionConfig() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accion: "reemplazar", confirmacion: "REEMPLAZAR" }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok || !d.ok) throw new Error(d.error ?? "No se pudo reemplazar el catálogo");
       setImportacion({ cargando: false, vista: importacion.vista, resultado: d.resultado, error: null, confirmacion: "" });
       await Promise.all([cargar(), cargarMapeo()]);

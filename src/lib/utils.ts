@@ -124,10 +124,10 @@ export function formatCurrency(amount: number | string | { toString(): string })
   return fmtMoneda.format(Number(amount));
 }
 
-export function calcularAniosTrabajados(fechaIngreso: Date | string): number {
+/** Años completos de servicio a una fecha (hoy, si no se indica). Nunca negativo. */
+export function calcularAniosTrabajados(fechaIngreso: Date | string, hasta: Date = new Date()): number {
   const ingreso = new Date(fechaIngreso);
-  const hoy = new Date();
-  return Math.floor((hoy.getTime() - ingreso.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+  return Math.max(0, Math.floor((hasta.getTime() - ingreso.getTime()) / (365.25 * 24 * 60 * 60 * 1000)));
 }
 
 export function nombreCompleto(emp: {

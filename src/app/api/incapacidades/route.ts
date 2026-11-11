@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     lista.map((i) => {
-      const reparto = diasEnPeriodo({ ...i, porcentajeComplemento: Number(i.porcentajeComplemento) }, i.fechaInicio, i.fechaFin);
+      const reparto = diasEnPeriodo({ ...i, porcentajeSubsidio: Number(i.porcentajeSubsidio) }, i.fechaInicio, i.fechaFin);
       const salario = Number(i.empleado.salarioBase);
       return {
         ...i,

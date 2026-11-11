@@ -23,6 +23,7 @@ export default function TopBar({
   onAbrirMenu,
   permisos,
   conEmpleado,
+  jerarquiaNomina,
 }: {
   user: Session["user"];
   /** Nombre de la empresa configurada; sin ella se muestra el producto. */
@@ -35,6 +36,7 @@ export default function TopBar({
   /** Lo que el buscador puede ofrecer. */
   permisos: readonly string[];
   conEmpleado: boolean;
+  jerarquiaNomina: boolean;
 }) {
   const nombre = user?.name ?? user?.email ?? "Usuario";
 
@@ -59,7 +61,7 @@ export default function TopBar({
       </div>
 
       <div className="flex shrink-0 items-center gap-1 md:gap-2">
-        {conMenu && <BuscadorGlobal permisos={permisos} conEmpleado={conEmpleado} />}
+        {conMenu && <BuscadorGlobal permisos={permisos} conEmpleado={conEmpleado} jerarquiaNomina={jerarquiaNomina} />}
         {/* Único punto de entrada a la propia cuenta: la contraseña se cambia
             desde ahí, y las cuentas sin empleado vinculado no tienen Mi espacio. */}
         <Link

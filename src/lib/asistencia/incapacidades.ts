@@ -6,18 +6,23 @@
  *     mayo de 2020), Art. 71: los tres primeros días los paga el patrono; el
  *     IHSS paga el subsidio desde el cuarto día calendario, hasta 365 días.
  *   · Mismo reglamento, Art. 34: maternidad, 42 días prenatales y 42 posnatales.
+ *   · Mismo reglamento, Art. 73 (verificado el 2026-11-10): «El Subsidio diario
+ *     será igual al sesenta y seis por ciento (66%) del salario base mensual de
+ *     referencia, de acuerdo al techo del Régimen que corresponda. El patrono
+ *     pagará la diferencia hasta completar el salario total que devenga el
+ *     trabajador.» No distingue causas: rige para enfermedad, accidente, riesgo
+ *     profesional y maternidad.
  *   · Código del Trabajo, Art. 136: en maternidad el patrono cubre la diferencia
  *     entre el subsidio del IHSS y el salario.
  *
- * NO verificado: el 66 % del subsidio viene del reglamento de aplicación de la
- * Ley del Seguro Social y puede estar desactualizado. Es un valor por omisión,
- * editable, y se usa sólo para el subsidio ESTIMADO que se muestra; no cambia
- * la planilla salvo en maternidad, donde fija el complemento patronal.
+ * Efecto en planilla: los días del patrono se pagan normal. En los días del IHSS
+ * se le descuenta al trabajador SÓLO lo que el IHSS le paga directo (el subsidio
+ * estimado: 66 % del salario hasta el techo del IHSS, ÷ 30); la diferencia hasta
+ * su salario la sigue pagando el patrono. Antes se le descontaba el salario
+ * completo de esos días (salvo en maternidad).
  *
- * Efecto en planilla: los días del patrono se pagan normal. Los días del IHSS
- * el patrono no paga salario (el IHSS paga el subsidio directo al trabajador),
- * salvo el complemento que corresponda: se descuenta salario diario × días ×
- * (1 − complemento). Mismo salario diario que las ausencias (mensual / 30).
+ * `porcentajeComplemento` quedó de antes, cuando el complemento era opcional: se
+ * guarda por compatibilidad, pero ya no cambia el cálculo.
  */
 
 export type TipoIncapacidad = "ENFERMEDAD_COMUN" | "ACCIDENTE_COMUN" | "RIESGO_PROFESIONAL" | "MATERNIDAD";
@@ -33,11 +38,12 @@ export interface ReglaIncapacidad {
 
 export type ReglasIncapacidad = Record<TipoIncapacidad, ReglaIncapacidad>;
 
+// El complemento ya no se configura: el patrono completa siempre la diferencia
+// (Art. 73 del reglamento). Se deja 34 % como dato histórico, sin efecto.
 export const REGLAS_POR_OMISION: ReglasIncapacidad = {
-  ENFERMEDAD_COMUN: { diasPatrono: 3, porcentajeSubsidio: 66, porcentajeComplemento: 0 },
-  ACCIDENTE_COMUN: { diasPatrono: 3, porcentajeSubsidio: 66, porcentajeComplemento: 0 },
-  RIESGO_PROFESIONAL: { diasPatrono: 3, porcentajeSubsidio: 66, porcentajeComplemento: 0 },
-  // Art. 136 C.T.: el patrono completa hasta el salario.
+  ENFERMEDAD_COMUN: { diasPatrono: 3, porcentajeSubsidio: 66, porcentajeComplemento: 34 },
+  ACCIDENTE_COMUN: { diasPatrono: 3, porcentajeSubsidio: 66, porcentajeComplemento: 34 },
+  RIESGO_PROFESIONAL: { diasPatrono: 3, porcentajeSubsidio: 66, porcentajeComplemento: 34 },
   MATERNIDAD: { diasPatrono: 0, porcentajeSubsidio: 66, porcentajeComplemento: 34 },
 };
 
@@ -78,8 +84,8 @@ export function normalizarReglas(guardadas: unknown): ReglasIncapacidad {
 export function validarReglas(r: ReglasIncapacidad): string[] {
   const errores: string[] = [];
   for (const [tipo, regla] of Object.entries(r) as [TipoIncapacidad, ReglaIncapacidad][]) {
-    if (regla.porcentajeSubsidio + regla.porcentajeComplemento > 100.0001) {
-      errores.push(`${ETIQUETA_TIPO_INCAPACIDAD[tipo]}: subsidio más complemento no puede pasar de 100 %.`);
+    if (regla.porcentajeSubsidio > 100.0001) {
+      errores.push(`${ETIQUETA_TIPO_INCAPACIDAD[tipo]}: el subsidio no puede pasar de 100 %.`);
     }
   }
   return errores;
@@ -98,7 +104,8 @@ export interface IncapacidadParaPlanilla {
   fechaFin: Date;
   /** Días iniciales de ESTA incapacidad a cargo del patrono. */
   diasPatrono: number;
-  porcentajeComplemento: number;
+  /** % del salario de referencia (con techo) que paga el IHSS: lo único que se descuenta. */
+  porcentajeSubsidio: number;
 }
 
 /** Cuántos días de una incapacidad caen en un período, y de quién son. */
@@ -126,17 +133,27 @@ export function fechasCubiertas(inc: Pick<IncapacidadParaPlanilla, "fechaInicio"
 const centavos = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * Lo que el patrono deja de pagar en el período por las incapacidades: por
- * cada una, salario diario × días del IHSS × (1 − complemento).
+ * Lo que el patrono deja de pagar en el período por las incapacidades: lo que el
+ * IHSS le paga directo al trabajador por los días a su cargo (el subsidio
+ * estimado, nunca más que el salario de esos días). El resto lo paga el patrono
+ * (Art. 73 del Reglamento de Incapacidad Temporal).
+ *
+ * `techoMensual`: techo del régimen de Enfermedad y Maternidad del IHSS.
  */
-export function descuentoIncapacidades(salarioMensual: number, incs: IncapacidadParaPlanilla[], desde: Date, hasta: Date): { diasIhss: number; descuento: number } {
+export function descuentoIncapacidades(
+  salarioMensual: number,
+  incs: IncapacidadParaPlanilla[],
+  desde: Date,
+  hasta: Date,
+  techoMensual?: number | null
+): { diasIhss: number; descuento: number } {
   const diario = salarioMensual / 30;
   let diasIhss = 0;
   let descuento = 0;
   for (const inc of incs) {
     const d = diasEnPeriodo(inc, desde, hasta);
     diasIhss += d.ihss;
-    descuento += diario * d.ihss * (1 - inc.porcentajeComplemento / 100);
+    descuento += Math.min(diario * d.ihss, subsidioEstimado(salarioMensual, d.ihss, inc.porcentajeSubsidio, techoMensual));
   }
   return { diasIhss, descuento: centavos(descuento) };
 }

@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { correoDeComprobantes } from "@/lib/email/destinatario";
 import { nombreCompleto } from "@/lib/utils";
-import { revisarPlanilla, type LineaRevision, type RevisionPlanilla } from "./revision-planilla";
+import { excesosDeJornada, revisarPlanilla, type LineaRevision, type RevisionPlanilla } from "./revision-planilla";
 
 const CAMPOS_LINEA = {
   empleadoId: true,
@@ -51,9 +51,17 @@ export interface PlanillaAnterior {
  * Trabaja sobre TODAS las líneas, sin importar el filtro que se esté viendo en pantalla.
  */
 export async function cargarRevision(
-  db: Pick<PrismaClient, "planilla" | "planillaDetalle">,
-  planilla: { id: string; tipo: Prisma.PlanillaWhereInput["tipo"]; fechaInicio: Date; sucursalId: string | null; divisionId: string | null; departamentoId: string | null }
+  db: Pick<PrismaClient, "planilla" | "planillaDetalle" | "marcaje">,
+  planilla: { id: string; tipo: Prisma.PlanillaWhereInput["tipo"]; fechaInicio: Date; fechaFin: Date; sucursalId: string | null; divisionId: string | null; departamentoId: string | null }
 ): Promise<{ revision: RevisionPlanilla; anterior: PlanillaAnterior | null }> {
+  // Días del período de quienes están en la planilla: jornada máxima (Arts. 332 y 333).
+  const dias = await db.marcaje.findMany({
+    where: {
+      fecha: { gte: planilla.fechaInicio, lte: planilla.fechaFin },
+      empleado: { planillasDetalle: { some: { planillaId: planilla.id } } },
+    },
+    select: { empleadoId: true, fecha: true, horasNormales: true, horasExtra: true, horasFeriado: true },
+  });
   const [actual, anterior] = await Promise.all([
     db.planillaDetalle.findMany({ where: { planillaId: planilla.id }, select: CAMPOS_LINEA }),
     db.planilla.findFirst({
@@ -71,5 +79,5 @@ export async function cargarRevision(
     }),
   ]);
   const previas = anterior ? await db.planillaDetalle.findMany({ where: { planillaId: anterior.id }, select: CAMPOS_LINEA }) : null;
-  return { revision: revisarPlanilla(actual.map(aLinea), previas ? previas.map(aLinea) : null), anterior };
+  return { revision: revisarPlanilla(actual.map(aLinea), previas ? previas.map(aLinea) : null, excesosDeJornada(dias)), anterior };
 }

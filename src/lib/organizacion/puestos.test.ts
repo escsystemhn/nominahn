@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   claveNombre,
+  divisionesSinDepartamento,
   limpiarNombrePuesto,
+  mensajeCopia,
   motivoParaNoDesactivar,
   motivoParaNoEliminar,
   motivoParaNoMover,
@@ -73,6 +75,53 @@ describe("copiar un departamento", () => {
 
   it("no crea dos veces un nombre repetido en el origen", () => {
     expect(puestosPorCopiar([{ nombre: "Cajero" }, { nombre: "cajero" }], [])).toHaveLength(1);
+  });
+});
+
+describe("un departamento en varias divisiones", () => {
+  const existentes = [
+    { nombre: "Administración", divisionId: "pagsa" },
+    { nombre: "Ventas", divisionId: "mayoreo" },
+    { nombre: "Ventas", divisionId: null },
+  ];
+
+  it("crea donde falta y omite donde ya está", () => {
+    expect(divisionesSinDepartamento("Ventas", ["pagsa", "mayoreo", "prod"], existentes)).toEqual({ crear: ["pagsa", "prod"], omitir: ["mayoreo"] });
+  });
+
+  it("compara sin acentos, mayúsculas ni espacios de más", () => {
+    expect(divisionesSinDepartamento("  ADMINISTRACION ", ["pagsa", "prod"], existentes).omitir).toEqual(["pagsa"]);
+  });
+
+  it("una división repetida cuenta una vez", () => {
+    expect(divisionesSinDepartamento("Nuevo", ["prod", "prod"], existentes).crear).toEqual(["prod"]);
+  });
+
+  it("sin nombre todavía, nada aparece como ocupado", () => {
+    expect(divisionesSinDepartamento("  ", ["pagsa"], [{ nombre: "", divisionId: "pagsa" }])).toEqual({ crear: ["pagsa"], omitir: [] });
+  });
+});
+
+describe("mensaje al copiar un departamento", () => {
+  const nuevo = (destino: string, puestosCreados: number) => ({ destino, departamentoNuevo: true, puestosCreados, puestosOmitidos: 0 });
+
+  it("un destino nuevo", () => {
+    expect(mensajeCopia("Ventas", "empresas", [nuevo("Mayoreo", 3)])).toBe("Se creó Ventas en Mayoreo con 3 puestos.");
+  });
+
+  it("un destino que ya lo tenía", () => {
+    expect(mensajeCopia("Ventas", "empresas", [{ destino: "Mayoreo", departamentoNuevo: false, puestosCreados: 1, puestosOmitidos: 2 }]))
+      .toBe("Mayoreo ya tenía Ventas: se agregó 1 puesto y ya tenía 2 puestos.");
+  });
+
+  it("varios destinos", () => {
+    expect(mensajeCopia("Ventas", "empresas", [nuevo("Mayoreo", 2), nuevo("Electronica", 2), nuevo("Produgesa", 2)]))
+      .toBe("Se copió Ventas a 3 empresas (Mayoreo, Electronica y Produgesa): se agregaron 6 puestos.");
+  });
+
+  it("varios destinos sin nada que agregar", () => {
+    const yaEstan = ["A", "B"].map((destino) => ({ destino, departamentoNuevo: false, puestosCreados: 0, puestosOmitidos: 2 }));
+    expect(mensajeCopia("Ventas", "divisiones", yaEstan)).toBe("Se copió Ventas a 2 divisiones (A y B): no faltaba ningún puesto.");
   });
 });
 

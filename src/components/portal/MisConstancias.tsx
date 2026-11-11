@@ -41,7 +41,7 @@ export default function MisConstancias() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plantillaId: sel, destinatario: destinatario || null }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo generar");
       setAviso({ ok: true, texto: `Constancia generada con el folio ${d.folio}.` });
       window.open(`/api/documentos/emitidos/${d.id}/pdf?modo=ver`, "_blank", "noopener");

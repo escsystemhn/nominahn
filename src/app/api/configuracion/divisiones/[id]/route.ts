@@ -14,11 +14,13 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
+import { zRtnEmpresaOpcional } from "@/lib/organizacion/estructura-bd";
 
 const schema = z.object({
   nombre: z.string().trim().min(1).max(150).optional(),
   codigo: z.string().trim().max(50).nullable().optional(),
   descripcion: z.string().trim().max(300).nullable().optional(),
+  rtn: zRtnEmpresaOpcional,
   activa: z.boolean().optional(),
 });
 
@@ -31,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!parsed.ok) return parsed.response;
   const c = parsed.data;
 
-  const antes = await prisma.division.findUnique({ where: { id }, select: { nombre: true, codigo: true, descripcion: true, activa: true } });
+  const antes = await prisma.division.findUnique({ where: { id }, select: { nombre: true, codigo: true, descripcion: true, rtn: true, activa: true } });
   if (!antes) return NextResponse.json({ error: "La división no existe." }, { status: 404 });
 
   try {
@@ -41,13 +43,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(c.nombre !== undefined ? { nombre: c.nombre } : {}),
         ...(c.codigo !== undefined ? { codigo: c.codigo || null } : {}),
         ...(c.descripcion !== undefined ? { descripcion: c.descripcion || null } : {}),
+        ...(c.rtn !== undefined ? { rtn: c.rtn || null } : {}),
         ...(c.activa !== undefined ? { activa: c.activa } : {}),
       },
     });
     const { ip, userAgent } = getClientInfo(req);
     await audit({
       accion: "UPDATE", tabla: "Division", registroId: id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
-      valorAnterior: antes, valorNuevo: { nombre: division.nombre, codigo: division.codigo, descripcion: division.descripcion, activa: division.activa },
+      valorAnterior: antes, valorNuevo: { nombre: division.nombre, codigo: division.codigo, descripcion: division.descripcion, rtn: division.rtn, activa: division.activa },
       ip, userAgent,
     });
     return NextResponse.json(division);

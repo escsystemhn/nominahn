@@ -339,7 +339,7 @@ export default async function FichaEmpleadoPage({
                       <td data-accion className="whitespace-nowrap text-center">
                         <a href={`/api/mis-boletas/${d.id}?modo=ver`} target="_blank" rel="noopener noreferrer"
                           className="mr-3 text-xs font-medium text-blue-600 hover:underline">Ver</a>
-                        <a href={`/api/mis-boletas/${d.id}`} className="text-xs text-gray-500 hover:underline">Descargar</a>
+                        <a href={`/api/mis-boletas/${d.id}`} className="text-xs text-gray-500 hover:underline">Descargar PDF</a>
                       </td>
                     </tr>
                   ))}

@@ -3,6 +3,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { cuotaDelPeriodo } from "./deducciones";
 import { aNumero } from "./money";
+import { hoyHN } from "@/lib/utils";
 import { limiteDescuento, type LimiteDescuento, type TipoPlanilla } from "./prestamos";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -13,7 +14,8 @@ export async function limiteDeEmpleado(db: Db, empleadoId: string): Promise<{ li
     db.empleado.findUnique({ where: { id: empleadoId }, select: { salarioBase: true, tipoPlanilla: true } }),
     db.salarioMinimo.findFirst({ where: { activo: true }, orderBy: { anio: "desc" }, select: { monto: true } }),
     db.deduccionEmpleado.findMany({
-      where: { empleadoId, activo: true, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO"] } } },
+      // Sólo las vigentes: un monto del período de una quincena pasada ya no se descuenta.
+      where: { empleadoId, activo: true, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO"] } }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyHN() } }] },
       select: { monto: true, saldo: true, cuotasMeses: true, cuotasPagadas: true },
     }),
   ]);

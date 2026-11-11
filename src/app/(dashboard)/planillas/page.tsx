@@ -15,7 +15,7 @@ import ThOrden from "@/components/ui/ThOrden";
 import { leerOrden, type Orden } from "@/lib/http/orden";
 import EstadoBadge, { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
 import FiltroEstructura from "@/components/organizacion/FiltroEstructura";
-import { describirAlcance, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
+import { describirAlcance, etiquetasNiveles, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
 import { cargarOpcionesEstructura } from "@/lib/organizacion/estructura-bd";
 
 export const metadata = { title: "Planillas" };
@@ -53,6 +53,7 @@ export default async function PlanillasPage({
 
   const sp = await searchParams;
   const opciones = await cargarOpcionesEstructura(prisma);
+  const niveles = etiquetasNiveles(opciones.jerarquia);
   const alcance = normalizarAlcance({ ...sp, divisionId: opciones.conDivisiones ? sp.divisionId : null });
   const hayFiltro = !!(alcance.sucursalId || alcance.divisionId || alcance.departamentoId);
 
@@ -150,7 +151,7 @@ export default async function PlanillasPage({
               <tr>
                 <ThOrden campo="tipo" {...th}>Planilla</ThOrden>
                 <ThOrden campo="periodo" dirInicial="desc" {...th}>Período</ThOrden>
-                {variasEmpresas && <th>Empresa</th>}
+                {variasEmpresas && <th>{niveles.empresaLegal}</th>}
                 <th>Alcance</th>
                 {ordenaMontos ? <ThOrden campo="bruto" dirInicial="desc" className="num" {...th}>Bruto</ThOrden> : <th className="num">Bruto</th>}
                 {ordenaMontos ? <ThOrden campo="deducciones" dirInicial="desc" className="num" {...th}>Deducciones</ThOrden> : <th className="num">Deducciones</th>}
@@ -195,8 +196,8 @@ export default async function PlanillasPage({
                     <td data-etiqueta="Período" className="whitespace-nowrap">
                       {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}
                     </td>
-                    {variasEmpresas && <td data-etiqueta="Empresa">{p.empresa.nombre}</td>}
-                    <td data-etiqueta="Alcance" className="text-gray-600">{describirAlcance(p)}</td>
+                    {variasEmpresas && <td data-etiqueta={niveles.empresaLegal}>{p.empresa.nombre}</td>}
+                    <td data-etiqueta="Alcance" className="text-gray-600">{describirAlcance(p, niveles.todaLaEmpresa)}</td>
                     <td data-etiqueta="Bruto" className="num whitespace-nowrap">{formatCurrency(cifras(p).totalBruto)}</td>
                     <td data-etiqueta="Deducciones" className="num whitespace-nowrap text-gray-500">{formatCurrency(cifras(p).totalDeducciones)}</td>
                     <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(cifras(p).totalNeto)}</td>
