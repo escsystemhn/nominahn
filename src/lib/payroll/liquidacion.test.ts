@@ -324,30 +324,94 @@ describe("calcularLiquidacion — vacaciones y deducciones", () => {
     const r = liquidar({ decimoTerceroDevengado: 0 });
     expect(r.conceptos.some((c) => c.concepto.startsWith("Décimo tercer"))).toBe(false);
   });
+
+  it("el RAP pendiente a mes vencido va en su propia línea de deducciones, junto a los préstamos", () => {
+    const r = liquidar({
+      deducciones: 5000,
+      deduccionesLegales: [{ clave: "RAP_PENDIENTE", concepto: "RAP del trabajador pendiente (octubre y noviembre)", base: "Art. 43 Ley del RAP", monto: 721.45 }],
+    });
+    expect(r.deduccionesDetalle.map((d) => [d.concepto, n(d.monto)])).toEqual([
+      ["Anticipos y préstamos", 5000],
+      ["RAP del trabajador pendiente (octubre y noviembre)", 721.45],
+    ]);
+    expect(n(r.deducciones)).toBeCloseTo(5721.45, 2);
+    expect(n(r.totalAPagar)).toBeCloseTo(n(r.totalPrestaciones) - 5721.45, 2);
+    // Una retención en cero no aparece.
+    expect(liquidar({ deduccionesLegales: [{ clave: "RAP_PENDIENTE", concepto: "RAP", base: "", monto: 0 }] }).deduccionesDetalle).toEqual([]);
+  });
 });
 
 describe("salarioOrdinarioPromedio", () => {
-  it("promedia los últimos seis períodos", () => {
-    const periodos = Array.from({ length: 6 }, () => ({ totalBruto: 15000 }));
-    expect(n(salarioOrdinarioPromedio(periodos))).toBeCloseTo(15000, 2);
+  const f = (s: string) => new Date(`${s}T00:00:00Z`);
+  const ultimoDia = (anio: number, mes: number) => new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  /** Planillas mensuales de `desde` a `hasta` (meses 1-12 de 2026), con el monto de cada mes. */
+  const mensuales = (montos: Record<number, number>) =>
+    Object.entries(montos).map(([m, totalBruto]) => ({
+      totalBruto, fechaInicio: f(`2026-${m.padStart(2, "0")}-01`), fechaFin: f(`2026-${m.padStart(2, "0")}-${ultimoDia(2026, Number(m))}`),
+    }));
+  /** Dos quincenas por mes, cada una con la mitad del salario mensual. */
+  const quincenales = (mensual: number, meses: number[]) =>
+    meses.flatMap((m) => {
+      const mm = String(m).padStart(2, "0");
+      return [
+        { totalBruto: mensual / 2, fechaInicio: f(`2026-${mm}-01`), fechaFin: f(`2026-${mm}-15`) },
+        { totalBruto: mensual / 2, fechaInicio: f(`2026-${mm}-16`), fechaFin: f(`2026-${mm}-${ultimoDia(2026, m)}`) },
+      ];
+    });
+  const SALIDA = { fechaSalida: f("2026-10-31") };
+
+  it("promedia por mes: seis mensuales de L15,000 dan L15,000", () => {
+    const r = salarioOrdinarioPromedio(mensuales({ 5: 15000, 6: 15000, 7: 15000, 8: 15000, 9: 15000, 10: 15000 }), SALIDA);
+    expect(n(r.promedio)).toBeCloseTo(15000, 2);
+    expect(r.meses).toBe(6);
+  });
+
+  it("REGRESIÓN: en quincenal una quincena es medio mes (L30,000 al mes no sale a L15,000)", () => {
+    const r = salarioOrdinarioPromedio(quincenales(30000, [3, 4, 5, 6, 7, 8, 9, 10]), SALIDA);
+    expect(n(r.promedio)).toBeCloseTo(30000, 2);
+    expect(r.meses).toBe(6);
+    expect(r.periodos).toBe(12); // las doce quincenas de mayo a octubre; marzo y abril quedan fuera
   });
 
   it("un aumento reciente no infla el promedio entero", () => {
-    const periodos = [
-      { totalBruto: 12000 }, { totalBruto: 12000 }, { totalBruto: 12000 },
-      { totalBruto: 12000 }, { totalBruto: 12000 }, { totalBruto: 30000 },
-    ];
-    const promedio = n(salarioOrdinarioPromedio(periodos));
-    expect(promedio).toBeCloseTo(15000, 2);
-    expect(promedio).toBeLessThan(30000);
+    const r = salarioOrdinarioPromedio(mensuales({ 5: 12000, 6: 12000, 7: 12000, 8: 12000, 9: 12000, 10: 30000 }), SALIDA);
+    expect(n(r.promedio)).toBeCloseTo(15000, 2);
   });
 
-  it("con menos de seis períodos divide entre los que hay", () => {
-    expect(n(salarioOrdinarioPromedio([{ totalBruto: 10000 }, { totalBruto: 20000 }])))
-      .toBeCloseTo(15000, 2);
+  it("la planilla del mes de salida cuenta sólo los días trabajados", () => {
+    // Sale el 10 de octubre; la quincena del 1 al 15 le pagó 10 días comerciales
+    // (`diasConDerechoASalario`): 30,000 × 10/30 = 10,000.
+    const lineas = [...quincenales(30000, [4, 5, 6, 7, 8, 9]), { totalBruto: 10000, fechaInicio: f("2026-10-01"), fechaFin: f("2026-10-15") }];
+    const r = salarioOrdinarioPromedio(lineas, { fechaSalida: f("2026-10-10") });
+    expect(n(r.promedio)).toBeCloseTo(30000, 2);
+    expect(r.meses).toBe(6); // 1/3 de octubre + septiembre…mayo + 2/3 de abril
+  });
+
+  it("una sola quincena es medio mes aunque el mes tenga 31 o 28 días", () => {
+    const una = (inicio: string, fin: string, salida: string) =>
+      salarioOrdinarioPromedio([{ totalBruto: 9000, fechaInicio: f(inicio), fechaFin: f(fin) }], { fechaSalida: f(salida) });
+    for (const r of [una("2026-08-01", "2026-08-15", "2026-08-15"), una("2026-08-16", "2026-08-31", "2026-08-31"), una("2026-02-16", "2026-02-28", "2026-02-28")]) {
+      expect(n(r.promedio)).toBeCloseTo(18000, 2);
+      expect(r.meses).toBe(0.5);
+    }
+  });
+
+  it("quien entró hace menos de seis meses se promedia con el tiempo que trabajó", () => {
+    // Entró el 16 de agosto: dos meses y medio de quincenas de L10,000.
+    const lineas = quincenales(20000, [9, 10]).concat([{ totalBruto: 10000, fechaInicio: f("2026-08-16"), fechaFin: f("2026-08-31") }]);
+    const r = salarioOrdinarioPromedio(lineas, { ...SALIDA, fechaIngreso: f("2026-08-16") });
+    expect(n(r.promedio)).toBeCloseTo(20000, 2);
+    expect(r.meses).toBe(2.5);
+  });
+
+  it("una planilla de comisiones sobre los mismos días suma dinero, no tiempo", () => {
+    const comisiones = [{ totalBruto: 6000, fechaInicio: f("2026-10-01"), fechaFin: f("2026-10-31") }];
+    const r = salarioOrdinarioPromedio([...quincenales(30000, [5, 6, 7, 8, 9, 10]), ...comisiones], SALIDA);
+    expect(n(r.promedio)).toBeCloseTo(31000, 2);
+    expect(r.meses).toBe(6);
   });
 
   it("sin períodos devuelve cero y el llamador cae al salario base", () => {
-    expect(n(salarioOrdinarioPromedio([]))).toBe(0);
+    expect(n(salarioOrdinarioPromedio([], SALIDA).promedio)).toBe(0);
   });
 });

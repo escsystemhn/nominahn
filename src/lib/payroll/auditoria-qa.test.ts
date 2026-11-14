@@ -33,10 +33,10 @@ describe("deducciones legales de un mes completo (verificadas)", () => {
     expect(n(calcularPlanilla(mes({ salarioMensual: 25000 }), P).ihssEmpleado)).toBeCloseTo(595.16, 2);
     expect(n(calcularPlanilla(mes({ salarioMensual: 60000 }), P).ihssEmpleado)).toBeCloseTo(595.16, 2);
   });
-  it("RAP: 1.5 % sobre el excedente de 11,903.13, topado en 57,896.16", () => {
+  it("RAP: 1.5 % sobre el excedente de 11,903.13, sin techo superior", () => {
     expect(n(calcularPlanilla(mes({ salarioMensual: 11000 }), P).rapEmpleado)).toBe(0);
     expect(n(calcularPlanilla(mes({ salarioMensual: 25000 }), P).rapEmpleado)).toBeCloseTo(196.45, 2);
-    expect(n(calcularPlanilla(mes({ salarioMensual: 60000 }), P).rapEmpleado)).toBeCloseTo(689.90, 2);
+    expect(n(calcularPlanilla(mes({ salarioMensual: 60000 }), P).rapEmpleado)).toBeCloseTo(721.45, 2);
   });
   it("ISR 2026: tabla del SAR sobre la renta neta menos L 40,000 de gastos médicos", () => {
     expect(n(calcularPlanilla(mes({ salarioMensual: 18000 }), P).isr)).toBe(0);

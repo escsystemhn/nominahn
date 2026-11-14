@@ -6,6 +6,8 @@ import AvisoEvaluacion from "@/components/licencia/AvisoEvaluacion";
 import { estadoLicencia } from "@/lib/licencia/estado";
 import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import CierreInactividad from "@/components/layout/CierreInactividad";
+import { leerMinutosInactividad } from "@/lib/auth/inactividad-bd";
 
 export default async function DashboardLayout({
   children,
@@ -32,8 +34,12 @@ export default async function DashboardLayout({
   const aviso = licencia.modo === "evaluacion" && licencia.evaluacion.mostrarAviso ? licencia.evaluacion : null;
 
   const jerarquiaNomina = await jerarquiaNominaHabilitada(prisma);
+  // Minutos sin uso tras los que se cierra la sesión (Configuración → Seguridad).
+  const minutosInactividad = await leerMinutosInactividad(prisma);
 
   return (
+    <>
+    <CierreInactividad minutos={minutosInactividad} />
     <Armazon
       permisos={session.user?.permisos ?? []}
       conEmpleado={!!session.user?.empleadoId}
@@ -55,5 +61,6 @@ export default async function DashboardLayout({
     >
       {children}
     </Armazon>
+    </>
   );
 }

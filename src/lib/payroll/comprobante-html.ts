@@ -145,9 +145,10 @@ ${tabla("margin-top:52px").replace("<table ", '<table class="firma" ')}<tr>
 function barra(o: OpcionesComprobante): string {
   const boton = `display:inline-block;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:500;text-decoration:none;font-family:${FUENTE}`;
   const pdf = o.urlPdf ? `<a href="${esc(o.urlPdf)}" style="${boton};color:${TINTA};border:1px solid ${FILETE};background:#fff">Descargar PDF</a>` : "";
-  const imprimir = o.nonce
-    ? `<a href="#" id="imprimir" role="button" style="${boton};color:#fff;background:${TINTA};border:1px solid ${TINTA};margin-left:8px">Imprimir</a>
-<script nonce="${esc(o.nonce)}">document.getElementById("imprimir").addEventListener("click",function(e){e.preventDefault();window.print()})</script>`
+  // Se imprime el PDF y no esta página: es el que va en media carta, con la copia
+  // del empleado y la de la empresa en la misma hoja (pedido del 2026-11-14).
+  const imprimir = o.urlPdf
+    ? `<a href="${esc(o.urlPdf)}?modo=imprimir" target="_blank" rel="noopener" title="Hoja carta con dos copias: empleado y empresa" style="${boton};color:#fff;background:${TINTA};border:1px solid ${TINTA};margin-left:8px">Imprimir</a>`
     : "";
   return pdf || imprimir ? `<nav class="no-imprimir" aria-label="Acciones del comprobante" style="max-width:680px;margin:0 auto;padding:16px 12px 0;text-align:right">${pdf}${imprimir}</nav>` : "";
 }

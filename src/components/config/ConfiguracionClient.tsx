@@ -12,6 +12,8 @@ import ParametrosLeyConfig from "./ParametrosLeyConfig";
 import FormatosBancoConfig from "./FormatosBancoConfig";
 import EstructuraOrganizacional, { type DepartamentoEstructura, type DivisionEstructura, type PuestoEstructura } from "./EstructuraOrganizacional";
 import EmpresaConfig from "./EmpresaConfig";
+import SeguridadConfig from "./SeguridadConfig";
+import RespaldosConfig from "./RespaldosConfig";
 
 // Formas mínimas que este componente realmente consume. Se declaran a mano en
 // vez de reusar los modelos de Prisma porque al cruzar la frontera cliente/
@@ -68,16 +70,21 @@ interface Props {
   puedeSap: boolean;
   /** Describe los formatos de archivo de pago de cada banco (`configuracion.editar`). */
   puedeBanco: boolean;
+  /** Política de sesión, como el cierre por inactividad (`seguridad.usuarios_gestionar`). */
+  puedeSeguridad: boolean;
+  minutosInactividad: number;
+  /** `configuracion.respaldos`: un respaldo es la base entera. */
+  puedeRespaldos: boolean;
 }
 
 export default function ConfiguracionClient({
   empresa, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, jerarquiaHabilitada, salarioMinimo, configs,
-  puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco,
+  puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco, puedeSeguridad, minutosInactividad, puedeRespaldos,
 }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
-  const [tab, setTab] = useState<"empresa" | "sucursales" | "salarios" | "sistema" | "parametros" | "correo" | "sap" | "banco">(
-    puedeVer ? "empresa" : puedeParametros ? "parametros" : puedeCorreo ? "correo" : "sap"
+  const [tab, setTab] = useState<"empresa" | "sucursales" | "salarios" | "sistema" | "parametros" | "correo" | "sap" | "banco" | "seguridad" | "respaldos">(
+    puedeVer ? "empresa" : puedeParametros ? "parametros" : puedeCorreo ? "correo" : puedeSap ? "sap" : puedeSeguridad ? "seguridad" : "respaldos"
   );
   const [loading, setLoading] = useState(false);
   const [modalAumentoColectivo, setModalAumentoColectivo] = useState(false);
@@ -132,6 +139,9 @@ export default function ConfiguracionClient({
     // Sólo administradores: credenciales de SAP y qué se contabiliza allí.
     ...(puedeSap ? ([{ key: "sap", label: "SAP - Conexión" }] as const) : []),
     ...(puedeBanco ? ([{ key: "banco", label: "Formatos de banco" }] as const) : []),
+    // Política de sesión de todas las cuentas: quien administra los usuarios.
+    ...(puedeSeguridad ? ([{ key: "seguridad", label: "Seguridad" }] as const) : []),
+    ...(puedeRespaldos ? ([{ key: "respaldos", label: "Respaldos" }] as const) : []),
   ];
 
   return (
@@ -204,6 +214,9 @@ export default function ConfiguracionClient({
       )}
 
       {/* Sistema */}
+      {tab === "seguridad" && puedeSeguridad && <SeguridadConfig minutosInactividad={minutosInactividad} />}
+      {tab === "respaldos" && puedeRespaldos && <RespaldosConfig />}
+
       {tab === "sistema" && (
         <div className="panel overflow-hidden">
           <div className="overflow-x-auto">

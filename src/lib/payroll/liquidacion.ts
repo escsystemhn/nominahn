@@ -29,7 +29,7 @@
  */
 
 import { money, redondear, maximo, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
-import { calcularVacacionesDevengadas, diasVacacionesPorAnio } from "./calculos-hn";
+import { calcularVacacionesDevengadas, diaComercial, diasVacacionesPorAnio } from "./calculos-hn";
 
 export type CausaTerminacion =
   | "DESPIDO_INJUSTIFICADO"
@@ -239,6 +239,11 @@ export interface EntradaLiquidacion {
   /** Anticipos, préstamos o adelantos a descontar del finiquito. */
   deducciones?: MoneyInput;
   /**
+   * Retenciones de ley que quedan pendientes al salir, cada una con su línea: el RAP
+   * del trabajador a mes vencido (`rapPendienteAlSalir`). Se suman a `deducciones`.
+   */
+  deduccionesLegales?: Array<{ clave: string; concepto: string; base: string; monto: MoneyInput }>;
+  /**
    * Saldo del Fondo de Reserva Laboral del trabajador en el RAP, con sus
    * rendimientos. Cuando la causa da cesantía, ese saldo lo entrega el RAP y el
    * patrono sólo paga la diferencia (Decreto 47-2024, Art. 6).
@@ -265,6 +270,8 @@ export interface ResultadoLiquidacion {
   conceptos: ConceptoLiquidacion[];
   totalPrestaciones: Money;
   deducciones: Money;
+  /** De qué se componen las deducciones: préstamos y anticipos, y cada retención de ley. */
+  deduccionesDetalle: Array<{ clave?: string; concepto: string; base: string; monto: Money }>;
   totalAPagar: Money;
   /** Avisos sobre topes aplicados o derechos que no corresponden. */
   observaciones: string[];
@@ -292,6 +299,7 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
     salariosPendientes = 0,
     otrosAdeudos = 0,
     deducciones = 0,
+    deduccionesLegales = [],
     saldoFondoReserva = 0,
   } = entrada;
 
@@ -408,12 +416,21 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
   agregar("Otros adeudos", null, money(otrosAdeudos), "—");
 
   const totalPrestaciones = redondear(sumar(...conceptos.map((c) => c.monto)));
+  // Cada retención de ley va en su línea, junto a préstamos y anticipos.
+  const legales = deduccionesLegales
+    .map((d) => ({ clave: d.clave, concepto: d.concepto, base: d.base, monto: redondear(maximo(money(d.monto), 0)) }))
+    .filter((d) => !d.monto.isZero());
+  const deduccionesDetalle = [
+    ...(money(deducciones).isZero() ? [] : [{ concepto: "Anticipos y préstamos", base: "Art. 372 C.T.", monto: redondear(money(deducciones)) }]),
+    ...legales,
+  ];
+  const totalDeducciones = sumar(deducciones, ...legales.map((d) => d.monto));
   // Las deducciones no pueden dejar el finiquito en negativo: un saldo de
   // préstamo mayor que la liquidación se cobra aparte, no convierte el
   // finiquito en una deuda del trabajador.
-  const deduccionesAplicadas = minimo(money(deducciones), totalPrestaciones);
+  const deduccionesAplicadas = minimo(totalDeducciones, totalPrestaciones);
 
-  if (money(deducciones).greaterThan(deduccionesAplicadas)) {
+  if (totalDeducciones.greaterThan(deduccionesAplicadas)) {
     observaciones.push(
       "Las deducciones superan el total de prestaciones: se acotaron al importe liquidado. " +
         "El saldo restante debe gestionarse por separado."
@@ -426,26 +443,83 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
     conceptos,
     totalPrestaciones,
     deducciones: redondear(deduccionesAplicadas),
+    deduccionesDetalle,
     totalAPagar: redondear(totalPrestaciones.minus(deduccionesAplicadas)),
     observaciones,
   };
 }
 
+/** Una línea de planilla con las fechas de su planilla. */
+export interface PeriodoDevengado {
+  totalBruto: MoneyInput;
+  fechaInicio: Date;
+  fechaFin: Date;
+}
+
+export interface PromedioDevengado {
+  /** Promedio MENSUAL de lo devengado. Cero si no hubo planillas: el llamador cae al salario base. */
+  promedio: Money;
+  /** Meses que cubren las planillas usadas (una quincena es medio mes), hasta `MESES_PROMEDIO_SALARIO`. */
+  meses: number;
+  /** Líneas de planilla que entraron. */
+  periodos: number;
+}
+
 /**
- * Salario ordinario promedio de los últimos seis meses.
+ * Salario promedio de los últimos seis meses (Art. 123 b C.T.: los salarios
+ * DEVENGADOS, comisiones y horas extra incluidas), como monto MENSUAL.
  *
- * Se promedia sobre `MESES_PROMEDIO_SALARIO` y no sobre los períodos
- * encontrados: quien lleva menos de seis meses en la empresa debe ver diluido
- * su promedio igual que lo hace la Secretaría de Trabajo. Si no hay ningún
- * período registrado, el llamador debe caer al salario base del empleado.
+ * Se promedia por tiempo cubierto y no por línea de planilla: seis quincenas
+ * son tres meses, no seis. Antes se dividía entre el número de líneas, y una
+ * persona con L30,000 al mes en planilla quincenal salía con L15,000 de promedio.
+ *
+ * El tiempo va en días COMERCIALES, como los paga el motor (`diasConDerechoASalario`):
+ * cada mes vale 30, una quincena 15 (también la del 16 al 31 y la de febrero), y
+ * quien sale el 10 cobró 10. Cada planilla cubre su período recortado a la fecha
+ * de ingreso y a la de salida. Se recorre de la más reciente hacia atrás hasta
+ * juntar seis meses; la que cruza ese límite entra en proporción. Dos planillas
+ * sobre los mismos días (una de comisiones, por ejemplo) suman dinero sin sumar
+ * tiempo. Con menos de seis meses de planillas, se divide entre el tiempo que cubren.
  */
 export function salarioOrdinarioPromedio(
-  periodos: { totalBruto: MoneyInput }[],
+  periodos: readonly PeriodoDevengado[],
+  limites: { fechaSalida: Date; fechaIngreso?: Date },
   meses: number = MESES_PROMEDIO_SALARIO
-): Money {
-  if (periodos.length === 0) return CERO;
-  const total = sumar(...periodos.map((p) => p.totalBruto));
-  return redondear(total.div(Math.max(1, Math.min(meses, periodos.length))));
+): PromedioDevengado {
+  const ordenados = [...periodos].sort((a, b) => b.fechaFin.getTime() - a.fechaFin.getTime() || b.fechaInicio.getTime() - a.fechaInicio.getTime());
+
+  // Cada día comercial cubierto, como (año·12 + mes)·31 + día (1 a 30).
+  const cubiertos = new Set<number>();
+  let total = CERO;
+  let cubierto = 0;
+  let usados = 0;
+  for (const p of ordenados) {
+    if (cubierto >= meses - 1e-9) break;
+    const inicio = limites.fechaIngreso && limites.fechaIngreso > p.fechaInicio ? limites.fechaIngreso : p.fechaInicio;
+    const fin = limites.fechaSalida < p.fechaFin ? limites.fechaSalida : p.fechaFin;
+    if (fin < inicio) continue; // fuera de la relación laboral
+    let aporte = 0;
+    const mesInicio = inicio.getUTCFullYear() * 12 + inicio.getUTCMonth();
+    const mesFin = fin.getUTCFullYear() * 12 + fin.getUTCMonth();
+    for (let mes = mesInicio; mes <= mesFin; mes++) {
+      const primero = mes === mesInicio ? diaComercial(inicio) : 1;
+      const ultimo = mes === mesFin ? diaComercial(fin) : 30;
+      for (let d = primero; d <= ultimo; d++) {
+        const clave = mes * 31 + d;
+        if (cubiertos.has(clave)) continue;
+        cubiertos.add(clave);
+        aporte += 1 / 30;
+      }
+    }
+    const falta = meses - cubierto;
+    // La que cruza el límite de los seis meses entra en proporción.
+    const parte = aporte > falta + 1e-9 ? falta / aporte : 1;
+    total = total.plus(money(p.totalBruto).times(parte));
+    cubierto += aporte * parte;
+    usados++;
+  }
+  if (cubierto < 1e-9) return { promedio: CERO, meses: 0, periodos: 0 };
+  return { promedio: redondear(total.div(cubierto)), meses: Math.round(cubierto * 100) / 100, periodos: usados };
 }
 
 /** Días a dos decimales: las fracciones de cesantía y vacaciones no son enteras. */

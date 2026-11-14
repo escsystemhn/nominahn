@@ -50,7 +50,10 @@ export interface CambioPersona {
 }
 
 export interface PuntoRevision {
-  clave: "neto-cero" | "deducciones-altas" | "cambio-grande" | "jornada-maxima" | "sin-cuenta" | "sin-correo";
+  clave:
+    | "neto-cero" | "deducciones-altas" | "cambio-grande" | "jornada-maxima" | "sin-cuenta" | "sin-correo"
+    // RAP a mes vencido (`rap-mes-vencido-bd.ts`): «rap-nuevos» y «rap-liquidacion» son sólo informativos.
+    | "rap-sin-base" | "rap-borrador" | "rap-nuevos" | "rap-liquidacion";
   titulo: string;
   personas: Array<{ empleadoId: string; nombre: string }>;
 }
@@ -234,7 +237,7 @@ export function resumenDeRevision(r: RevisionPlanilla): string {
         : `Frente a la planilla anterior, el neto ${r.diferencia.isPositive() ? "sube" : "baja"} ${formatCurrency(r.diferencia.abs())}.`
     );
   }
-  const revisar = r.puntos.filter((p) => p.clave !== "sin-correo").length;
+  const revisar = r.puntos.filter((p) => p.clave !== "sin-correo" && p.clave !== "rap-nuevos" && p.clave !== "rap-liquidacion").length;
   if (revisar > 0) partes.push(revisar === 1 ? "Hay 1 punto por revisar." : `Hay ${revisar} puntos por revisar.`);
   return partes.join(" ");
 }

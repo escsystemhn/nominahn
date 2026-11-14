@@ -3,11 +3,16 @@ import { requerirPermisoPagina, puede, puedeAlguno } from "@/lib/auth/guard";
 import ConfiguracionClient from "@/components/config/ConfiguracionClient";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
+import { leerMinutosInactividad } from "@/lib/auth/inactividad-bd";
 
 export default async function ConfiguracionPage() {
   const usuario = await requerirPermisoPagina([
     "configuracion.ver", "configuracion.editar", "configuracion.correo", "configuracion.parametros", "configuracion.sap",
+    "seguridad.usuarios_gestionar", "configuracion.respaldos",
   ]);
+  const puedeRespaldos = puede(usuario, "configuracion.respaldos");
+  const puedeSeguridad = puede(usuario, "seguridad.usuarios_gestionar");
+  const minutosInactividad = puedeSeguridad ? await leerMinutosInactividad(prisma) : 0;
   const puedeVer = puedeAlguno(usuario, ["configuracion.ver", "configuracion.editar"]);
   const puedeCorreo = puede(usuario, "configuracion.correo");
   const puedeParametros = puede(usuario, "configuracion.parametros");
@@ -76,6 +81,9 @@ export default async function ConfiguracionPage() {
       puedeParametros={puedeParametros}
       puedeSap={puedeSap}
       puedeBanco={puedeBanco}
+      puedeSeguridad={puedeSeguridad}
+      puedeRespaldos={puedeRespaldos}
+      minutosInactividad={minutosInactividad}
     />
   );
 }

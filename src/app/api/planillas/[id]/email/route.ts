@@ -11,6 +11,7 @@ import { audit, getClientInfo } from "@/lib/audit";
 import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, sucursalDeBoleta, UBICACION_BOLETA } from "@/lib/payroll/boleta";
 import { adjuntoDelLogo, CID_LOGO, comprobanteHtml } from "@/lib/payroll/comprobante-html";
 import { logosDeSucursales } from "@/lib/organizacion/logo-bd";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 /** Sin cuerpo: se envía a toda la planilla. Con `empleadoIds`: sólo a esos. */
 const schema = z.object({
@@ -87,7 +88,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // De una vez: una planilla con cientos de personas tiene pocas sucursales.
-  const ubicacionDe = (d: (typeof planilla.detalles)[number]) => ({ sucursal: d.sucursal, division: d.division, departamento: d.departamento });
+  const ubicacionDe = (d: (typeof planilla.detalles)[number]) => ({ sucursal: d.sucursal, division: d.division, departamento: d.departamento, puesto: d.puesto });
+  const jerarquia = await jerarquiaNominaHabilitada(prisma);
   const logos = await logosDeSucursales(prisma, planilla.detalles.flatMap((d) => sucursalDeBoleta(ubicacionDe(d), d.empleado)?.id ?? []));
 
   let enviados = 0;
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const ubicacion = ubicacionDe(detalle);
-      const datos = construirBoleta(detalle, { empresa: planilla.empresa, empleado: detalle.empleado, planilla, ubicacion });
+      const datos = construirBoleta(detalle, { empresa: planilla.empresa, empleado: detalle.empleado, planilla, ubicacion, jerarquia });
       const sucursalId = sucursalDeBoleta(ubicacion, detalle.empleado)?.id;
       const logo = sucursalId ? logos.get(sucursalId) : undefined;
 

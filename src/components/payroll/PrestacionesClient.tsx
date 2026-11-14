@@ -59,6 +59,8 @@ interface Simulacion {
   conceptos: { concepto: string; dias: number | null; monto: number; base: string }[];
   totalPrestaciones: number;
   deducciones: number;
+  /** Préstamos y anticipos, y cada retención de ley (el RAP a mes vencido), en su línea. */
+  deduccionesDetalle?: { concepto: string; base: string; monto: number }[];
   totalAPagar: number;
   observaciones: string[];
   saldoDeduccionesPendientes: number;
@@ -413,7 +415,23 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-gray-300"><td colSpan={3} className="px-3 py-2 font-medium">Total de prestaciones</td><td className="num px-3 py-2 font-medium">{formatCurrency(simulacion.totalPrestaciones)}</td></tr>
-                        <tr><td colSpan={3} className="px-3 py-1.5 text-gray-600">Deducciones</td><td className="num px-3 py-1.5 text-gray-600">{simulacion.deducciones ? `− ${formatCurrency(simulacion.deducciones)}` : formatCurrency(0)}</td></tr>
+                        {simulacion.deduccionesDetalle && simulacion.deduccionesDetalle.length > 1 ? (
+                          <>
+                            {simulacion.deduccionesDetalle.map((d) => (
+                              <tr key={d.concepto} data-deduccion-liquidacion>
+                                <td colSpan={2} className="px-3 py-1.5 text-gray-600">{d.concepto}</td>
+                                <td className="px-3 py-1.5 text-xs text-gray-500">{d.base}</td>
+                                <td className="num px-3 py-1.5 text-gray-600">− {formatCurrency(d.monto)}</td>
+                              </tr>
+                            ))}
+                            <tr><td colSpan={3} className="px-3 py-1.5 font-medium text-gray-700">Total de deducciones</td><td className="num px-3 py-1.5 font-medium text-gray-700">− {formatCurrency(simulacion.deducciones)}</td></tr>
+                          </>
+                        ) : (
+                          <tr data-deduccion-liquidacion>
+                            <td colSpan={3} className="px-3 py-1.5 text-gray-600">{simulacion.deduccionesDetalle?.[0]?.concepto ?? "Deducciones"}</td>
+                            <td className="num px-3 py-1.5 text-gray-600">{simulacion.deducciones ? `− ${formatCurrency(simulacion.deducciones)}` : formatCurrency(0)}</td>
+                          </tr>
+                        )}
                         <tr className="bg-gray-50"><td colSpan={3} className="px-3 py-2.5 text-base font-semibold text-gray-900">Total a pagar</td><td className="num px-3 py-2.5 text-base font-semibold text-blue-800">{formatCurrency(simulacion.totalAPagar)}</td></tr>
                       </tfoot>
                     </table>

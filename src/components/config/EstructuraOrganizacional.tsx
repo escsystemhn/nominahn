@@ -15,7 +15,11 @@ import EstadoVacio from "@/components/ui/EstadoVacio";
 import { Modal, Campo } from "@/components/ui/ModalForm";
 import LogoSucursalForm, { urlLogoSucursal } from "./LogoSucursalForm";
 import { aplicarCambioOpciones, etiquetaDepartamento, etiquetasNiveles, type NivelesEstructura, type OpcionesOrganizacion } from "@/lib/organizacion/estructura";
-import { claveNombre, divisionesSinDepartamento, rangoSalarialValido } from "@/lib/organizacion/puestos";
+import { claveNombre, rangoSalarialValido } from "@/lib/organizacion/puestos";
+import {
+  claveLugar, describirLugares, lugaresParaDepartamento, lugaresSinDepartamento, mensajeCreacion,
+  type AlcanceDepartamento, type LugarDepartamento,
+} from "@/lib/organizacion/destinos-departamento";
 import { formatCurrency } from "@/lib/utils";
 
 export interface SucursalEstructura { id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; telefono: string | null; descripcion: string | null; activa: boolean; logoVersion: number | null }
@@ -299,7 +303,7 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
                 {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
             )}
-            {puedeEditar && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: null })}>Nuevo departamento</button>}
+            {puedeEditar && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setExito(null); setEdicion({ tipo: "departamento", departamento: null }); }}>Nuevo departamento</button>}
           </div>
         </div>
         {/* Aquí y no arriba de la página: se crea desde esta sección y el mensaje debe quedar a la vista. */}
@@ -417,8 +421,15 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
           sucursales={sucursales}
           divisiones={divisionesHabilitadas ? divisiones : []}
           departamentos={departamentos}
+          sucursalInicial={filtroSucursal}
           onCerrar={() => setEdicion(null)}
-          onListo={(mensaje) => { setEdicion(null); setExito(mensaje ?? null); router.refresh(); }}
+          onListo={(mensaje, sucursalId) => {
+            setEdicion(null);
+            setExito(mensaje ?? null);
+            // Que lo recién creado quede a la vista: su grupo, o todos si se creó en varios.
+            if (sucursalId !== undefined) setFiltroSucursal(sucursalId);
+            router.refresh();
+          }}
         />
       )}
       {edicion?.tipo === "puesto" && (
@@ -515,13 +526,18 @@ function FormDivision({ division, sucursales, conJerarquia, onCerrar, onListo }:
   );
 }
 
-/** Las divisiones a marcar al crear o copiar un departamento. */
-function CasillasDivisiones({ titulo, filas, marcadas, onCambiar, nota }: {
+/**
+ * Las divisiones a marcar al crear o copiar un departamento. Con `soloLectura` es
+ * la lista de dónde se va a crear («Todas las empresas»), sin casillas. Las filas
+ * con `grupo` llevan encima el nombre de su grupo cuando cambia.
+ */
+function CasillasDivisiones({ titulo, filas, marcadas = new Set(), onCambiar, nota, soloLectura = false }: {
   titulo: string;
-  filas: Array<{ id: string; nombre: string; bloqueada: boolean; estado?: string }>;
-  marcadas: ReadonlySet<string>;
-  onCambiar: (marcadas: ReadonlySet<string>) => void;
+  filas: Array<{ id: string; nombre: string; bloqueada: boolean; estado?: string; grupo?: string }>;
+  marcadas?: ReadonlySet<string>;
+  onCambiar?: (marcadas: ReadonlySet<string>) => void;
   nota: string;
+  soloLectura?: boolean;
 }) {
   const libres = filas.filter((f) => !f.bloqueada);
   const todas = libres.length > 0 && libres.every((f) => marcadas.has(f.id));
@@ -529,26 +545,45 @@ function CasillasDivisiones({ titulo, filas, marcadas, onCambiar, nota }: {
   function alternar(id: string) {
     const nuevo = new Set(marcadas);
     if (!nuevo.delete(id)) nuevo.add(id);
-    onCambiar(nuevo);
+    onCambiar?.(nuevo);
   }
 
   return (
-    <div role="group" aria-labelledby="departamento-destinos" className="min-w-0">
+    <div role="group" aria-labelledby="departamento-destinos" className="min-w-0" data-destinos-departamento>
       <div className="flex items-center justify-between gap-3">
         <span id="departamento-destinos" className="text-sm font-medium text-gray-800">{titulo}</span>
-        {libres.length > 1 && (
-          <button type="button" className="-my-1 py-1 text-sm font-medium text-blue-700 hover:underline" onClick={() => onCambiar(new Set(todas ? [] : libres.map((f) => f.id)))}>
+        {!soloLectura && libres.length > 1 && (
+          <button type="button" className="-my-1 py-1 text-sm font-medium text-blue-700 hover:underline" onClick={() => onCambiar?.(new Set(todas ? [] : libres.map((f) => f.id)))}>
             {todas ? "Quitar todas" : "Marcar todas"}
           </button>
         )}
       </div>
-      <div className="mt-1 max-h-52 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-300">
-        {filas.map((f) => (
-          <label key={f.id} className={`flex min-h-11 items-center gap-2.5 px-3 text-sm lg:min-h-9 ${f.bloqueada ? "text-gray-500" : "cursor-pointer text-gray-900 hover:bg-gray-50"}`}>
-            <input type="checkbox" className="h-4 w-4 shrink-0 rounded border-gray-300" disabled={f.bloqueada} checked={!f.bloqueada && marcadas.has(f.id)} onChange={() => alternar(f.id)} />
-            <span className="min-w-0 flex-1 truncate">{f.nombre}</span>
-            {f.estado && <span className="shrink-0 text-xs text-gray-500">{f.estado}</span>}
-          </label>
+      <div className="mt-1 max-h-60 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-300">
+        {filas.map((f, i) => (
+          <Fragment key={f.id}>
+            {f.grupo && f.grupo !== filas[i - 1]?.grupo && (
+              <div className="bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700">{f.grupo}</div>
+            )}
+            {soloLectura ? (
+              <div className={`flex min-h-9 items-center gap-2.5 px-3 text-sm ${f.grupo ? "pl-6" : ""} ${f.bloqueada ? "text-gray-500" : "text-gray-900"}`}>
+                {f.bloqueada
+                  ? <span className="w-4 shrink-0 text-center text-gray-400" aria-hidden="true">–</span>
+                  : (
+                    <svg className="h-4 w-4 shrink-0 text-green-700" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />
+                    </svg>
+                  )}
+                <span className="min-w-0 flex-1 truncate">{f.nombre}</span>
+                {f.estado && <span className="shrink-0 text-xs text-gray-500">{f.estado}</span>}
+              </div>
+            ) : (
+              <label className={`flex min-h-11 items-center gap-2.5 px-3 text-sm lg:min-h-9 ${f.grupo ? "pl-6" : ""} ${f.bloqueada ? "text-gray-500" : "cursor-pointer text-gray-900 hover:bg-gray-50"}`}>
+                <input type="checkbox" className="h-4 w-4 shrink-0 rounded border-gray-300" disabled={f.bloqueada} checked={!f.bloqueada && marcadas.has(f.id)} onChange={() => alternar(f.id)} />
+                <span className="min-w-0 flex-1 truncate">{f.nombre}</span>
+                {f.estado && <span className="shrink-0 text-xs text-gray-500">{f.estado}</span>}
+              </label>
+            )}
+          </Fragment>
         ))}
       </div>
       {nota && <p className="mt-1.5 text-xs text-gray-500" aria-live="polite">{nota}</p>}
@@ -556,82 +591,212 @@ function CasillasDivisiones({ titulo, filas, marcadas, onCambiar, nota }: {
   );
 }
 
-function FormDepartamento({ departamento, sucursales, divisiones, departamentos, niveles, onCerrar, onListo }: {
+/** Valor del selector de grupo para «todos los grupos». */
+const TODOS_LOS_GRUPOS = "*";
+
+function FormDepartamento({ departamento, sucursales, divisiones, departamentos, niveles, sucursalInicial, onCerrar, onListo }: {
   departamento: DepartamentoEstructura | null; sucursales: SucursalEstructura[]; divisiones: DivisionEstructura[]; departamentos: DepartamentoEstructura[];
-  niveles: NivelesEstructura; onCerrar: () => void; onListo: (mensaje?: string) => void;
+  niveles: NivelesEstructura; sucursalInicial: string; onCerrar: () => void;
+  /** `sucursalId`: dónde quedó lo creado, para mostrarlo (vacío = en varios grupos). */
+  onListo: (mensaje?: string, sucursalId?: string) => void;
 }) {
   const opcionesSucursal = sucursales.filter((s) => s.activa || s.id === departamento?.sucursalId);
-  const [f, setF] = useState({
+  const activasDe = (id: string) => divisiones.filter((v) => v.sucursalId === id && v.activa);
+  // Con una sola empresa en el grupo no hay nada que elegir: viene puesta.
+  const unicaDe = (id: string) => { const a = activasDe(id); return a.length === 1 ? a[0].id : ""; };
+  // Se abre en el grupo que se está mirando en la lista, si hay uno filtrado.
+  const primera = opcionesSucursal.some((s) => s.id === sucursalInicial && s.activa) ? sucursalInicial : opcionesSucursal[0]?.id ?? "";
+  const [f, setF] = useState(() => ({
     nombre: departamento?.nombre ?? "",
     codigo: departamento?.codigo ?? "",
-    sucursalId: departamento?.sucursalId ?? opcionesSucursal[0]?.id ?? "",
-    divisionId: departamento?.divisionId ?? "",
+    sucursalId: departamento?.sucursalId ?? primera,
+    divisionId: departamento?.divisionId ?? unicaDe(primera),
     activo: departamento?.activo ?? true,
-  });
-  // Con una sola no hay nada que elegir: viene marcada.
-  const marcadasDe = (sucursalId: string): ReadonlySet<string> => {
-    const activas = divisiones.filter((v) => v.sucursalId === sucursalId && v.activa);
-    return new Set(activas.length === 1 ? [activas[0].id] : []);
+  }));
+  const [alcance, setAlcance] = useState<AlcanceDepartamento>("una");
+  const [marcadas, setMarcadas] = useState<ReadonlySet<string>>(new Set());
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const creando = !departamento;
+  // `divisiones` llega vacío con el nivel División apagado: entonces cada sucursal es un destino.
+  const conDivisiones = divisiones.length > 0;
+  const todos = useMemo(() => lugaresParaDepartamento(sucursales, divisiones), [sucursales, divisiones]);
+  const variosGrupos = new Set(todos.map((l) => l.sucursalId)).size > 1;
+  // Crear en varios sólo tiene sentido si hay más de un destino posible. Editar es siempre de uno.
+  const modo: AlcanceDepartamento = creando && todos.length > 1 ? alcance : "una";
+
+  const nombres = useMemo(() => ({
+    sucursal: new Map(sucursales.map((s) => [s.id, s.nombre])),
+    division: new Map(divisiones.map((v) => [v.id, v.nombre])),
+  }), [sucursales, divisiones]);
+  const palabras = {
+    sucursal: niveles.sucursalCorta.toLowerCase(), sucursales: niveles.sucursales.toLowerCase(),
+    division: niveles.division.toLowerCase(), divisiones: niveles.divisiones.toLowerCase(),
   };
-  const [marcadas, setMarcadas] = useState(() => marcadasDe(f.sucursalId));
+  const unidad = conDivisiones ? niveles.division.toLowerCase() : niveles.sucursalCorta.toLowerCase();
+  // Empresa, división y sucursal son femeninas; sólo «grupo» (sin empresas creadas) es masculino.
+  const masculino = unidad === "grupo";
+  const textos = {
+    una: `${masculino ? "Un" : "Una"} ${unidad}`,
+    todas: conDivisiones ? niveles.todasDivisiones : niveles.todasSucursales,
+    elegir: `Elegir ${(conDivisiones ? niveles.divisiones : niveles.sucursales).toLowerCase()}`,
+    unaDetalle: `Sólo en ${masculino ? "el" : "la"} ${unidad} que elija.`,
+    todasDetalle: `Uno en cada ${unidad} ${masculino ? "activo" : "activa"}${variosGrupos && conDivisiones ? " del grupo, o de todos los grupos" : ""}.`,
+    otra: `${masculino ? "otro" : "otra"} ${unidad}`,
+  };
+
+  // Una sola: grupo y empresa con selectores, como siempre.
   const opciones = divisiones.filter((v) => v.sucursalId === f.sucursalId && (v.activa || v.id === f.divisionId));
-  const exigeDivision = divisiones.some((v) => v.sucursalId === f.sucursalId && v.activa);
+  const exigeDivision = activasDe(f.sucursalId).length > 0;
   const usaDivisiones = divisiones.length > 0 || opciones.length > 0;
+  const destinoUna: LugarDepartamento = { sucursalId: f.sucursalId, divisionId: f.divisionId || null };
+  const yaExisteUna = creando && modo === "una" && !!f.nombre.trim() && lugaresSinDepartamento(f.nombre, [destinoUna], departamentos).omitir.length > 0;
 
-  // Al crear se marcan varias; un departamento ya creado es de una sola.
-  const conCasillas = !departamento && opciones.length > 0;
-  const ocupadas = new Set(divisionesSinDepartamento(f.nombre, opciones.map((v) => v.id), departamentos.filter((d) => d.sucursalId === f.sucursalId)).omitir);
-  const libres = opciones.filter((v) => !ocupadas.has(v.id));
-  const elegidas = libres.filter((v) => marcadas.has(v.id));
-  const unidad = niveles.division.toLowerCase();
-  const plural = niveles.divisiones.toLowerCase();
-  const nota = libres.length === 0
-    ? `«${f.nombre.trim()}» ya existe en todas. Use otro nombre.`
-    : elegidas.length === 0
-      ? `Marque al menos una ${unidad}.`
-      : elegidas.length === 1
-        ? `Se creará en ${elegidas[0].nombre}.`
-        : `Cada ${unidad} tendrá su propio departamento, con sus puestos y empleados.`;
+  // Varias: los destinos del grupo elegido, o de todos. Sin divisiones, todas las sucursales.
+  const grupo = conDivisiones ? f.sucursalId : TODOS_LOS_GRUPOS;
+  const vistaDe = (g: string) => (g === TODOS_LOS_GRUPOS ? todos : todos.filter((l) => l.sucursalId === g));
+  const enVista = modo === "una" ? [] : vistaDe(grupo);
+  const { crear: libres, omitir: ocupados } = lugaresSinDepartamento(f.nombre, enVista, departamentos);
+  const ocupadosClave = new Set(ocupados.map(claveLugar));
+  const destinos = modo === "una" ? [destinoUna] : modo === "todas" ? libres : libres.filter((l) => marcadas.has(claveLugar(l)));
+  // Con todos los grupos, cada grupo lleva su encabezado; los que no tienen empresas van juntos al final
+  // (si no, sus filas parecían del último grupo de la lista).
+  const conEncabezados = grupo === TODOS_LOS_GRUPOS && conDivisiones;
+  const sinEmpresas = `${niveles.sucursales} sin ${niveles.divisiones.toLowerCase()}`;
+  const ordenados = conEncabezados ? [...enVista].sort((a, b) => Number(!a.divisionId) - Number(!b.divisionId)) : enVista;
+  const filas = ordenados.map((l) => {
+    const k = claveLugar(l);
+    const sucursal = nombres.sucursal.get(l.sucursalId) ?? "";
+    return {
+      id: k,
+      nombre: l.divisionId ? (nombres.division.get(l.divisionId) ?? "") : sucursal,
+      grupo: conEncabezados ? (l.divisionId ? sucursal : sinEmpresas) : undefined,
+      bloqueada: ocupadosClave.has(k),
+      estado: ocupadosClave.has(k) ? "Ya existe" : conDivisiones && !l.divisionId && !conEncabezados ? niveles.sinDivisiones : undefined,
+    };
+  });
+  const cuenta = (n: number) => (n === 1 ? "1 departamento" : `${n} departamentos`);
+  const saltados = ocupados.length ? ` Donde ya existe (${ocupados.length}) no se toca.` : "";
+  const nota = !f.nombre.trim()
+    ? "Escriba el nombre para ver dónde ya existe."
+    : libres.length === 0
+      ? `«${f.nombre.trim()}» ya existe en ${enVista.length === 1 ? "ese lugar" : "todos"}. Use otro nombre.`
+      : destinos.length === 0
+        ? "Marque al menos uno."
+        : destinos.length === 1
+          ? `Se creará en ${describirLugares(destinos, nombres, palabras)}.${saltados}`
+          : `Se crearán ${cuenta(destinos.length)}, uno en cada ${unidad}, con sus propios puestos y empleados.${saltados}`;
 
-  const { cargando, error, guardar } = useGuardar(() =>
-    onListo(conCasillas && elegidas.length > 1 ? `Se creó «${f.nombre.trim()}» en ${elegidas.length} ${plural}: ${elegidas.map((v) => v.nombre).join(", ")}.` : undefined)
-  );
+  function cambiarAlcance(nuevo: AlcanceDepartamento) {
+    if (nuevo === alcance) return;
+    if (nuevo === "una" && f.sucursalId === TODOS_LOS_GRUPOS) setF({ ...f, sucursalId: primera, divisionId: unicaDe(primera) });
+    if (nuevo === "elegir") {
+      // Se parte de lo que ya estaba elegido: todo lo de «Todas», o la empresa de «Una».
+      const desde = alcance === "todas"
+        ? lugaresSinDepartamento(f.nombre, vistaDe(grupo), departamentos).crear
+        : f.divisionId || !exigeDivision ? [destinoUna] : [];
+      setMarcadas(new Set(desde.map(claveLugar)));
+    }
+    setError(null);
+    setAlcance(nuevo);
+  }
+
+  function cambiarGrupo(id: string) {
+    setF({ ...f, sucursalId: id, divisionId: id === TODOS_LOS_GRUPOS ? "" : unicaDe(id) });
+    // Un grupo con un solo destino viene marcado, como antes.
+    const propios = vistaDe(id);
+    if (modo === "elegir" && propios.length === 1) setMarcadas(new Set([...marcadas, claveLugar(propios[0])]));
+  }
+
+  async function guardar() {
+    setCargando(true);
+    setError(null);
+    const r = departamento
+      ? await fetch(`/api/configuracion/departamentos/${departamento.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: f.nombre, codigo: f.codigo || null, activo: f.activo, ...(usaDivisiones ? { divisionId: f.divisionId || null } : {}) }),
+      })
+      : await fetch("/api/configuracion/departamentos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        // Con «Todas» va el conjunto entero: el servidor salta donde ya existe y lo informa.
+        body: JSON.stringify({ nombre: f.nombre, codigo: f.codigo || undefined, destinos: modo === "todas" ? enVista : destinos, alcance: modo }),
+      });
+    const d = await r.json().catch(() => ({}));
+    setCargando(false);
+    if (!r.ok) {
+      setError(d.error ?? "No se pudo guardar. Intente de nuevo.");
+      return;
+    }
+    if (departamento) return onListo();
+    const creados: LugarDepartamento[] = Array.isArray(d.creados) ? d.creados : destinos;
+    const omitidos: LugarDepartamento[] = Array.isArray(d.omitidos) ? d.omitidos : [];
+    const grupos = [...new Set(creados.map((l) => l.sucursalId))];
+    onListo(mensajeCreacion(f.nombre, creados, omitidos, nombres, palabras, modo === "todas"), grupos.length === 1 ? grupos[0] : "");
+  }
+
+  const puedeGuardar = !!f.nombre.trim() && (departamento
+    ? !exigeDivision || !!f.divisionId
+    : modo === "una"
+      ? !!f.sucursalId && f.sucursalId !== TODOS_LOS_GRUPOS && (!exigeDivision || !!f.divisionId) && !yaExisteUna
+      : destinos.length > 0);
 
   return (
     <Modal titulo={departamento ? `Editar ${departamento.nombre}` : "Nuevo departamento"} error={error} cargando={cargando}
-      textoGuardar={conCasillas ? (elegidas.length > 1 ? `Crear en ${elegidas.length} ${plural}` : "Crear departamento") : undefined}
-      puedeGuardar={!!f.nombre.trim() && !!f.sucursalId && (conCasillas ? elegidas.length > 0 : !exigeDivision || !!f.divisionId)} onCerrar={onCerrar}
-      onGuardar={() => departamento
-        ? guardar(`/api/configuracion/departamentos/${departamento.id}`, "PATCH", {
-          nombre: f.nombre, codigo: f.codigo || null, activo: f.activo, ...(usaDivisiones ? { divisionId: f.divisionId || null } : {}),
-        })
-        : guardar("/api/configuracion/departamentos", "POST", {
-          nombre: f.nombre, codigo: f.codigo || undefined, sucursalId: f.sucursalId,
-          ...(conCasillas ? { divisionIds: elegidas.map((v) => v.id) } : usaDivisiones ? { divisionId: f.divisionId || null } : {}),
-        })}>
+      textoGuardar={creando ? (destinos.length > 1 ? `Crear ${cuenta(destinos.length)}` : "Crear departamento") : undefined}
+      puedeGuardar={puedeGuardar} onCerrar={onCerrar} onGuardar={() => void guardar()}>
       <Campo etiqueta="Nombre"><input className="input" value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
       <Campo etiqueta="Código (opcional)"><input className="input" value={f.codigo} onChange={(e) => setF({ ...f, codigo: e.target.value })} /></Campo>
-      <Campo etiqueta={niveles.sucursal}>
-        <select className="input" value={f.sucursalId} disabled={!!departamento} onChange={(e) => { setF({ ...f, sucursalId: e.target.value, divisionId: "" }); setMarcadas(marcadasDe(e.target.value)); }}>
-          {opcionesSucursal.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-        </select>
-      </Campo>
-      {conCasillas && (
-        <CasillasDivisiones
-          titulo={niveles.divisiones}
-          filas={opciones.map((v) => ({ id: v.id, nombre: v.nombre, bloqueada: ocupadas.has(v.id), estado: ocupadas.has(v.id) ? "Ya existe" : undefined }))}
-          marcadas={marcadas}
-          onCambiar={setMarcadas}
-          nota={nota}
-        />
+      {creando && todos.length > 1 && (
+        <fieldset className="min-w-0" data-alcance-departamento>
+          <legend className="text-sm font-medium text-gray-800">Crear en</legend>
+          <div className="mt-1 space-y-1.5">
+            {([
+              ["una", textos.una, textos.unaDetalle],
+              ["todas", textos.todas, textos.todasDetalle],
+              ["elegir", textos.elegir, "Usted marca en cuáles."],
+            ] as const).map(([valor, titulo, detalle]) => (
+              <label key={valor} className={`flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 ${alcance === valor ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                <input type="radio" name="alcance-departamento" className="mt-0.5" value={valor} checked={alcance === valor} onChange={() => cambiarAlcance(valor)} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900">{titulo}</span>
+                  <span className="block text-xs text-gray-500">{detalle}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       )}
-      {usaDivisiones && !conCasillas && (
+      {(modo === "una" || conDivisiones) && (
+        <Campo etiqueta={niveles.sucursal}>
+          <select className="input" value={f.sucursalId} disabled={!!departamento} onChange={(e) => cambiarGrupo(e.target.value)}>
+            {modo !== "una" && variosGrupos && <option value={TODOS_LOS_GRUPOS}>{niveles.todasSucursales}</option>}
+            {opcionesSucursal.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        </Campo>
+      )}
+      {modo === "una" && usaDivisiones && (
         <Campo etiqueta={niveles.division}>
           <select className="input" value={f.divisionId} onChange={(e) => setF({ ...f, divisionId: e.target.value })}>
             <option value="">{exigeDivision ? `Elija la ${niveles.division.toLowerCase()}` : niveles.sinDivision}</option>
             {opciones.map((v) => <option key={v.id} value={v.id}>{v.nombre}{v.activa ? "" : " (inactiva)"}</option>)}
           </select>
         </Campo>
+      )}
+      {yaExisteUna && (
+        <p className="text-sm text-amber-800" role="status">
+          {`«${f.nombre.trim()}» ya existe en ${describirLugares([destinoUna], nombres, palabras)}. Use otro nombre o elija ${textos.otra}.`}
+        </p>
+      )}
+      {modo !== "una" && (
+        <CasillasDivisiones
+          titulo={modo === "todas" ? "Se creará en" : conDivisiones ? niveles.divisiones : niveles.sucursales}
+          filas={filas}
+          marcadas={marcadas}
+          onCambiar={setMarcadas}
+          soloLectura={modo === "todas"}
+          nota={nota}
+        />
       )}
       {departamento && (
         <label className="flex items-center gap-2 text-sm text-gray-800">

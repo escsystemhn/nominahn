@@ -13,10 +13,17 @@ export interface DatosBoleta {
   empresaRtn: string;
   /** `null`: se llama igual que la empresa, o la línea no la guardó. */
   sucursal?: string | null;
+  /**
+   * Las líneas de ubicación del membrete, ya rotuladas y de lo general a lo particular:
+   * «Grupo PAGSA», «Sucursal San Pedro Sula» (ver `ubicacionDeMembrete`). Sin ellas se
+   * imprime «Sucursal …» con `sucursal`, como antes.
+   */
+  ubicacion?: string[];
   direccion?: string | null;
   telefono?: string | null;
   division?: string | null;
   departamento?: string | null;
+  puesto?: string | null;
   nombreEmpleado: string;
   codigoEmpleado: string;
   identidad: string;
@@ -53,10 +60,14 @@ export function avisoDeEstado(estado: string | undefined): { texto: string; marc
 /** Sólo un comprobante vigente lleva dónde firmar: nadie debe firmar por un borrador. */
 export const seFirma = (d: Pick<DatosBoleta, "estado">) => !avisoDeEstado(d.estado);
 
-/** Las líneas bajo el nombre de la empresa, en el orden en que se imprimen. */
+/**
+ * Las líneas bajo el nombre de la empresa, en el orden en que se imprimen: primero
+ * el grupo y la sucursal (pedido del 2026-11-14), luego RTN y contacto en una línea.
+ */
 export function lineasDeMembrete(d: DatosBoleta): string[] {
-  const contacto = [d.direccion, d.telefono ? `Tel. ${d.telefono}` : null].filter(Boolean).join(", ");
-  return [`RTN ${d.empresaRtn}`, d.sucursal ? `Sucursal ${d.sucursal}` : null, contacto || null].filter((l): l is string => !!l);
+  const ubicacion = d.ubicacion ?? (d.sucursal ? [`Sucursal ${d.sucursal}`] : []);
+  const contacto = [`RTN ${d.empresaRtn}`, d.direccion, d.telefono ? `Tel. ${d.telefono}` : null].filter(Boolean).join(" · ");
+  return [...ubicacion, contacto];
 }
 
 /**
@@ -67,7 +78,8 @@ export function lineasDeMembrete(d: DatosBoleta): string[] {
 export function filasDelTrabajador(d: DatosBoleta): Array<Array<[string, string]>> {
   const grupos: Array<Array<[string, string | null | undefined]>> = [
     [["Código", d.codigoEmpleado], ["Identidad", d.identidad]],
-    [["División", d.division], ["Departamento", d.departamento]],
+    // La división ya va en el membrete (como sucursal o división): aquí, el puesto.
+    [["Puesto", d.puesto], ["Departamento", d.departamento]],
     [["Días trabajados", d.diasTrabajados], ["Horas extra", Number(d.horasExtra) > 0 ? d.horasExtra : null]],
   ];
   const filas = grupos

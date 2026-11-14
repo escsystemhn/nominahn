@@ -229,7 +229,7 @@ async function main() {
   const pct = (f: number) => (f * 100).toFixed(2).replace(/\.?0+$/, "");
   console.log(`  IHSS EM ${pct(parametros.ihssEmpleado)} % / ${pct(parametros.ihssEmpleador)} %, techo L ${parametros.ihssTope}`);
   console.log(`  IVM ${pct(parametros.ivmEmpleado)} % / ${pct(parametros.ivmEmpleador)} %, techo L ${parametros.ivmTope}`);
-  console.log(`  RAP ${pct(parametros.rapEmpleado)} % / ${pct(parametros.rapEmpleador)} %, piso L ${parametros.rapPiso}, techo L ${parametros.rapTope}`);
+  console.log(`  RAP ${pct(parametros.rapEmpleado)} % / ${pct(parametros.rapEmpleador)} %, piso L ${parametros.rapPiso}, sin techo`);
   console.log(`  Reserva laboral ${pct(parametros.reservaLaboralEmpleador)} %, INFOP ${pct(parametros.infopEmpleador)} %, ISR ${parametros.tablaISRAnual.length} tramos, vecinal ${parametros.tablaVecinalAnual.length} tramos\n`);
 
   const salMin = await prisma.salarioMinimo.findFirst({ where: { activo: true }, orderBy: { anio: "desc" } });

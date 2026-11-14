@@ -26,7 +26,6 @@ import {
   RECARGO_FERIADO,
   PARAMETROS_DEFAULT,
   RAP_PISO_MENSUAL,
-  RAP_TECHO_MENSUAL,
   type EntradaCalculoPlanilla,
 } from "@/lib/payroll/calculos-hn";
 import { aNumero as n, money, type Money, type MoneyInput } from "@/lib/payroll/money";
@@ -132,7 +131,7 @@ describe("IHSS — split EM/IVM y techo cotizable", () => {
 
 // ─── RAP ─────────────────────────────────────────────────────────────────────
 
-describe("RAP — base = excedente sobre el piso, acotado al techo", () => {
+describe("RAP — base = excedente sobre el piso, sin techo", () => {
   it("REGRESIÓN: un salario bajo el piso NO cotiza (antes cotizaba sobre el íntegro)", () => {
     expect(n(baseCotizableRAP(10000, P))).toBe(0);
     expect(n(calcularRAP(10000, P).empleado)).toBe(0);
@@ -148,17 +147,16 @@ describe("RAP — base = excedente sobre el piso, acotado al techo", () => {
     expect(n(calcularRAP(30000, P).empleado)).toBeCloseTo(271.45, 2);
   });
 
-  it("REGRESIÓN: aplica el techo (antes no existía tope alguno)", () => {
-    const esperado = (RAP_TECHO_MENSUAL - RAP_PISO_MENSUAL) * 0.015;
-    expect(n(calcularRAP(80000, P).empleado)).toBeCloseTo(esperado, 2);
-    expect(n(calcularRAP(999999, P).empleado)).toBeCloseTo(esperado, 2);
-    // sin techo, un salario de 80,000 habría dado 1,200.00
-    expect(n(calcularRAP(80000, P).empleado)).toBeLessThan(80000 * 0.015);
+  it("sin techo superior: cotiza todo el excedente (Art. 43 Ley del RAP, Decreto 47-2024)", () => {
+    // El techo de tres salarios mínimos (L57,896.16) es de la Reserva Laboral, no del FOVIIF.
+    expect(n(calcularRAP(80000, P).empleado)).toBeCloseTo((80000 - RAP_PISO_MENSUAL) * 0.015, 2);
+    expect(n(calcularRAP(95000, P).empleado)).toBeCloseTo(1246.45, 2);
+    expect(n(calcularRAP(95000, P).empleador)).toBeCloseTo(1246.45, 2);
   });
 
-  it("piso y techo son configurables sin tocar código", () => {
-    const custom = construirParametros({ rapPiso: 5000, rapTope: 20000 });
-    expect(n(baseCotizableRAP(30000, custom))).toBeCloseTo(15000, 2);
+  it("el piso es configurable sin tocar código", () => {
+    const custom = construirParametros({ rapPiso: 5000 });
+    expect(n(baseCotizableRAP(30000, custom))).toBeCloseTo(25000, 2);
   });
 });
 

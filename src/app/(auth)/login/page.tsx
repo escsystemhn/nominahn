@@ -10,8 +10,9 @@
  * Todo lo que muestra la tapa es público (ver lib/inicio-sesion.ts).
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import { destinoSeguro } from "@/lib/auth/inactividad";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -225,9 +226,23 @@ function useHidratado() {
   return useSyncExternalStore(sinSuscripcion, () => true, () => false);
 }
 
+/** Los parámetros de la dirección; vacíos en el HTML del servidor, para no descuadrar la hidratación. */
+function useParametros() {
+  const q = useSyncExternalStore(sinSuscripcion, () => window.location.search, () => "");
+  return useMemo(() => new URLSearchParams(q), [q]);
+}
+
+/** Por qué se llegó aquí con la sesión terminada (lo pone el cierre por inactividad o el proxy). */
+const MOTIVOS: Record<string, string> = {
+  inactividad: "Su sesión se cerró por inactividad. Ingrese de nuevo para seguir donde estaba.",
+  sesion: "Su sesión terminó. Ingrese de nuevo para seguir donde estaba.",
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const hidratado = useHidratado();
+  const parametros = useParametros();
+  const motivo = MOTIVOS[parametros.get("motivo") ?? ""];
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [mostrar, setMostrar] = useState(false);
@@ -278,7 +293,8 @@ export default function LoginPage() {
       setError("El correo o la contraseña no coinciden. Revise ambos e intente de nuevo.");
     } else {
       setFallos(0);
-      router.push("/dashboard");
+      // De vuelta a la página donde se cerró la sesión, si es de esta aplicación.
+      router.push(destinoSeguro(parametros.get("volver")));
     }
   }
 
@@ -315,6 +331,11 @@ export default function LoginPage() {
           <div className="panel p-7">
             <h2 className="text-2xl font-semibold text-gray-900">Iniciar sesión</h2>
             <p className="mb-6 mt-1 text-sm text-gray-500">Use las credenciales asignadas por su administrador.</p>
+            {motivo && (
+              <p role="status" className="-mt-2 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-motivo-login>
+                {motivo}
+              </p>
+            )}
 
             {/* `method="post"`: si algo llegara a enviarlo sin JavaScript, la clave
                 viaja en el cuerpo, nunca en la dirección. */}

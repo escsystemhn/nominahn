@@ -32,11 +32,13 @@ export const IVM_TOPE_MENSUAL = 11903.13;
 
 export const RAP_EMPLEADO = 0.015;       // 1.5%
 export const RAP_EMPLEADOR = 0.015;      // 1.5%
-// RAP — Reserva Laboral: se cotiza sobre el EXCEDENTE del salario por encima del
-// piso (techo del IHSS) y hasta el techo. Base = min(salario, techo) - piso.
-// Ambos suben por decreto: parametrizables vía TipoDeduccionConfig.
+// RAP — Fondo de Vivienda (FOVIIF): se cotiza sobre el EXCEDENTE del salario por
+// encima del piso, que es el techo del IVM del IHSS. SIN techo superior: el Art. 43
+// de la Ley del RAP, reformado por el Decreto 47-2024, sólo dice que «la retención
+// se hará sobre el monto que exceda el techo establecido para las contribuciones
+// destinadas al Régimen de IVM». Los tres salarios mínimos (L57,896.16) son el techo
+// de la Reserva Laboral (Art. 4), no de este fondo. Base = salario - piso.
 export const RAP_PISO_MENSUAL = 11903.13;
-export const RAP_TECHO_MENSUAL = 57896.16;
 
 export const INFOP_EMPLEADOR = 0.01;     // 1% (patronal)
 
@@ -201,7 +203,6 @@ export interface ParametrosLegales {
   rapEmpleado: number;
   rapEmpleador: number;
   rapPiso: number;
-  rapTope: number;
   infopEmpleador: number;
   reservaLaboralEmpleador: number;
   reservaLaboralTope: number;
@@ -229,7 +230,6 @@ export const PARAMETROS_DEFAULT: ParametrosLegales = {
   rapEmpleado: RAP_EMPLEADO,
   rapEmpleador: RAP_EMPLEADOR,
   rapPiso: RAP_PISO_MENSUAL,
-  rapTope: RAP_TECHO_MENSUAL,
   infopEmpleador: INFOP_EMPLEADOR,
   reservaLaboralEmpleador: RESERVA_LABORAL_EMPLEADOR,
   reservaLaboralTope: RESERVA_LABORAL_TECHO_MENSUAL,
@@ -312,15 +312,16 @@ export function calcularIHSS(
 // ─── CÁLCULO RAP ──────────────────────────────────────────────────────────────
 
 /**
- * Base cotizable del RAP: EXCEDENTE del salario sobre el piso, acotado al techo.
- *   base = max(0, min(salario, techo) - piso)
- * Un salario igual o menor al piso no cotiza RAP (lo cubre el IHSS).
+ * Base cotizable del RAP (FOVIIF): EXCEDENTE del salario sobre el piso, sin techo.
+ *   base = max(0, salario - piso)
+ * Un salario igual o menor al piso no cotiza RAP (lo cubre el IHSS). Ver la nota de
+ * `RAP_PISO_MENSUAL`: el techo de tres salarios mínimos es sólo de la Reserva Laboral.
  */
 export function baseCotizableRAP(
   salarioMensual: MoneyInput,
   p: ParametrosLegales = PARAMETROS_DEFAULT
 ): Money {
-  return redondear(maximo(minimo(salarioMensual, p.rapTope).minus(p.rapPiso), 0));
+  return redondear(maximo(money(salarioMensual).minus(p.rapPiso), 0));
 }
 
 export function calcularRAP(
@@ -726,7 +727,7 @@ function redondearHoras(h: number): number {
 const MS_DIA = 24 * 60 * 60 * 1000;
 
 /** Día comercial de una fecha: el 31 cuenta como 30 y el último de febrero también. */
-function diaComercial(f: Date): number {
+export function diaComercial(f: Date): number {
   const d = f.getUTCDate();
   const ultimo = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() + 1, 0)).getUTCDate();
   return d === ultimo || d > 30 ? 30 : d;
@@ -836,7 +837,8 @@ export function semanasDistintas(fechas: Date[]): number {
 // ─── CÁLCULO PLANILLA COMPLETA ────────────────────────────────────────────────
 
 /** Los montos fijos MENSUALES de Parámetros de ley, llevados a una fracción del mes. */
-function escalarMontosFijos(p: ParametrosLegales, fraccion: Money): ParametrosLegales {
+/** Los montos fijos generales son mensuales: a una fracción de mes le toca su parte. */
+export function escalarMontosFijos(p: ParametrosLegales, fraccion: Money): ParametrosLegales {
   const f = p.fijos ?? SIN_MONTOS_FIJOS;
   const x = (n: number) => aNumeroExacto(money(n).times(fraccion));
   const par = (v: { empleado: number; empleador: number } | null) => (v ? { empleado: x(v.empleado), empleador: x(v.empleador) } : null);
@@ -909,6 +911,13 @@ export interface EntradaCalculoPlanilla {
    * totales se arman con él. Por omisión, método estándar.
    */
   isrDelPeriodo?: MoneyInput | null;
+  /**
+   * RAP y Reserva Laboral a MES VENCIDO (ver `rap-mes-vencido.ts`): `base` es lo
+   * devengado el mes anterior y reemplaza a lo del período. Lo del mes de salida de
+   * quien se va no se cobra aquí: lo toma su liquidación. Sin el dato, todo sobre el
+   * mes en curso.
+   */
+  rapMesVencido?: { base: MoneyInput } | null;
 }
 
 /**
@@ -1027,6 +1036,27 @@ export function calcularPlanilla(
   const factorRap = tramoRap ? tramoRap.factor : CERO;
   const factorVecinal = tramoVecinal ? tramoVecinal.factor : CERO;
 
+  // RAP y Reserva a mes vencido: la base es de un mes ya cerrado y va entera, sin
+  // prorratear por los días de este período. En quincenal se reparte según la opción
+  // del RAP; con «la mitad en cada quincena», quien no está en la otra quincena paga
+  // aquí todo el mes. Lo del mes de salida lo toma la liquidación.
+  const vencido = entrada.rapMesVencido ?? null;
+  let aMesVencido: { empleado: Money; empleador: Money; reserva: Money } | null = null;
+  if (vencido) {
+    const factorV = !q
+      ? factorPlanilla
+      : distribucion.rap === "DIVIDIDO"
+        ? (q.enOtraQuincena ? factorPlanilla : money(1))
+        : (tramoQuincenal(distribucion.rap, q.numero, q.enOtraQuincena) === "mes" ? money(1) : CERO);
+    const delMes = calcularRAP(vencido.base, parametros);
+    const reservaMes = calcularReservaLaboral(vencido.base, parametros).empleador;
+    aMesVencido = {
+      empleado: redondear(delMes.empleado.times(factorV)),
+      empleador: redondear(delMes.empleador.times(factorV)),
+      reserva: redondear(reservaMes.times(factorV)),
+    };
+  }
+
   // La AFP llega ya resuelta como importe DEL PERÍODO (cuota de la deducción
   // individual del empleado). Para la base del ISR —que es mensual— se lleva a
   // equivalente mensual, igual que se hace con horas extra y bonificaciones.
@@ -1061,7 +1091,7 @@ export function calcularPlanilla(
 
   // Proporcionar al período de pago
   const ihssEmp = redondear(ihss.empleado.times(factorIhss));
-  const rapEmp = redondear(rap.empleado.times(factorRap));
+  const rapEmp = aMesVencido ? aMesVencido.empleado : redondear(rap.empleado.times(factorRap));
   // La AFP NO se prorratea: ya viene como importe del período.
   const afpEmp = afpPeriodo;
   const isrProp = entrada.isrDelPeriodo !== undefined && entrada.isrDelPeriodo !== null
@@ -1083,15 +1113,16 @@ export function calcularPlanilla(
 
   // Aportaciones empleador
   const ihssEmpleador = redondear(ihss.empleador.times(factorIhss));
-  const rapEmpleador = redondear(rap.empleador.times(factorRap));
+  const rapEmpleador = aMesVencido ? aMesVencido.empleador : redondear(rap.empleador.times(factorRap));
   const infopMensual = parametrosDevengados.fijos?.infop
     ? money(parametrosDevengados.fijos.infop.empleador)
     : baseDevengada.times(parametros.infopEmpleador);
   const infop = redondear(infopMensual.times(factorPlanilla));
-  // El Fondo de Reserva Laboral es mensual como los demás aportes: se prorratea.
-  const reservaLaboral = redondear(
-    calcularReservaLaboral(baseDevengada, parametrosDevengados).empleador.times(factorPlanilla)
-  );
+  // El Fondo de Reserva Laboral es mensual como los demás aportes: se prorratea. A mes
+  // vencido sigue al RAP: misma base y misma planilla.
+  const reservaLaboral = aMesVencido
+    ? aMesVencido.reserva
+    : redondear(calcularReservaLaboral(baseDevengada, parametrosDevengados).empleador.times(factorPlanilla));
 
   // Desglose IVM proporcionado al período
   const ivmEmpleadoProp = redondear(ihss.ivmEmpleado.times(factorIhss));
@@ -1166,7 +1197,6 @@ export function construirParametros(opts: {
   rapEmpleado?: number | null;
   rapEmpleador?: number | null;
   rapPiso?: number | null;
-  rapTope?: number | null;
   infopEmpleador?: number | null;
   reservaLaboralEmpleador?: number | null;
   reservaLaboralTope?: number | null;
@@ -1212,7 +1242,6 @@ export function construirParametros(opts: {
     rapEmpleado: opts.rapEmpleado ?? RAP_EMPLEADO,
     rapEmpleador: opts.rapEmpleador ?? RAP_EMPLEADOR,
     rapPiso: opts.rapPiso ?? RAP_PISO_MENSUAL,
-    rapTope: opts.rapTope ?? RAP_TECHO_MENSUAL,
     infopEmpleador: opts.infopEmpleador ?? INFOP_EMPLEADOR,
     reservaLaboralEmpleador: opts.reservaLaboralEmpleador ?? RESERVA_LABORAL_EMPLEADOR,
     reservaLaboralTope: opts.reservaLaboralTope ?? RESERVA_LABORAL_TECHO_MENSUAL,

@@ -56,6 +56,8 @@ export interface UbicacionBoleta {
   sucursal?: SucursalBoleta | null;
   division?: { nombre: string } | null;
   departamento?: { nombre: string } | null;
+  /** Texto guardado en la línea desde el 2026-11-14; antes, null. */
+  puesto?: string | null;
 }
 
 export interface ContextoBoleta {
@@ -69,10 +71,16 @@ export interface ContextoBoleta {
     segundoApellido?: string | null;
     sucursal?: SucursalBoleta | null;
     departamento?: { nombre: string } | null;
+    puesto?: { nombre: string } | null;
   };
   planilla: { tipo: string; fechaInicio: Date; fechaFin: Date; fechaPago?: Date | null; estado?: string };
   /** La de la línea de planilla: un período cerrado no cambia si la persona se traslada. */
   ubicacion?: UbicacionBoleta;
+  /**
+   * Jerarquía de nómina encendida: la sucursal del modelo es el «Grupo» y la división,
+   * la «Sucursal» (así lo usa el cliente: Grupo PAGSA → San Pedro Sula). Apagada: «Sucursal» y «División».
+   */
+  jerarquia?: boolean;
   /** Sólo para probar: por omisión, ahora. */
   emitido?: Date;
 }
@@ -93,6 +101,8 @@ export const EMPLEADO_BOLETA = {
   primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
   sucursal: SUCURSAL_BOLETA,
   departamento: { select: { nombre: true } },
+  // Sólo para líneas que no guardaron el puesto (anteriores al 2026-11-14).
+  puesto: { select: { nombre: true } },
 } as const;
 
 export const EMPRESA_BOLETA = { select: { nombre: true, rtn: true, direccion: true, telefono: true } } as const;
@@ -107,6 +117,21 @@ function linea(nombre: string, valor: MoneyInput): Array<[string, string]> {
 /** «14.5», no «15»: redondear los días de una media jornada cambia lo que se pagó. */
 function cantidad(valor: MoneyInput): string {
   return money(valor).toDecimalPlaces(2).toString();
+}
+
+/** «Grupo PAGSA» y no «Grupo Grupo PAGSA»: el nombre ya puede traer la palabra. */
+function rotular(etiqueta: string, nombre: string): string {
+  return nombre.trim().toLowerCase().startsWith(`${etiqueta.toLowerCase()} `) ? nombre.trim() : `${etiqueta} ${nombre.trim()}`;
+}
+
+/**
+ * Las líneas de ubicación bajo el nombre de la empresa, de lo general a lo particular.
+ * Con la jerarquía de nómina: «Grupo PAGSA», «Sucursal San Pedro Sula». Sin ella:
+ * «Sucursal …», «División …». La sucursal que se llama igual que la empresa se omite.
+ */
+export function ubicacionDeMembrete(sucursal: string | null, division: string | null, jerarquia: boolean): string[] {
+  const [primero, segundo] = jerarquia ? ["Grupo", "Sucursal"] : ["Sucursal", "División"];
+  return [sucursal ? rotular(primero, sucursal) : null, division ? rotular(segundo, division) : null].filter((l): l is string => !!l);
 }
 
 /** Mismo trato que el reporte: lo de la línea primero; si no lo guardó, lo actual del empleado. */
@@ -132,17 +157,22 @@ export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): Da
   const sucursal = sucursalDeBoleta(ctx.ubicacion, ctx.empleado);
   const departamento = ctx.ubicacion?.departamento ?? ctx.empleado.departamento;
   const neto = money(detalle.salarioNeto);
+  // Una instalación con una sola sucursal suele llamarla igual que la empresa.
+  const sucursalVisible = sucursal && sucursal.nombre.trim().toLowerCase() !== ctx.empresa.nombre.trim().toLowerCase() ? sucursal.nombre : null;
+  const division = ctx.ubicacion?.division?.nombre ?? null;
 
   return {
     estado: ctx.planilla.estado,
     empresa: ctx.empresa.nombre,
     empresaRtn: ctx.empresa.rtn,
-    // Una instalación con una sola sucursal suele llamarla igual que la empresa.
-    sucursal: sucursal && sucursal.nombre.trim().toLowerCase() !== ctx.empresa.nombre.trim().toLowerCase() ? sucursal.nombre : null,
+    sucursal: sucursalVisible,
+    ubicacion: ubicacionDeMembrete(sucursalVisible, division, !!ctx.jerarquia),
     direccion: sucursal?.direccion || ctx.empresa.direccion || null,
     telefono: sucursal?.telefono || ctx.empresa.telefono || null,
-    division: ctx.ubicacion?.division?.nombre ?? null,
+    division,
     departamento: departamento?.nombre ?? null,
+    // El de la línea; una línea anterior al 2026-11-14 no lo guardó y muestra el actual.
+    puesto: ctx.ubicacion?.puesto ?? ctx.empleado.puesto?.nombre ?? null,
     nombreEmpleado: nombreCompleto(ctx.empleado),
     codigoEmpleado: ctx.empleado.codigo,
     identidad: ctx.empleado.identidad ?? "—",

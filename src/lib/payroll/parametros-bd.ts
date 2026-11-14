@@ -124,8 +124,8 @@ export async function cargarParametrosLegales(): Promise<ParametrosLegales> {
     ivmTope: num(ivm?.topeMaximo),
     rapEmpleado: num(rap?.porcentaje),
     rapEmpleador: num(rap?.porcentajeEmpleador),
+    // El RAP no tiene techo: un `topeMaximo` guardado de antes se ignora (Art. 43 de la Ley del RAP).
     rapPiso: num(rap?.topeMinimo),
-    rapTope: num(rap?.topeMaximo),
     infopEmpleador: num(infop?.porcentajeEmpleador),
     reservaLaboralEmpleador: num(reserva?.porcentajeEmpleador),
     reservaLaboralTope: num(reserva?.topeMaximo),

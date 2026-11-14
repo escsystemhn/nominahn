@@ -16,6 +16,7 @@ import { derivarCuotasISR, validarTramosISR, validarTramosVecinal } from "@/lib/
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import MetodoIsrConfig from "./MetodoIsrConfig";
 import DistribucionQuincenalConfig from "./DistribucionQuincenalConfig";
+import RapMesVencidoConfig from "./RapMesVencidoConfig";
 import { ETIQUETA_MODO_QUINCENAL, type DistribucionQuincenal } from "@/lib/payroll/distribucion-quincenal";
 import { leerMonto } from "@/lib/formato/monto-texto";
 
@@ -187,6 +188,7 @@ export default function ParametrosLeyConfig() {
       </section>
 
       <DistribucionQuincenalConfig ihssMaximoMensual={maximo?.total ?? null} onCambio={setDistribucion} />
+      <RapMesVencidoConfig />
       <TablaISR inicial={datos.isr} onGuardado={recargar} />
       <MetodoIsrConfig />
       <TablaVecinal inicial={datos.vecinal} onGuardado={recargar} />
@@ -396,7 +398,8 @@ function ConceptoCard({ concepto: c, onGuardado, quincenal, ihssMaximo }: {
           </div>
           {c.tienePiso && (
             <p className="text-xs text-gray-500">
-              Cotiza el excedente del salario sobre el piso, hasta el techo. Quien gana el piso o menos no aporta RAP.
+              Cotiza todo el excedente del salario sobre el piso, sin techo (Art. 43 de la Ley del RAP): a 95,000 son
+              (95,000 − piso) × el porcentaje. Quien gana el piso o menos no aporta RAP.
             </p>
           )}
         </>

@@ -18,9 +18,13 @@ import { nombreCompleto, formatCurrency, formatDate, calcularAniosTrabajados } f
 import {
   calcularIHSS,
   calcularRAP,
+  calcularReservaLaboral,
   calcularVacacionesDevengadas,
   calcularDiasVacaciones,
 } from "@/lib/payroll/calculos-hn";
+import { mesDe, mesSiguiente, nombreMes, reglaDelMes } from "@/lib/payroll/rap-mes-vencido";
+import { basesDeclaradas, leerBaseRap, rapDeFiniquitos } from "@/lib/payroll/rap-mes-vencido-bd";
+import { filasRapHistorico, type FilaRapReporte } from "@/lib/reportes/rap-historico";
 import { calcularDecimo, ventanaDevengo, type TipoDecimo } from "@/lib/payroll/decimos";
 import { aNumero, minimo, sumar, sumarPor, money, redondear, CERO, type Money } from "@/lib/payroll/money";
 import { aXlsx, aPdf, contarDetalles, leerPapel, metaFila, type HojaReporte, type MetaFila, type ReporteTabla } from "@/lib/reportes/salida";
@@ -65,6 +69,8 @@ export async function GET(req: NextRequest) {
   let hojas: HojaReporte[] | undefined;
   let titulo = "Reporte";
   let cabeceras: string[] = [];
+  /** Notas que un reporte agrega a la línea de filtros. */
+  const filtrosExtra: string[] = [];
 
   // Un solo filtro de personas para todos los reportes: los tres niveles a la
   // vez (antes, con sucursal y departamento elegidos sólo se aplicaba la
@@ -422,11 +428,13 @@ export async function GET(req: NextRequest) {
       ]);
     }
   } else if (reporteId === "rap-planilla") {
-    // ─── Planilla RAP ─────────────────────────────────────────────────────────
-    titulo = "Planilla RAP (Régimen de Aportaciones Privadas)";
-    cabeceras = ["Empleado", "N° RAP", "Salario", "Base Cotizable", "Aporte Empleado", "Aporte Patrono", "Total"];
+    // ─── Planilla RAP proyectada ──────────────────────────────────────────────
+    // Estimación sobre el salario de HOY: no sabe de comisiones ni del RAP a mes
+    // vencido. Lo que de verdad se descontó está en «rap-historico».
+    titulo = "Planilla RAP proyectada (sobre el salario actual)";
+    cabeceras = ["Empleado", "N° RAP", "Salario", "Base Cotizable", "Aporte Empleado", "Aporte Patrono", "Reserva Laboral", "Total"];
 
-    // Mismo cargador que la planilla: el reporte al RAP cuadra con lo descontado.
+    // Mismos parámetros que la planilla (piso del RAP, techo de la Reserva, montos fijos).
     const parametros = await cargarParametrosLegales();
 
     const empleados = await prisma.empleado.findMany({
@@ -436,6 +444,7 @@ export async function GET(req: NextRequest) {
 
     datos = empleados.map((e) => {
       const rap = calcularRAP(e.salarioBase, parametros);
+      const reserva = calcularReservaLaboral(e.salarioBase, parametros).empleador;
       return [
         nombreCompleto(e),
         e.rapNro ?? "",
@@ -443,9 +452,67 @@ export async function GET(req: NextRequest) {
         formatCurrency(aNumero(rap.base)),
         formatCurrency(aNumero(rap.empleado)),
         formatCurrency(aNumero(rap.empleador)),
-        formatCurrency(aNumero(sumar(rap.empleado, rap.empleador))),
+        formatCurrency(aNumero(reserva)),
+        formatCurrency(aNumero(sumar(rap.empleado, rap.empleador, reserva))),
       ];
     });
+  } else if (reporteId === "rap-historico") {
+    // ─── Planilla RAP histórica ───────────────────────────────────────────────
+    // Lo realmente descontado en las planillas del período: es lo que se le paga al
+    // RAP (Art. 43: dentro de los 15 días siguientes a la retención).
+    if (!desde || !hasta) return NextResponse.json({ error: "Indique el rango de fechas" }, { status: 400 });
+    titulo = "Planilla RAP histórica (lo descontado en planillas y finiquitos)";
+    cabeceras = ["Empleado", "N° RAP", "Salario ordinario", "Base declarada", "RAP trabajador", "RAP patrono", "Reserva Laboral", "Total al RAP"];
+
+    const detalles = await prisma.planillaDetalle.findMany({
+      where: {
+        planilla: { ...planillasDelReporte, fechaFin: { gte: new Date(desde), lte: new Date(hasta) } },
+        ...filtroDet,
+      },
+      select: {
+        empleadoId: true, salarioBase: true, rapEmpleado: true, rapEmpleador: true, reservaLaboral: true,
+        planilla: { select: { fechaFin: true } },
+        empleado: {
+          select: {
+            primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, rapNro: true,
+            salarioBase: true, fechaIngreso: true, fechaSalida: true,
+          },
+        },
+      },
+    });
+    const lineas = detalles.map((d) => ({
+      empleadoId: d.empleadoId,
+      nombre: nombreCompleto(d.empleado),
+      rapNro: d.empleado.rapNro ?? "",
+      mes: mesDe(d.planilla.fechaFin),
+      salarioBase: d.salarioBase,
+      rapEmpleado: d.rapEmpleado,
+      rapEmpleador: d.rapEmpleador,
+      reservaLaboral: d.reservaLaboral,
+    }));
+    // A mes vencido, la base de cada mes es la que usó el cálculo, no el salario del mes;
+    // y lo que tomaron los finiquitos de quien salió en el rango va en su propia fila.
+    const [bases, finiquitos] = await Promise.all([
+      basesDeclaradas(prisma, [...new Set(detalles.map((d) => d.empleadoId))], lineas.map((l) => l.mes)),
+      rapDeFiniquitos(prisma, porEmpleado, new Date(desde), new Date(hasta)),
+    ]);
+    const { filas: filasRap, totales } = filasRapHistorico(
+      lineas,
+      (empleadoId, mes) => bases.get(`${empleadoId}|${mes}`) ?? null,
+      finiquitos.map((f) => ({
+        empleadoId: f.empleadoId, nombre: nombreCompleto(f.empleado), rapNro: f.empleado.rapNro ?? "",
+        base: f.rap.meses.filter((m) => m.declarar).reduce((acc, m) => acc + m.base, 0),
+        rapEmpleado: f.rap.empleado, rapEmpleador: f.rap.empleador, reserva: f.rap.reserva,
+      }))
+    );
+    // Práctica de la empresa: lo descontado en el mes se paga al RAP del 1 al 10 del siguiente.
+    if (mesDe(new Date(desde)) === mesDe(new Date(hasta)) && reglaDelMes(await leerBaseRap(prisma), mesDe(new Date(desde))) !== "EN_CURSO") {
+      filtrosExtra.push(`Se paga al RAP del 1 al 10 de ${nombreMes(mesSiguiente(mesDe(new Date(desde))))}`);
+    }
+    const celdas = (f: Omit<FilaRapReporte, "empleadoId" | "nombre" | "rapNro">) =>
+      [f.salario, f.base, f.rapEmpleado, f.rapEmpleador, f.reserva, f.total].map((m) => formatCurrency(aNumero(m)));
+    datos = filasRap.map((f) => [f.nombre, f.rapNro, ...celdas(f)]);
+    if (filasRap.length) datos.push([`TOTAL — ${filasRap.length} empleado(s)`, "", ...celdas(totales)]);
   } else if (reporteId === "isr-anual") {
     // ─── Constancia de retención de ISR ───────────────────────────────────────
     // Lo que el trabajador necesita para su declaración anual: sueldos pagados y
@@ -745,6 +812,8 @@ export async function GET(req: NextRequest) {
       filtros.push("BORRADOR: planilla sin confirmar");
     }
   }
+  // Notas propias de un reporte (por ejemplo, cuándo se paga la Planilla RAP).
+  filtros.push(...filtrosExtra);
   // Papel elegido para imprimir; sin elegir, carta, o legal si el reporte es muy ancho.
   const papel = leerPapel(searchParams.get("papel"));
   const reporte: ReporteTabla = { titulo, cabeceras, datos, generado: new Date(), filtros, ...(filas ? { filas } : {}), ...(hojas ? { hojas } : {}), ...(papel ? { papel } : {}) };

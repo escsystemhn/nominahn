@@ -15,6 +15,11 @@ import {
 } from "@/lib/payroll/liquidacion";
 import { calcularDecimo } from "@/lib/payroll/decimos";
 import { money, aNumero, CERO } from "@/lib/payroll/money";
+import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
+import { CLAVE_RAP_PENDIENTE, mesDe, mesSiguiente, nombreMes } from "@/lib/payroll/rap-mes-vencido";
+import { rapPendienteAlSalir } from "@/lib/payroll/rap-mes-vencido-bd";
+import { enumerar } from "@/lib/horarios/fechas";
+import { formatCurrency } from "@/lib/utils";
 import { z } from "zod";
 
 const schemaCalcular = z.object({
@@ -113,23 +118,32 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ─── Salario ordinario promedio de los últimos seis meses ──────────────────
-  // Es la base legal de preaviso y cesantía. Tomar el último salario a secas
-  // sobrevalora la liquidación de quien acaba de recibir un aumento.
-  const periodos = await prisma.planillaDetalle.findMany({
+  // ─── Salario promedio de los últimos seis meses ────────────────────────────
+  // Es la base legal de preaviso, cesantía y décimos. Tomar el último salario a
+  // secas sobrevalora la liquidación de quien acaba de recibir un aumento. Entran
+  // las planillas confirmadas (también la del mes de salida, que paga sólo los días
+  // trabajados) de los seis meses anteriores al de la salida y de ese mismo mes;
+  // el promedio es por mes, no por planilla (ver `salarioOrdinarioPromedio`).
+  const inicioVentana = new Date(Date.UTC(fechaSalida.getUTCFullYear(), fechaSalida.getUTCMonth() - MESES_PROMEDIO_SALARIO, 1));
+  const lineas = await prisma.planillaDetalle.findMany({
     where: {
       empleadoId,
-      planilla: { estado: { in: ["APROBADA", "PAGADA"] }, fechaFin: { lte: fechaSalida } },
+      planilla: { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] }, fechaInicio: { lte: fechaSalida }, fechaFin: { gte: inicioVentana } },
     },
-    orderBy: { planilla: { fechaFin: "desc" } },
-    take: MESES_PROMEDIO_SALARIO,
-    select: { totalBruto: true },
+    select: { totalBruto: true, planilla: { select: { fechaInicio: true, fechaFin: true } } },
   });
-
-  const promedio = salarioOrdinarioPromedio(periodos);
+  const promedio = salarioOrdinarioPromedio(
+    lineas.map((l) => ({ totalBruto: l.totalBruto, fechaInicio: l.planilla.fechaInicio, fechaFin: l.planilla.fechaFin })),
+    { fechaSalida, fechaIngreso: empleado.fechaIngreso },
+  );
   // Sin planillas registradas —empleado reciente o migración— se cae al salario
   // base, que es el único dato disponible.
-  const salarioPromedio = promedio.isZero() ? money(empleado.salarioBase) : promedio;
+  const salarioPromedio = promedio.promedio.isZero() ? money(empleado.salarioBase) : promedio.promedio;
+  const mesesTexto = (m: number) => `${m.toLocaleString("es-HN", { maximumFractionDigits: 2 })} ${m === 1 ? "mes" : "meses"}`;
+  const notaPromedio = promedio.promedio.isZero()
+    ? "No hay planillas confirmadas en los últimos seis meses: el salario promedio es el salario base del empleado."
+    : `Salario promedio: lo devengado en ${mesesTexto(promedio.meses)} de planillas confirmadas (${promedio.periodos} ${promedio.periodos === 1 ? "planilla" : "planillas"}), llevado a un mes.` +
+      (promedio.meses < MESES_PROMEDIO_SALARIO ? " Son menos de seis meses: se promedió con el tiempo que cubren." : "");
 
   // ─── Décimos proporcionales pendientes ─────────────────────────────────────
   const anio = fechaSalida.getUTCFullYear();
@@ -193,6 +207,12 @@ export async function POST(req: NextRequest) {
     fondoEstimado = true;
   }
 
+  // ─── RAP a mes vencido ─────────────────────────────────────────────────────
+  // Lo del mes de salida (y lo del anterior que sus planillas no alcanzaron) ya no
+  // tiene planilla siguiente: lo toma el finiquito (`rap-mes-vencido.ts`).
+  const rapPendiente = await rapPendienteAlSalir(prisma, empleado, fechaSalida, await cargarParametrosLegales());
+  const mesesRap = rapPendiente ? enumerar(rapPendiente.meses.map((m) => nombreMes(m.mes).replace(/ de \d{4}$/, ""))) : "";
+
   const resultado = calcularLiquidacion({
     fechaIngreso: empleado.fechaIngreso,
     fechaSalida,
@@ -206,8 +226,20 @@ export async function POST(req: NextRequest) {
     salariosPendientes,
     otrosAdeudos,
     deducciones,
+    deduccionesLegales: rapPendiente
+      ? [{ clave: CLAVE_RAP_PENDIENTE, concepto: `RAP del trabajador pendiente (${mesesRap})`, base: "Art. 43 Ley del RAP", monto: rapPendiente.empleado }]
+      : [],
     saldoFondoReserva: saldoFondo,
   });
+  resultado.observaciones.unshift(notaPromedio);
+  if (rapPendiente && rapPendiente.meses.length > 0) {
+    const pagoEn = nombreMes(mesSiguiente(mesDe(fechaSalida)));
+    resultado.observaciones.push(
+      `RAP a mes vencido: se descuentan ${formatCurrency(aNumero(rapPendiente.empleado))} del trabajador por ${mesesRap}. ` +
+        `El patrono entera además ${formatCurrency(aNumero(rapPendiente.empleador))} de RAP patronal y ${formatCurrency(aNumero(rapPendiente.reserva))} de Reserva Laboral: ` +
+        `todo se paga al RAP del 1 al 10 de ${pagoEn}.`
+    );
+  }
   if (fondoEstimado && saldoFondo.greaterThan(0) && resultado.conceptos.some((c) => c.concepto === CONCEPTO_FONDO_RESERVA)) {
     resultado.observaciones.push(
       "El saldo del Fondo de Reserva se estimó con los aportes de las planillas, sin rendimientos: anote el saldo que certifica el RAP antes de guardar."
@@ -236,6 +268,7 @@ export async function POST(req: NextRequest) {
     conceptos: resultado.conceptos.map((c) => ({ ...c, monto: aNumero(c.monto) })),
     totalPrestaciones: aNumero(resultado.totalPrestaciones),
     deducciones: aNumero(resultado.deducciones),
+    deduccionesDetalle: resultado.deduccionesDetalle.map((d) => ({ ...d, monto: aNumero(d.monto) })),
     totalAPagar: aNumero(resultado.totalAPagar),
     observaciones: resultado.observaciones,
     saldoDeduccionesPendientes: aNumero(saldoDeduccionesPendientes),
@@ -273,8 +306,30 @@ export async function POST(req: NextRequest) {
         deducciones: resultado.deducciones,
         totalAPagar: resultado.totalAPagar,
         // El desglose se congela: el finiquito debe poder reproducirse aunque
-        // después cambien las tablas legales o el salario del puesto.
-        conceptos: JSON.parse(JSON.stringify(respuesta.conceptos)),
+        // después cambien las tablas legales o el salario del puesto. Las deducciones
+        // van marcadas; el RAP pendiente lleva su detalle por mes, que leen la Planilla
+        // RAP histórica y las planillas de ese mes (para no volver a descontarlo).
+        conceptos: JSON.parse(JSON.stringify([
+          ...respuesta.conceptos,
+          ...respuesta.deduccionesDetalle.filter((d) => d.clave !== CLAVE_RAP_PENDIENTE).map((d) => ({ ...d, dias: null, deduccion: true })),
+          ...(rapPendiente ? [{
+            clave: CLAVE_RAP_PENDIENTE,
+            concepto: respuesta.deduccionesDetalle.find((d) => d.clave === CLAVE_RAP_PENDIENTE)?.concepto ?? "RAP pendiente (mes vencido)",
+            base: "Art. 43 Ley del RAP",
+            dias: null,
+            monto: aNumero(rapPendiente.empleado),
+            deduccion: true,
+            detalle: {
+              meses: rapPendiente.meses.map((m) => ({
+                mes: m.mes, base: aNumero(m.base), declarar: m.declarar,
+                empleado: aNumero(m.empleado), empleador: aNumero(m.empleador), reserva: aNumero(m.reserva),
+              })),
+              empleado: aNumero(rapPendiente.empleado),
+              empleador: aNumero(rapPendiente.empleador),
+              reserva: aNumero(rapPendiente.reserva),
+            },
+          }] : []),
+        ])),
         observaciones: resultado.observaciones.join("\n") || null,
         calculadoPor: g.usuario.id,
       },

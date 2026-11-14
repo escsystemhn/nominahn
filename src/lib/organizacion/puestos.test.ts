@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   claveNombre,
-  divisionesSinDepartamento,
   limpiarNombrePuesto,
   mensajeCopia,
   motivoParaNoDesactivar,
@@ -75,30 +74,6 @@ describe("copiar un departamento", () => {
 
   it("no crea dos veces un nombre repetido en el origen", () => {
     expect(puestosPorCopiar([{ nombre: "Cajero" }, { nombre: "cajero" }], [])).toHaveLength(1);
-  });
-});
-
-describe("un departamento en varias divisiones", () => {
-  const existentes = [
-    { nombre: "Administración", divisionId: "pagsa" },
-    { nombre: "Ventas", divisionId: "mayoreo" },
-    { nombre: "Ventas", divisionId: null },
-  ];
-
-  it("crea donde falta y omite donde ya está", () => {
-    expect(divisionesSinDepartamento("Ventas", ["pagsa", "mayoreo", "prod"], existentes)).toEqual({ crear: ["pagsa", "prod"], omitir: ["mayoreo"] });
-  });
-
-  it("compara sin acentos, mayúsculas ni espacios de más", () => {
-    expect(divisionesSinDepartamento("  ADMINISTRACION ", ["pagsa", "prod"], existentes).omitir).toEqual(["pagsa"]);
-  });
-
-  it("una división repetida cuenta una vez", () => {
-    expect(divisionesSinDepartamento("Nuevo", ["prod", "prod"], existentes).crear).toEqual(["prod"]);
-  });
-
-  it("sin nombre todavía, nada aparece como ocupado", () => {
-    expect(divisionesSinDepartamento("  ", ["pagsa"], [{ nombre: "", divisionId: "pagsa" }])).toEqual({ crear: ["pagsa"], omitir: [] });
   });
 });
 

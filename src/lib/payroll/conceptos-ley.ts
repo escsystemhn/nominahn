@@ -3,7 +3,7 @@
  *
  * Lo comparten la API y la pantalla (no importa Prisma), para que las dos
  * coincidan en qué campos lleva cada concepto: INFOP no tiene parte del
- * empleado, RAP tiene piso y techo, IHSS e IVM sólo techo.
+ * empleado, RAP sólo piso, IHSS, IVM y Reserva Laboral sólo techo.
  */
 
 import { PARAMETROS_DEFAULT } from "./calculos-hn";
@@ -56,11 +56,12 @@ export const CONCEPTOS_LEY: Record<CodigoConceptoLey, MetaConceptoLey> = {
     nombre: "RAP — Fondo de Vivienda (FOVIIF)",
     descripcion:
       "Aporte del trabajador y del patrono al fondo de vivienda del RAP. Por porcentaje cotiza sobre " +
-      "el excedente del salario sobre el piso, hasta el techo.",
+      "el excedente del salario sobre el piso (el techo del IVM), sin techo superior (Art. 43 de la Ley del RAP).",
     tieneEmpleado: true,
-    tieneTope: true,
+    // Sin techo: el de tres salarios mínimos es de la Reserva Laboral, no de este fondo.
+    tieneTope: false,
     tienePiso: true,
-    defecto: { porcentajeEmpleado: D.rapEmpleado, porcentajeEmpleador: D.rapEmpleador, topeMaximo: D.rapTope, topeMinimo: D.rapPiso },
+    defecto: { porcentajeEmpleado: D.rapEmpleado, porcentajeEmpleador: D.rapEmpleador, topeMaximo: null, topeMinimo: D.rapPiso },
   },
   RESERVA_LABORAL: {
     codigo: "RESERVA_LABORAL",

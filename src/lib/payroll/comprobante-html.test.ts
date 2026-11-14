@@ -85,14 +85,30 @@ describe("comprobanteHtml: lo que dice", () => {
     expect(comprobanteHtml({ ...datos, deducciones: [] })).toContain("Sin deducciones en este período");
   });
 
-  it("muestra la sucursal, su dirección y la división sólo si las hay", () => {
+  it("muestra la sucursal y su dirección sólo si las hay", () => {
     const sin = comprobanteHtml(datos);
     expect(sin).not.toContain("Sucursal ");
     expect(sin).not.toContain("División");
-    const con = comprobanteHtml({ ...datos, sucursal: "Norte", direccion: "Barrio Guamilito", telefono: "2550-0000", division: "Mayoreo" });
+    const con = comprobanteHtml({ ...datos, sucursal: "Norte", direccion: "Barrio Guamilito", telefono: "2550-0000" });
     expect(con).toContain("Sucursal Norte");
-    expect(con).toContain("Barrio Guamilito, Tel. 2550-0000");
-    expect(con).toContain("Mayoreo");
+    expect(con).toContain("RTN 08019995123456 · Barrio Guamilito · Tel. 2550-0000");
+  });
+
+  it("el membrete dice primero el grupo y luego la sucursal; el puesto va con el trabajador (2026-11-14)", () => {
+    const html = comprobanteHtml({ ...datos, ubicacion: ["Grupo PAGSA", "Sucursal San Pedro Sula"], division: "San Pedro Sula", puesto: "Cajera" });
+    const i = (t: string) => html.indexOf(t);
+    expect(i("NominaHN S. de R.L.")).toBeLessThan(i("Grupo PAGSA"));
+    expect(i("Grupo PAGSA")).toBeLessThan(i("Sucursal San Pedro Sula"));
+    expect(i("Sucursal San Pedro Sula")).toBeLessThan(i("RTN 08019995123456"));
+    expect(html).toContain(">Puesto<");
+    expect(html).toContain(">Cajera<");
+    expect(html).not.toContain(">División<");
+  });
+
+  it("«Imprimir» abre el PDF de media carta, sin script", () => {
+    const html = comprobanteHtml(datos, { modo: "pantalla", urlPdf: "/api/mis-boletas/x", nonce: "n" });
+    expect(html).toContain('href="/api/mis-boletas/x?modo=imprimir"');
+    expect(html).not.toContain("window.print");
   });
 });
 
@@ -134,8 +150,8 @@ describe("filasDelTrabajador", () => {
     expect(filas({ departamento: "Ventas" })).toEqual([["Código", "Identidad"], ["Departamento"], ["Días trabajados", "Horas extra"]]);
   });
 
-  it("con división, en su propia fila junto al departamento", () => {
-    expect(filas({ departamento: "Ventas", division: "Mayoreo" })).toEqual([["Código", "Identidad"], ["División", "Departamento"], ["Días trabajados", "Horas extra"]]);
+  it("el puesto va junto al departamento; la división ya no (va en el membrete)", () => {
+    expect(filas({ departamento: "Ventas", division: "Mayoreo", puesto: "Cajera" })).toEqual([["Código", "Identidad"], ["Puesto", "Departamento"], ["Días trabajados", "Horas extra"]]);
   });
 
   it("dos filas de un dato se juntan en una", () => {
@@ -173,10 +189,9 @@ describe("comprobanteHtml: seguridad", () => {
     expect(comprobanteHtml(datos, { modo: "pantalla" })).not.toContain("<script");
   });
 
-  it("el único script de la vista lleva el nonce que autoriza la política", () => {
-    const html = comprobanteHtml(datos, { modo: "pantalla", nonce: "abc" });
-    expect(html.match(/<script/g)).toHaveLength(1);
-    expect(html).toContain('<script nonce="abc">');
+  it("la vista ya no lleva ningún script: «Imprimir» es un enlace al PDF (2026-11-14)", () => {
+    const html = comprobanteHtml(datos, { modo: "pantalla", nonce: "abc", urlPdf: "/x" });
+    expect(html).not.toContain("<script");
   });
 });
 

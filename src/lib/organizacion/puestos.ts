@@ -71,22 +71,6 @@ export function puestosPorCopiar<T extends { nombre: string }>(origen: T[], dest
   });
 }
 
-/**
- * En qué divisiones se puede crear un departamento con ese nombre: `omitir` son
- * las que ya tienen uno, activo o no. Comparar sin acentos ni mayúsculas evita
- * un «Administracion» junto a un «Administración» en la misma división.
- */
-export function divisionesSinDepartamento(
-  nombre: string,
-  divisionIds: readonly string[],
-  existentes: readonly { nombre: string; divisionId: string | null }[]
-): { crear: string[]; omitir: string[] } {
-  const clave = claveNombre(nombre);
-  const ocupadas = new Set(existentes.filter((d) => clave && claveNombre(d.nombre) === clave).map((d) => d.divisionId));
-  const unicas = [...new Set(divisionIds)];
-  return { crear: unicas.filter((id) => !ocupadas.has(id)), omitir: unicas.filter((id) => ocupadas.has(id)) };
-}
-
 export interface ResultadoCopia {
   destino: string;
   departamentoNuevo: boolean;

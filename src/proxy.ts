@@ -1,9 +1,25 @@
 import NextAuth from "next-auth";
-import { middlewareAuthConfig } from "@/lib/auth/middleware-config";
+import type { NextRequest } from "next/server";
+import { configMiddleware } from "@/lib/auth/middleware-config";
+import { RUTA_LATIDO } from "@/lib/auth/inactividad";
 import { EDICION_INSTALABLE } from "@/lib/licencia/edicion";
 import { origenAceptado, origenesPermitidos } from "@/lib/auth/origen";
 
-const { auth } = NextAuth(middlewareAuthConfig);
+// Dos instancias con la misma clave: sólo la del latido marca actividad en el token.
+// (La configuración «perezosa» por petición de next-auth devuelve una promesa en vez
+// de la función del proxy, y Next la rechaza: por eso no se usa.)
+const { auth } = NextAuth(configMiddleware(false));
+const { auth: authLatido } = NextAuth(configMiddleware(true));
+
+const SIN_CACHE = { "Cache-Control": "private, no-store, max-age=0" };
+
+/**
+ * Una API sin sesión responde 401 en JSON, no la página del login: antes el `fetch`
+ * de una pantalla abierta recibía el HTML del login, no lo podía leer y la pantalla
+ * quedaba como trabada, sin decir que la sesión había terminado.
+ */
+const sesionTerminada = () =>
+  Response.json({ error: "Su sesión terminó. Vuelva a ingresar.", codigo: "SESION_VENCIDA" }, { status: 401, headers: SIN_CACHE });
 
 const ORIGENES_PERMITIDOS = origenesPermitidos(process.env.ORIGENES_PERMITIDOS, process.env.AUTH_URL);
 
@@ -19,7 +35,27 @@ const SIEMPRE_ABIERTO = [
   "/licencia", "/api/licencia", "/login", "/api/auth", "/api/estado", "/mi-cuenta", "/api/mi-cuenta/password",
 ];
 
-export default auth(async (req) => {
+const esOrigenAceptado = (req: NextRequest) =>
+  origenAceptado({
+    metodo: req.method,
+    origen: req.headers.get("origin"),
+    host: req.headers.get("x-forwarded-host") ?? req.headers.get("host"),
+    permitidos: ORIGENES_PERMITIDOS,
+  });
+
+/**
+ * Latido del navegador: hubo actividad de la persona. Lo responde el proxy con la
+ * instancia que marca la actividad en el token; al no haber una ruta detrás, ninguna
+ * otra respuesta lo pisa con un token viejo.
+ */
+const proxyLatido = authLatido(async (req) => {
+  if (!esOrigenAceptado(req)) {
+    return Response.json({ error: "Origen no permitido", codigo: "ORIGEN_NO_PERMITIDO" }, { status: 403, headers: SIN_CACHE });
+  }
+  return req.auth ? new Response(null, { status: 204, headers: SIN_CACHE }) : sesionTerminada();
+});
+
+const proxyNormal = auth(async (req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
 
@@ -35,20 +71,15 @@ export default auth(async (req) => {
   }
 
   // CSRF: un navegador ajeno no puede provocar escrituras. Ver lib/auth/origen.ts.
-  if (
-    pathname.startsWith("/api") &&
-    !origenAceptado({
-      metodo: req.method,
-      origen: req.headers.get("origin"),
-      host: req.headers.get("x-forwarded-host") ?? req.headers.get("host"),
-      permitidos: ORIGENES_PERMITIDOS,
-    })
-  ) {
+  if (pathname.startsWith("/api") && !esOrigenAceptado(req)) {
     return Response.json(
       { error: "Origen no permitido", codigo: "ORIGEN_NO_PERMITIDO" },
       { status: 403, headers: { "Cache-Control": "private, no-store, max-age=0" } }
     );
   }
+
+  // El latido sólo existe como POST (ver `proxyLatido`).
+  if (pathname === RUTA_LATIDO) return Response.json({ error: "Método no permitido" }, { status: 405, headers: SIN_CACHE });
 
   /**
    * Licencia de la edición instalable (evaluación de 30 días o licencia de SDL).
@@ -87,7 +118,13 @@ export default auth(async (req) => {
     pathname === "/";
 
   if (!isLoggedIn && !isPublic) {
-    return Response.redirect(new URL("/login", req.url));
+    if (pathname.startsWith("/api")) return sesionTerminada();
+    // Si traía cookie de sesión, la sesión terminó (inactividad o 8 horas): el login lo
+    // dice, y después de entrar se vuelve a la misma página.
+    const destino = new URL("/login", req.url);
+    if (req.cookies.getAll().some((c) => c.name.includes("authjs.session-token"))) destino.searchParams.set("motivo", "sesion");
+    if (req.method === "GET" && pathname !== "/dashboard") destino.searchParams.set("volver", pathname + req.nextUrl.search);
+    return Response.redirect(destino);
   }
 
   if (isLoggedIn && pathname === "/login") {
@@ -114,6 +151,12 @@ export default auth(async (req) => {
     }
   }
 });
+
+/** El proxy: el latido por su instancia, todo lo demás por la normal. */
+export default function proxy(req: NextRequest, evento: unknown) {
+  const manejar = req.method === "POST" && req.nextUrl.pathname === RUTA_LATIDO ? proxyLatido : proxyNormal;
+  return manejar(req, evento as never);
+}
 
 /**
  * Qué NO pasa por esta comprobación.

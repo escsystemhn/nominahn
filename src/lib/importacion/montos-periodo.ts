@@ -24,6 +24,9 @@ import {
 } from "@/lib/payroll/deducciones";
 import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import { frasePeriodo, rangoPeriodo, type PeriodoPlanilla } from "@/lib/payroll/periodos-planilla";
+import { calcularRAP, calcularReservaLaboral, type ParametrosLegales } from "@/lib/payroll/calculos-hn";
+import { mesAnterior, mesDe, nombreMes, partesMes, rangoMes, reglaDelMes } from "@/lib/payroll/rap-mes-vencido";
+import { cargarBasesImportadas, cargarDevengadoDelMes, leerBaseRap } from "@/lib/payroll/rap-mes-vencido-bd";
 import { formatCurrency, nombreCompleto } from "@/lib/utils";
 import { noEsDeduccionPorEmpleado, partirCabecera, sugerirCategoria, sugerirCodigo } from "@/lib/deducciones/tipos";
 import { mapearColumnas, normalizarCabecera, parsearCsv, type ColumnaEsperada } from "./csv";
@@ -203,6 +206,92 @@ export function decidirCelda(estado: EstadoCelda | undefined, nuevo: Money): Dec
   return { accion: "PONER", monto: objetivo, antes, despues: nuevo };
 }
 
+// ─── BASE DEL RAP A MES VENCIDO ──────────────────────────────────────────────
+//
+// Con el RAP a mes vencido (Parámetros de ley, `rap-mes-vencido.ts`), la plantilla
+// lleva además una columna con la base del mes: lo devengado el mes anterior. NO es
+// una deducción: se guarda en `BaseRapMes` y vale para todas las planillas del mes,
+// sea cual sea la quincena que se exporte.
+
+/** Marca de las filas del lote que son bases del RAP. */
+export const CLASE_BASE_RAP = "BASE_RAP";
+export const CLAVE_BASE_RAP_COLUMNA = "base_rap";
+export const ETIQUETA_BASE_RAP = "Base RAP (mes anterior)";
+const ALIAS_BASE_RAP = ["Base RAP", "Base del RAP", "Base RAP mes anterior", "base_rap"];
+
+export function columnaBaseRap(mes: string): ColumnaCsv {
+  const anterior = nombreMes(mesAnterior(mes));
+  return {
+    clave: CLAVE_BASE_RAP_COLUMNA,
+    etiqueta: ETIQUETA_BASE_RAP,
+    descripcion: `Lo devengado en ${anterior} (salario ordinario y comisiones): sobre esto se calculan el RAP y la Reserva Laboral que se descuentan en ${nombreMes(mes)}. Vacío: la que el sistema saca de las planillas de ${anterior}.`,
+    formato: "monto",
+    ejemplo: "45000.00",
+  };
+}
+
+/** Lo que hace falta para la columna de la base, si la opción rige en el mes del período. */
+export interface ContextoBaseRap {
+  mes: string;
+  regla: "TRANSICION" | "ANTERIOR";
+  importadas: Map<string, Money>;
+  /** De las planillas confirmadas del mes anterior; vacío en el mes de transición. */
+  automaticas: Map<string, Money>;
+  /** La planilla más avanzada del MES por empleado: la base vale para todo el mes. */
+  planillasMes: Map<string, PlanillaDelPeriodo>;
+  parametros: ParametrosLegales;
+}
+
+/** Lo que dirá la celda al exportar: la importada, o la del sistema si hay. */
+export function valorBaseRap(ctx: ContextoBaseRap, empleadoId: string): Money | null {
+  const importada = ctx.importadas.get(empleadoId);
+  if (importada) return importada;
+  const auto = ctx.automaticas.get(empleadoId);
+  return auto && !auto.isZero() ? auto : null;
+}
+
+export type DecisionBaseRap =
+  | { accion: "IGUAL" }
+  | { accion: "PONER" | "QUITAR"; antes: Money; despues: Money };
+
+/**
+ * Qué hacer con la celda de la base. Vacía = la del sistema: quita la importada si la
+ * había. Igual a la del sistema sin haber importada: nada que guardar.
+ */
+export function decidirBaseRap(importada: Money | null, automatica: Money, nuevo: Money | null): DecisionBaseRap {
+  if (nuevo === null) return importada === null ? { accion: "IGUAL" } : { accion: "QUITAR", antes: importada, despues: automatica };
+  if (importada !== null) return nuevo.equals(importada) ? { accion: "IGUAL" } : { accion: "PONER", antes: importada, despues: nuevo };
+  return nuevo.equals(automatica) ? { accion: "IGUAL" } : { accion: "PONER", antes: automatica, despues: nuevo };
+}
+
+/** El RAP y la Reserva que salen de una base, para la vista previa. */
+export function aportesDeBase(base: Money, p: ParametrosLegales): string {
+  const rap = calcularRAP(base, p);
+  const reserva = calcularReservaLaboral(base, p).empleador;
+  return `RAP ${lempiras(rap.empleado)} del trabajador y ${lempiras(rap.empleador)} del patrono, Reserva ${lempiras(reserva)}`;
+}
+
+/** Contexto de la columna, o `null` si en el mes del período el RAP no va a mes vencido. */
+export async function cargarContextoBaseRap(
+  db: PrismaClient,
+  empleadoIds: readonly string[],
+  periodo: Pick<PeriodoPlanilla, "desde">
+): Promise<ContextoBaseRap | null> {
+  const mes = mesDe(fecha(periodo.desde));
+  const regla = reglaDelMes(await leerBaseRap(db), mes);
+  if (regla === "EN_CURSO") return null;
+  const r = rangoMes(mes);
+  // Import diferido: el cargador de parámetros abre la conexión de la app.
+  const { cargarParametrosLegales } = await import("@/lib/payroll/parametros-bd");
+  const [importadas, devengado, planillasMes, parametros] = await Promise.all([
+    cargarBasesImportadas(db, empleadoIds, mes),
+    regla === "ANTERIOR" ? cargarDevengadoDelMes(db, empleadoIds, mesAnterior(mes)) : Promise.resolve({ porEmpleado: new Map<string, Money>(), borradores: 0 }),
+    cargarPlanillasDelPeriodo(db, empleadoIds, { desde: dia(r.desde), hasta: dia(r.hasta) }),
+    cargarParametrosLegales(),
+  ]);
+  return { mes, regla, importadas, automaticas: devengado.porEmpleado, planillasMes, parametros };
+}
+
 // ─── VALIDACIÓN DEL ARCHIVO ──────────────────────────────────────────────────
 
 export interface EmpleadoMatriz {
@@ -230,6 +319,22 @@ export interface ContextoMontos {
   /** `${empleadoId}|${tipoId}` → estado de hoy. */
   estados: Map<string, EstadoCelda>;
   planillas: Map<string, PlanillaDelPeriodo>;
+  /** Columna de la base del RAP: sólo con el RAP a mes vencido en el mes del período. */
+  baseRap?: ContextoBaseRap | null;
+}
+
+/** Una base del RAP que cambia: lo que se escribe al confirmar. */
+export interface OperacionBaseRap {
+  clase: typeof CLASE_BASE_RAP;
+  linea: number;
+  accion: "PONER" | "QUITAR";
+  empleadoId: string;
+  /** Mes en que se descuenta, «AAAA-MM». */
+  mes: string;
+  base: string;
+  antes: string;
+  despues: string;
+  referencia: string;
 }
 
 /** Una celda que cambia: lo que se escribe al confirmar. */
@@ -246,7 +351,7 @@ export interface OperacionMonto {
 }
 
 export interface ResultadoMontos {
-  operaciones: OperacionMonto[];
+  operaciones: Array<OperacionMonto | OperacionBaseRap>;
   incidencias: Incidencia[];
   previsualizacion: FilaPrevisualizada[];
   columnasDesconocidas: string[];
@@ -281,6 +386,8 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     { clave: COLUMNA_CODIGO.clave, etiqueta: COLUMNA_CODIGO.etiqueta, alias: ["codigo", "código"] },
     { clave: COLUMNA_NOMBRE.clave, etiqueta: COLUMNA_NOMBRE.etiqueta, alias: ["nombre"] },
     { clave: COLUMNA_DEPARTAMENTO.clave, etiqueta: COLUMNA_DEPARTAMENTO.etiqueta },
+    // Se reconoce siempre, para avisar si el RAP no va a mes vencido en vez de tomarla por un tipo nuevo.
+    { clave: CLAVE_BASE_RAP_COLUMNA, etiqueta: ETIQUETA_BASE_RAP, alias: ALIAS_BASE_RAP },
   ];
   const { indices, desconocidas: sinMapear } = mapearColumnas(csv.cabeceras, [...fijas, ...esperadasTipos(ctx.tipos)]);
 
@@ -303,8 +410,16 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     r.incidencias.push({ linea: 1, severidad: "ERROR", mensaje: "Falta la columna «Codigo Empleado». Descargue el archivo del período para ver el formato." });
     return r;
   }
+  const br = ctx.baseRap ?? null;
+  const conBase = indices[CLAVE_BASE_RAP_COLUMNA] !== undefined;
+  if (conBase && !br) {
+    r.incidencias.push({
+      linea: 1, columna: ETIQUETA_BASE_RAP, severidad: "AVISO",
+      mensaje: "La base del RAP sólo se usa con el RAP a mes vencido (Parámetros de ley), y en este mes no rige. Se ignora.",
+    });
+  }
   const columnasTipo = ctx.tipos.filter((t) => indices[claveTipo(t.id)] !== undefined);
-  if (columnasTipo.length === 0) {
+  if (columnasTipo.length === 0 && !(conBase && br)) {
     r.incidencias.push({
       linea: 1, severidad: "ERROR",
       mensaje: r.columnasDesconocidas.length
@@ -321,7 +436,9 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     const codigo = (celdas[indices[COLUMNA_CODIGO.clave]] ?? "").trim();
     const error = (mensaje: string, columna?: string) => r.incidencias.push({ linea, columna, severidad: "ERROR", mensaje });
     if (!codigo) {
-      if (columnasTipo.some((t) => !v.vacia(celdas[indices[claveTipo(t.id)]]))) error("Falta el código del empleado.", COLUMNA_CODIGO.etiqueta);
+      const conDatos = columnasTipo.some((t) => !v.vacia(celdas[indices[claveTipo(t.id)]]))
+        || (conBase && br !== null && !v.vacia(celdas[indices[CLAVE_BASE_RAP_COLUMNA]]));
+      if (conDatos) error("Falta el código del empleado.", COLUMNA_CODIGO.etiqueta);
       continue;
     }
     const emp = ctx.empleados.get(codigo.toLowerCase());
@@ -368,6 +485,50 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
         clase: CLASE_MONTO_PERIODO, linea, accion: decision.accion, empleadoId: emp.id, tipoDeduccionId: t.id,
         monto: decision.monto.toFixed(2), antes: decision.antes.toFixed(2), despues: decision.despues.toFixed(2), referencia,
       });
+    }
+
+    if (conBase && br) {
+      const columna = ETIQUETA_BASE_RAP;
+      const bruto = celdas[indices[CLAVE_BASE_RAP_COLUMNA]];
+      let nuevo: Money | null = null;
+      let legible = true;
+      if (!v.vacia(bruto)) {
+        const leido = v.decimal(bruto, { min: 0, max: MONTO_MAXIMO });
+        if (leido.ok) nuevo = leido.valor;
+        else { error(leido.error, columna); legible = false; }
+      }
+      const decision = legible ? decidirBaseRap(br.importadas.get(emp.id) ?? null, br.automaticas.get(emp.id) ?? CERO, nuevo) : null;
+      const planillaMes = br.planillasMes.get(emp.id);
+      const cerradaMes = planillaMes && (planillaMes.estado === "APROBADA" || planillaMes.estado === "PAGADA");
+      if (decision?.accion === "IGUAL") r.sinCambio++;
+      else if (decision && !emp.cobra) error("El empleado no está activo: no se le puede poner base del RAP.", columna);
+      else if (decision && cerradaMes) {
+        error(`Ya hay una planilla de ${nombreMes(br.mes)} ${ESTADO_PLANILLA[planillaMes.estado]}: la base del RAP de ese mes no se puede cambiar.`, columna);
+      } else if (decision) {
+        const referencia = `${emp.codigo} ${emp.nombre}, base del RAP de ${nombreMes(br.mes)}`;
+        const tipoCambio = decision.accion === "QUITAR" ? "QUITAR" : br.importadas.has(emp.id) ? "ACTUALIZAR" : "CREAR";
+        if (tipoCambio === "CREAR") r.nuevos++;
+        else if (tipoCambio === "QUITAR") r.seQuitan++;
+        else r.cambian++;
+        r.previsualizacion.push({
+          linea, accion: tipoCambio, referencia,
+          cambios: [
+            `${lempiras(decision.antes)} → ${lempiras(decision.despues)}`,
+            decision.accion === "QUITAR" ? `vuelve a la de las planillas de ${nombreMes(mesAnterior(br.mes))}` : aportesDeBase(decision.despues, br.parametros),
+          ],
+        });
+        r.operaciones.push({
+          clase: CLASE_BASE_RAP, linea, accion: decision.accion, empleadoId: emp.id, mes: br.mes,
+          base: decision.despues.toFixed(2), antes: decision.antes.toFixed(2), despues: decision.despues.toFixed(2), referencia,
+        });
+        if (planillaMes && !avisadas.has(emp.id)) {
+          avisadas.add(emp.id);
+          r.incidencias.push({
+            linea, columna: COLUMNA_CODIGO.etiqueta, severidad: "AVISO",
+            mensaje: `${emp.codigo} ya está en una planilla de ${nombreMes(br.mes)} ${ESTADO_PLANILLA[planillaMes.estado]}: vuelva a calcularla para que tome la base nueva.`,
+          });
+        }
+      }
     }
 
     if (cambiaAlgo && planilla && !cerrada && !avisadas.has(emp.id)) {
@@ -449,11 +610,12 @@ export async function cargarContexto(db: PrismaClient, periodo: PeriodoPlanilla)
   }
 
   const ids = empleados.map((e) => e.id);
-  const [deducciones, planillas] = await Promise.all([
+  const [deducciones, planillas, baseRap] = await Promise.all([
     cargarDeduccionesDelPeriodo(db, ids, tipos.map((t) => t.id), periodo),
     cargarPlanillasDelPeriodo(db, ids, periodo),
+    cargarContextoBaseRap(db, ids, periodo),
   ]);
-  return { periodo, tipos, noImportables, empleados: mapa, estados: estadosDelPeriodo(deducciones, periodo), planillas };
+  return { periodo, tipos, noImportables, empleados: mapa, estados: estadosDelPeriodo(deducciones, periodo), planillas, baseRap };
 }
 
 const PESO_ESTADO: Record<PlanillaDelPeriodo["estado"], number> = { BORRADOR: 1, CALCULADA: 2, APROBADA: 3, PAGADA: 4 };
@@ -555,6 +717,45 @@ export async function aplicarMontos(
 /** Un motivo que se le puede mostrar a quien importa. */
 export class ErrorMontos extends Error {}
 
+/**
+ * Escribe las bases del RAP. Vuelve a mirar las planillas del mes al escribir: si
+ * mientras se revisaba una quedó aprobada, no se toca nada.
+ */
+export async function aplicarBasesRap(
+  tx: Prisma.TransactionClient,
+  operaciones: readonly OperacionBaseRap[]
+): Promise<ResultadoAplicacionMontos> {
+  const r: ResultadoAplicacionMontos = { creados: 0, actualizados: 0, quitados: 0, ids: [] };
+  for (const mes of new Set(operaciones.map((o) => o.mes))) {
+    const delMes = operaciones.filter((o) => o.mes === mes);
+    const rango = rangoMes(mes);
+    const planillas = await cargarPlanillasDelPeriodo(tx, delMes.map((o) => o.empleadoId), { desde: dia(rango.desde), hasta: dia(rango.hasta) });
+    const cerrada = [...planillas.values()].find((p) => p.estado === "APROBADA" || p.estado === "PAGADA");
+    if (cerrada) throw new ErrorMontos(`Mientras revisaba, una planilla de ${nombreMes(mes)} quedó ${ESTADO_PLANILLA[cerrada.estado]}. Vuelva a subir el archivo.`);
+
+    const { anio, mes: m } = partesMes(mes);
+    for (const o of delMes) {
+      const clave = { empleadoId_anio_mes: { empleadoId: o.empleadoId, anio, mes: m } };
+      if (o.accion === "QUITAR") {
+        const borradas = await tx.baseRapMes.deleteMany({ where: { empleadoId: o.empleadoId, anio, mes: m } });
+        if (borradas.count) r.quitados++;
+        continue;
+      }
+      const existe = await tx.baseRapMes.findUnique({ where: clave, select: { id: true } });
+      const fila = await tx.baseRapMes.upsert({
+        where: clave,
+        update: { base: o.base, origen: "IMPORTACION" },
+        create: { empleadoId: o.empleadoId, anio, mes: m, base: o.base, origen: "IMPORTACION" },
+        select: { id: true },
+      });
+      if (existe) r.actualizados++;
+      else r.creados++;
+      r.ids.push(fila.id);
+    }
+  }
+  return r;
+}
+
 // ─── EXPORTACIÓN ─────────────────────────────────────────────────────────────
 
 export interface EmpleadoExportable {
@@ -571,7 +772,8 @@ export interface EmpleadoExportable {
 export function armarMatriz(
   empleados: readonly EmpleadoExportable[],
   tipos: readonly TipoColumna[],
-  estados: Map<string, EstadoCelda>
+  estados: Map<string, EstadoCelda>,
+  baseRap: ContextoBaseRap | null = null
 ): { columnas: ColumnaCsv[]; filas: string[][]; total: Money } {
   const montos = empleados.map((e) => tipos.map((t) => {
     const estado = estados.get(`${e.id}|${t.id}`);
@@ -579,19 +781,32 @@ export function armarMatriz(
   }));
   const usados = tipos.map((_, j) => montos.some((fila) => !fila[j].isZero()));
   const orden = tipos.map((_, j) => j).sort((a, b) => Number(usados[b]) - Number(usados[a]) || a - b);
-  const columnas = columnasMatriz(orden.map((j) => tipos[j]));
+  const [codigo, nombre, departamento, ...deTipos] = columnasMatriz(orden.map((j) => tipos[j]));
+  // La base del RAP va justo después de los datos del empleado: no es una deducción más.
+  const columnas = [codigo, nombre, departamento, ...(baseRap ? [columnaBaseRap(baseRap.mes)] : []), ...deTipos];
   const filas = empleados.map((e, i) => [
     e.codigo, e.nombre, e.departamento,
+    ...(baseRap ? [valorBaseRap(baseRap, e.id)?.toFixed(2) ?? ""] : []),
     ...orden.map((j) => (montos[i][j].isZero() ? "" : montos[i][j].toFixed(2))),
   ]);
+  // El total es de deducciones: la base no suma.
   return { columnas, filas, total: sumar(...montos.flat()) };
 }
 
 /** Las notas de la hoja «Instrucciones». */
-export function notasMatriz(periodo: PeriodoPlanilla): string[] {
+export function notasMatriz(periodo: PeriodoPlanilla, baseRap: ContextoBaseRap | null = null): string[] {
+  const deLaBase = baseRap
+    ? [
+        `«${ETIQUETA_BASE_RAP}» NO es una deducción: es lo devengado en ${nombreMes(mesAnterior(baseRap.mes))} (salario ordinario y comisiones), sobre lo que se calculan el RAP del trabajador, el del patrono y la Reserva Laboral que se descuentan en ${nombreMes(baseRap.mes)}. Vale para todas las planillas de ese mes.`,
+        baseRap.regla === "TRANSICION"
+          ? `${nombreMes(baseRap.mes)} es el primer mes a mes vencido: sólo se descuenta RAP a quien tenga base escrita aquí.`
+          : `Viene con el salario de las planillas confirmadas de ${nombreMes(mesAnterior(baseRap.mes))}. Súmele las comisiones o corríjala; vacía, se usa la del sistema; 0, no se descuenta RAP ese mes.`,
+      ]
+    : [];
   return [
     `Deducciones ${frasePeriodo(periodo, "de")} (planilla ${periodo.tipo.toLowerCase()}, ${rangoPeriodo(periodo.desde, periodo.hasta)}).`,
     "Cada celda es lo que se descuenta de ese tipo al empleado en el período. Celda vacía o 0: nada.",
+    ...deLaBase,
     "Para cambiar montos, edítelos aquí y vuelva a importar el archivo en Deducciones → Importar → Montos del período, eligiendo el mismo período. Lo que no cambie no se toca, y reimportar corrige en lugar de duplicar.",
     "Si el empleado tiene una deducción de cada planilla, su monto ya está en la celda: escribir otro la reemplaza sólo en este período, sin cambiar la deducción.",
     "Las cuotas de préstamos y los descuentos a plazo también están incluidos y siguen su curso: el monto no puede ser menor que ellos.",

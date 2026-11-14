@@ -54,6 +54,18 @@ function avisoPasswordDemo(): string {
   return process.env.SEED_DEMO_PASSWORD ? "la de SEED_DEMO_PASSWORD" : "Admin1234!";
 }
 
+/**
+ * Cuenta de soporte de ESC System en cada instalación (pedido de Edbin, 2026-11-14):
+ * superusuario con una clave temporal CONOCIDA que obliga a cambiarse en el primer
+ * ingreso. Como la conoce cualquiera que haya leído esto, conviene entrar con ella
+ * al terminar de instalar. `SEED_SOPORTE_PASSWORD` la sustituye. Si quien instala
+ * usa este mismo correo para el administrador, no se crea otra cuenta.
+ */
+const CORREO_SOPORTE = "soporte@esc-systemhn.com";
+function passwordSoporte(): string {
+  return process.env.SEED_SOPORTE_PASSWORD || "Admin@2026";
+}
+
 function datosAdminInstalacion() {
   const email = (process.env.SEED_ADMIN_EMAIL ?? "").trim().toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? "";
@@ -333,8 +345,13 @@ async function main() {
   const passwordHash = await bcrypt.hash(passwordDemo(), 12);
   const passwordAdmin = adminInstalacion?.password ?? generarPasswordTemporal(16);
   const passwordAdminHash = await bcrypt.hash(passwordAdmin, 12);
+  const conSoporte = !!adminInstalacion && adminInstalacion.email !== CORREO_SOPORTE;
+  const passwordSoporteHash = conSoporte ? await bcrypt.hash(passwordSoporte(), 12) : "";
   const usersData = adminInstalacion
-    ? [{ email: adminInstalacion.email, name: adminInstalacion.nombre, role: "SUPER_ADMIN" as const, perfil: "ADMIN_SISTEMA" }]
+    ? [
+        { email: adminInstalacion.email, name: adminInstalacion.nombre, role: "SUPER_ADMIN" as const, perfil: "ADMIN_SISTEMA" },
+        ...(conSoporte ? [{ email: CORREO_SOPORTE, name: "Soporte ESC System", role: "SUPER_ADMIN" as const, perfil: "ADMIN_SISTEMA" }] : []),
+      ]
     : [
     { email: "admin@nominahn.hn", name: "Administrador Sistema", role: "SUPER_ADMIN" as const, perfil: "ADMIN_SISTEMA" },
     { email: "rrhh@nominahn.hn", name: "Jefa de RRHH", role: "ADMIN_RRHH" as const, perfil: "RRHH" },
@@ -350,7 +367,8 @@ async function main() {
   let adminRecienCreado = false;
   for (const u of usersData) {
     const { perfil, ...datos } = u;
-    const esAdmin = u.role === "SUPER_ADMIN";
+    const esSoporte = conSoporte && u.email === CORREO_SOPORTE;
+    const esAdmin = u.role === "SUPER_ADMIN" && !esSoporte;
     const existente = await prisma.user.findUnique({
       where: { email: u.email },
       select: { id: true },
@@ -364,8 +382,9 @@ async function main() {
       update: { perfilId: perfil ? perfiles[perfil] : null },
       create: {
         ...datos,
-        password: esAdmin ? passwordAdminHash : passwordHash,
-        debeCambiarPassword: esAdmin && !INSTALACION,
+        password: esSoporte ? passwordSoporteHash : esAdmin ? passwordAdminHash : passwordHash,
+        // La de soporte es temporal y conocida: se cambia sí o sí al primer ingreso.
+        debeCambiarPassword: esSoporte || (esAdmin && !INSTALACION),
         perfilId: perfil ? perfiles[perfil] : null,
         // El supervisor arranca con alcance de sucursal y NINGUNA asignada: así
         // se ve de entrada que sin sucursales no accede a personal, que es el
@@ -375,6 +394,8 @@ async function main() {
     });
   }
   console.log(INSTALACION ? `✓ Administrador: ${usersData[0].email}` : `✓ ${usersData.length} usuarios (demo: ${avisoPasswordDemo()})`);
+  // Sin la clave: este texto queda en el registro de la instalación.
+  if (conSoporte) console.log(`✓ Soporte: ${CORREO_SOPORTE} (clave temporal; se cambia en el primer ingreso)`);
   if (adminRecienCreado && !INSTALACION) {
     console.log("");
     console.log("  ┌─────────────────────────────────────────────────────────┐");
@@ -389,7 +410,7 @@ async function main() {
   const deduccionesData = [
     { nombre: "IHSS - EM", codigo: "IHSS", tipo: "LEGAL" as const, porcentaje: 0.025, aplicaEmpleado: true, aplicaEmpleador: true, porcentajeEmpleador: 0.05, topeMaximo: 11903.13, esLegal: true, descripcion: "IHSS Régimen EM (Enfermedad y Maternidad): 2.5% empleado / 5% patrono. Verificar techo vigente." },
     { nombre: "IHSS - IVM", codigo: "IVM", tipo: "LEGAL" as const, porcentaje: 0.025, aplicaEmpleado: true, aplicaEmpleador: true, porcentajeEmpleador: 0.035, topeMaximo: 11903.13, esLegal: true, descripcion: "IHSS Régimen IVM (Invalidez, Vejez y Muerte): 2.5% empleado / 3.5% patrono / 0.5% Estado." },
-    { nombre: "RAP - Fondo de Vivienda (FOVIIF)", codigo: "RAP", tipo: "LEGAL" as const, porcentaje: 0.015, aplicaEmpleado: true, aplicaEmpleador: true, porcentajeEmpleador: 0.015, topeMinimo: 11903.13, topeMaximo: 57896.16, esLegal: true, descripcion: "Fondo de Vivienda e Inclusión Financiera del RAP. Base = excedente del salario sobre L11,903.13, hasta L57,896.16. Valores 2026: verificar vigencia." },
+    { nombre: "RAP - Fondo de Vivienda (FOVIIF)", codigo: "RAP", tipo: "LEGAL" as const, porcentaje: 0.015, aplicaEmpleado: true, aplicaEmpleador: true, porcentajeEmpleador: 0.015, topeMinimo: 11903.13, topeMaximo: null, esLegal: true, descripcion: "Fondo de Vivienda e Inclusión Financiera del RAP. Base = excedente del salario sobre L11,903.13 (techo IVM), sin techo superior (Art. 43 Ley del RAP, Decreto 47-2024). Valores 2026: verificar vigencia." },
     { nombre: "Fondo de Reserva Laboral (RAP)", codigo: "RESERVA_LABORAL", tipo: "LEGAL" as const, aplicaEmpleado: false, aplicaEmpleador: true, porcentajeEmpleador: 0.04, topeMaximo: 57896.16, esLegal: true, descripcion: "Aporte patronal del 4% del salario ordinario al Fondo de Reserva Laboral de Capitalización Individual (Decreto 47-2024). Techo = 3 salarios mínimos. Al liquidar se descuenta del auxilio de cesantía." },
     { nombre: "AFP Atlántida", codigo: "AFP-ATL", tipo: "AFP" as const, porcentaje: 0.03, aplicaEmpleado: true, esLegal: false, descripcion: "Administradora de Fondos de Pensiones" },
     { nombre: "INFOP", codigo: "INFOP", tipo: "LEGAL" as const, porcentaje: 0, aplicaEmpleado: false, aplicaEmpleador: true, porcentajeEmpleador: 0.01, esLegal: true, descripcion: "Instituto Nacional de Formación Profesional (patronal)" },

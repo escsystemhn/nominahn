@@ -40,6 +40,8 @@ const EXCEPCIONES: Record<string, string> = {
     "La invoca un cron externo sin usuario para sondear los relojes de la LAN. Se protege con el encabezado x-cron-secret.",
   "cron/sap/route.ts":
     "La invoca un cron externo sin usuario para reintentar los asientos pendientes hacia SAP B1. Se protege con el encabezado x-cron-secret.",
+  "cron/respaldos/route.ts":
+    "La invoca un cron sin usuario y sólo hace el respaldo cuando toca según el horario guardado. Se protege con el encabezado x-cron-secret.",
   "evaluar/[token]/route.ts":
     "Enlace de evaluación para quien no tiene cuenta. Se protege con el token de un solo uso del participante.",
   "empleos/[id]/postular/route.ts":

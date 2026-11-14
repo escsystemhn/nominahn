@@ -27,6 +27,7 @@ import { cabecerasXlsx, plantillaXlsx } from "@/lib/importacion/xlsx";
 import { COLUMNAS_DEDUCCION, columnasVisibles, etiquetas, filaEjemplo } from "@/lib/importacion/columnas";
 import {
   armarMatriz,
+  cargarContextoBaseRap,
   cargarDeduccionesDelPeriodo,
   cargarTiposMatriz,
   estadosDelPeriodo,
@@ -90,11 +91,17 @@ async function responderMatriz(
     return NextResponse.json({ error: `Son más de ${MAX_EMPLEADOS} empleados: marque menos o expórtelos por partes.` }, { status: 413 });
   }
 
-  const deducciones = await cargarDeduccionesDelPeriodo(prisma, empleados.map((e) => e.id), tipos.map((t) => t.id), periodo);
+  const ids = empleados.map((e) => e.id);
+  const [deducciones, baseRap] = await Promise.all([
+    cargarDeduccionesDelPeriodo(prisma, ids, tipos.map((t) => t.id), periodo),
+    // Con el RAP a mes vencido, la columna de la base del mes.
+    cargarContextoBaseRap(prisma, ids, periodo),
+  ]);
   const { columnas, filas } = armarMatriz(
     empleados.map((e) => ({ id: e.id, codigo: e.codigo, nombre: nombreCompleto(e), departamento: e.departamento.nombre })),
     tipos,
-    estadosDelPeriodo(deducciones, periodo)
+    estadosDelPeriodo(deducciones, periodo),
+    baseRap
   );
 
   const { ip, userAgent } = getClientInfo(req);
@@ -119,7 +126,7 @@ async function responderMatriz(
 
   const archivo = filas.length ? nombreArchivoPeriodo(periodo) : `plantilla_${nombreArchivoPeriodo(periodo)}`;
   if (salida.excel) {
-    const xlsx = await plantillaXlsx(columnas, filas, { notas: notasMatriz(periodo), fijarColumnas: 2 });
+    const xlsx = await plantillaXlsx(columnas, filas, { notas: notasMatriz(periodo, baseRap), fijarColumnas: 2 });
     return new NextResponse(new Uint8Array(xlsx), { headers: cabecerasXlsx(`${archivo}.xlsx`) });
   }
   return new NextResponse(generarCsv(etiquetas(columnas), filas, salida.delimitador), { headers: cabecerasDescarga(`${archivo}.csv`) });

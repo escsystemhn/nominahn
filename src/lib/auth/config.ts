@@ -9,6 +9,8 @@ import { permisosEfectivos } from "./permisos";
 import { cuentaCerradaPorBaja } from "./administradores";
 import { ipParaLimite } from "@/lib/http/ip";
 import { SESION } from "./middleware-config";
+import { INACTIVIDAD_POR_OMISION, vencidaPorInactividad } from "./inactividad";
+import { leerMinutosInactividad } from "./inactividad-bd";
 
 /**
  * Cada cuánto se revalida un JWT contra la BD. Con `strategy: "jwt"` no hay
@@ -117,7 +119,7 @@ export const authConfig: NextAuthConfig = {
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // Inicio de sesión: se sellan los datos y la próxima revalidación.
+      // Inicio de sesión: se sellan los datos, la próxima revalidación y el reloj de inactividad.
       if (user) {
         token.role = user.role;
         token.empleadoId = user.empleadoId;
@@ -127,8 +129,15 @@ export const authConfig: NextAuthConfig = {
         token.departamentoId = user.departamentoId;
         token.debeCambiarPassword = user.debeCambiarPassword;
         token.checasEn = Date.now() + REVALIDA_MS;
+        token.actividadEn = Date.now();
+        token.inactividadMin = await leerMinutosInactividad(prisma).catch(() => INACTIVIDAD_POR_OMISION);
         return token;
       }
+
+      // Inactividad: también aquí, no sólo en el proxy. Ninguna página ni API responde
+      // con una sesión que pasó el límite, aunque el navegador no haya cerrado.
+      if (typeof token.actividadEn !== "number") token.actividadEn = Date.now();
+      else if (vencidaPorInactividad(token, Date.now())) return null;
 
       // Requests posteriores: revalidar sólo cuando toca, no en cada uno.
       if (typeof token.checasEn === "number" && Date.now() < token.checasEn) {
@@ -167,6 +176,8 @@ export const authConfig: NextAuthConfig = {
         token.sucursalesIds = actual.sucursalesIds;
         token.departamentoId = actual.empleado?.departamentoId ?? null;
         token.debeCambiarPassword = actual.debeCambiarPassword;
+        // Un cambio del administrador en los minutos de inactividad llega en la próxima revalidación.
+        token.inactividadMin = await leerMinutosInactividad(prisma);
         token.checasEn = Date.now() + REVALIDA_MS;
         return token;
       } catch {

@@ -663,6 +663,7 @@ model Empleado {
   preferenciaHorario   PreferenciaHorario?
   horarioDias          HorarioDia[]
   acumuladosIsr        AcumuladoIsr[]
+  basesRap             BaseRapMes[]
   fichaMedica          FichaMedica?
   familiares           FamiliarEmpleado[]
   beneficiarios        BeneficiarioEmpleado[]
@@ -1054,6 +1055,10 @@ model PlanillaDetalle {
   division            Division?     @relation(fields: [divisionId], references: [id], onDelete: Restrict)
   departamentoId      String?
   departamento        Departamento? @relation(fields: [departamentoId], references: [id], onDelete: Restrict)
+  /// El puesto al pagarse, como TEXTO: el comprobante muestra el de ese período aunque
+  /// después cambie, se renombre o se borre. Null en líneas calculadas antes del
+  /// 2026-11-14: el comprobante cae al puesto actual del empleado.
+  puesto              String?
   // Ingresos
   salarioBase         Decimal       @db.Decimal(12, 2)
   diasTrabajados      Decimal       @default(0) @db.Decimal(5, 2)
@@ -1139,6 +1144,28 @@ model AcumuladoIsr {
 
   @@unique([empleadoId, anio, mes])
   @@index([anio])
+}
+
+/// Base del RAP y de la Reserva Laboral importada para un mes, cuando se cotiza a
+/// MES VENCIDO (Parámetros de ley; ver `lib/payroll/rap-mes-vencido.ts`): lo devengado
+/// el mes ANTERIOR, comisiones incluidas. Reemplaza a la que el sistema saca de las
+/// planillas de ese mes. No es una deducción: por eso no va en DeduccionEmpleado,
+/// donde se vería como un descuento de toda la base.
+model BaseRapMes {
+  id         String   @id @default(cuid())
+  empleadoId String
+  empleado   Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  /// Mes en que se DESCUENTA (la base es lo devengado el mes anterior). 1 = enero.
+  anio       Int
+  mes        Int
+  base       Decimal  @db.Decimal(12, 2)
+  /// IMPORTACION (plantilla de deducciones del período) o MANUAL.
+  origen     String   @default("IMPORTACION")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([empleadoId, anio, mes])
+  @@index([anio, mes])
 }
 
 /// Registro de lo que CADA planilla amortizó de CADA deducción a plazo.
@@ -1488,6 +1515,35 @@ model ConfiguracionSistema {
   valor       String   @db.Text
   descripcion String?
   updatedAt   DateTime @updatedAt
+}
+
+/// Cada respaldo hecho desde Configuración → Respaldos (ver `lib/respaldos/`):
+/// manual o automático, a qué destinos llegó y con qué resultado. La
+/// configuración (destinos, horario, claves cifradas) vive en
+/// ConfiguracionSistema «RESPALDOS_CONFIG».
+model Respaldo {
+  id              String    @id @default(cuid())
+  /// MANUAL o AUTOMATICO.
+  tipo            String
+  /// EN_CURSO, OK, PARCIAL (falló algún destino) o ERROR.
+  estado          String
+  archivo         String?
+  /// Bytes del archivo final.
+  tamano          BigInt?
+  /// Huella SHA-256 del archivo final, para comprobar una copia.
+  sha256          String?
+  cifrado         Boolean   @default(false)
+  incluyeAdjuntos Boolean   @default(false)
+  /// [{ destinoId, nombre, tipo, ok, error?, ubicacion?, podados? }]
+  destinos        Json?
+  error           String?   @db.Text
+  duracionMs      Int?
+  usuarioId       String?
+  createdAt       DateTime  @default(now())
+  terminadoAt     DateTime?
+
+  @@index([createdAt])
+  @@index([tipo, estado])
 }
 
 model TablasISR {

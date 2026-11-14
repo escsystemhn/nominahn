@@ -26,6 +26,31 @@ export interface Novedad {
 export const NOVEDADES: Record<string, Novedad[]> = {
   "2.0": [
     {
+      titulo: "Respaldos automáticos",
+      detalle: "Respalde la base y los adjuntos a mano o cada día, en un disco, una carpeta de red o la nube (S3), cifrados con contraseña. En Configuración → Respaldos.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "RAP a mes vencido",
+      detalle: "El RAP y la Reserva Laboral pueden calcularse sobre lo devengado el mes anterior, con la base importable en la plantilla, y la liquidación cobra lo pendiente del mes de salida.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Salario promedio de la liquidación",
+      detalle: "Se promedia por mes devengado: en planilla quincenal, dos quincenas son un mes. Antes salía a la mitad.",
+      modulo: "Prestaciones",
+    },
+    {
+      titulo: "Cierre por inactividad",
+      detalle: "Tras unos minutos sin uso la sesión se cierra y hay que volver a ingresar. El tiempo se ajusta en Configuración → Seguridad.",
+      modulo: "Seguridad",
+    },
+    {
+      titulo: "Departamentos en todas las empresas",
+      detalle: "Al crear un departamento, elija una empresa, todas o las que marque, en un grupo o en todos.",
+      modulo: "Configuración",
+    },
+    {
       titulo: "Deducciones por período",
       detalle: "Exporte a Excel lo que se descuenta a cada empleado en la quincena, corríjalo y vuelva a importarlo: cooperativas y préstamos que cambian cada quincena.",
       modulo: "Deducciones",

@@ -304,6 +304,9 @@ export const CATALOGO = [
       // Credenciales del Service Layer y qué se contabiliza en SAP. Por omisión
       // sólo SUPER_ADMIN (comodín), como el correo y los parámetros.
       { codigo: "configuracion.sap", etiqueta: "SAP Business One", descripcion: "Conexión con el Service Layer de SAP B1, mapeo de cuentas y centros de costo, y momento de envío de los asientos.", sensible: true },
+      // Un respaldo es TODA la base (salarios, identidades, cuentas): quien lo
+      // descarga se lleva todo. Por omisión sólo SUPER_ADMIN (comodín).
+      { codigo: "configuracion.respaldos", etiqueta: "Respaldos", descripcion: "Configurar y hacer respaldos de la base de datos (disco local, red o nube) y descargarlos.", sensible: true },
     ],
   },
   {

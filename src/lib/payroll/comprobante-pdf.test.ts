@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pdfComprobante } from "./comprobante-pdf";
+import { altoEstimadoCopia, pdfComprobante } from "./comprobante-pdf";
 import type { DatosBoleta } from "./comprobante";
 
 const datos: DatosBoleta = {
@@ -32,10 +32,22 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 const paginas = (pdf: Buffer) => (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
 
 describe("pdfComprobante", () => {
-  it("genera un PDF de una página", async () => {
+  it("genera una hoja carta con las dos copias (empleado y empresa)", async () => {
     const pdf = await pdfComprobante(datos);
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(paginas(pdf)).toBe(1);
+    expect(pdf.toString("latin1")).toMatch(/\/MediaBox \[0 0 612 792\]/);
+  });
+
+  it("cada copia cabe en media hoja aun en el caso más largo (4 ingresos, 13 deducciones, aviso, logo)", () => {
+    const largo = {
+      ...datos, estado: "BORRADOR",
+      ubicacion: ["Grupo PAGSA", "Sucursal San Pedro Sula"], puesto: "Supervisora de cajas", departamento: "Ventas al detalle",
+      direccion: "Barrio Guamilito, 3 calle, 8 avenida N.O., frente al mercado, San Pedro Sula, Cortés",
+      ingresos: Array.from({ length: 4 }, (_, i) => [`Ingreso ${i + 1}`, "L 10,000.00"] as [string, string]),
+      deducciones: Array.from({ length: 13 }, (_, i) => [`Deducción ${i + 1}`, "L 1,000.00"] as [string, string]),
+    };
+    expect(altoEstimadoCopia(largo, true)).toBeLessThanOrEqual(396 - 2 * 20 + 6);
   });
 
   it("incrusta el logo", async () => {

@@ -7,6 +7,7 @@ import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, nombreArchivoComproba
 import { comprobanteHtml } from "@/lib/payroll/comprobante-html";
 import { pdfComprobante } from "@/lib/payroll/comprobante-pdf";
 import { logosDeSucursales, pngComoDataUri } from "@/lib/organizacion/logo-bd";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 // GET: el comprobante de pago de una línea de planilla, en PDF para descargarlo o,
 // con `?modo=ver`, en pantalla. El empleado sólo puede abrir el suyo; RRHH, admin y
@@ -50,13 +51,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     );
   }
 
-  const ubicacion = { sucursal: detalle.sucursal, division: detalle.division, departamento: detalle.departamento };
+  const ubicacion = { sucursal: detalle.sucursal, division: detalle.division, departamento: detalle.departamento, puesto: detalle.puesto };
   // Desglose completo: cada deducción con su nombre e importe.
   const datos = construirBoleta(detalle, {
     empresa: detalle.planilla.empresa,
     empleado: detalle.empleado,
     planilla: detalle.planilla,
     ubicacion,
+    jerarquia: await jerarquiaNominaHabilitada(prisma),
   });
   const sucursalId = sucursalDeBoleta(ubicacion, detalle.empleado)?.id;
   const logo = sucursalId ? (await logosDeSucursales(prisma, [sucursalId])).get(sucursalId) : null;
@@ -64,14 +66,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Documento con datos salariales: nunca en caché compartida.
   const comunes = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 
-  if (new URL(req.url).searchParams.get("modo") !== "ver") {
+  const modo = new URL(req.url).searchParams.get("modo");
+  if (modo !== "ver") {
     const pdf = await pdfComprobante(datos, logo);
+    // `imprimir`: se abre en el visor del navegador para imprimirlo; si no, se descarga.
+    const disposicion = modo === "imprimir" ? "inline" : "attachment";
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         ...comunes,
         "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${nombreArchivoComprobante(detalle.empleado.codigo, detalle.planilla.fechaFin)}"`,
+        "Content-Disposition": `${disposicion}; filename="${nombreArchivoComprobante(detalle.empleado.codigo, detalle.planilla.fechaFin)}"`,
       },
     });
   }

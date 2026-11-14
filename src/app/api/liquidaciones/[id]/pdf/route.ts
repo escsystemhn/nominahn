@@ -45,7 +45,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!liq || !alcanzaEmpleado(g.usuario, liq.empleado)) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
 
   const firmante = await leerFirmante(prisma);
-  const conceptos = (Array.isArray(liq.conceptos) ? liq.conceptos : []) as unknown as ConceptoFiniquito[];
+  // El desglose congelado lleva también las deducciones, marcadas (desde el RAP a mes vencido).
+  const todos = (Array.isArray(liq.conceptos) ? liq.conceptos : []) as unknown as Array<ConceptoFiniquito & { deduccion?: boolean }>;
+  const conceptos = todos.filter((c) => !c.deduccion);
+  const deduccionesDetalle = todos.filter((c) => c.deduccion && Number(c.monto) !== 0).map((c) => ({ concepto: c.concepto, base: c.base, monto: Number(c.monto) }));
   const folio = folioLiquidacion(liq.id, liq.fechaSalida);
   const empresa = { ...liq.empleado.sucursal.empresa, logo: logoParaDocumento(liq.empleado.sucursal.logo) };
 
@@ -69,6 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     conceptos: conceptos.map((c) => ({ ...c, monto: Number(c.monto) })),
     totalPrestaciones: Number(liq.totalPrestaciones),
     deducciones: Number(liq.deducciones),
+    ...(deduccionesDetalle.length > 1 || deduccionesDetalle.some((x) => x.concepto !== "Anticipos y préstamos") ? { deduccionesDetalle } : {}),
     totalAPagar: Number(liq.totalAPagar),
     totalEnLetras: montoALetras(Number(liq.totalAPagar)),
     observaciones: (liq.observaciones ?? "").split("\n").map((s) => s.trim()).filter(Boolean),

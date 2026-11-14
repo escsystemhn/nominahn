@@ -33,6 +33,8 @@ import { descuentoIncapacidades, fechasCubiertas, type IncapacidadParaPlanilla }
 import { CERO, money, sumar, type Money } from "./money";
 import { aplicarDeducciones, CODIGO_ISR_FIJO, conMontosDelPeriodo, cuotaDelPeriodo, registrosDeAmortizacion, topesDelPeriodo, type Amortizacion } from "./deducciones";
 import { numeroDeQuincena, otraQuincena } from "./distribucion-quincenal";
+import { mesDe, reglaDelMes } from "./rap-mes-vencido";
+import { basesDelMesVencido, conRapEnLiquidacion, leerBaseRap } from "./rap-mes-vencido-bd";
 
 /** Art. 371: sin salario mínimo configurado, lo inembargable literal son los primeros L 100 del mes. */
 const MINIMO_INEMBARGABLE_LITERAL = 100;
@@ -95,6 +97,7 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
     include: {
       // Para guardar en la línea dónde estaba la persona al pagarse.
       departamento: { select: { divisionId: true } },
+      puesto: { select: { nombre: true } },
       deducciones: {
         // Sólo las deducciones VIGENTES en el período: una que aún no arranca o
         // que ya venció no puede descontarse del salario (Art. 371 C.T.).
@@ -223,6 +226,13 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   const inicioMes = new Date(Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth(), 1));
   const finMes = new Date(Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth() + 1, 0));
 
+  // RAP y Reserva a mes vencido (Parámetros de ley): la base de este mes es lo
+  // devengado el anterior. Sin la opción no se toca la tabla de bases.
+  const reglaRap = reglaDelMes(await leerBaseRap(prisma), mesDe(desde));
+  const basesRap = reglaRap === "EN_CURSO" ? null : await basesDelMesVencido(prisma, empleadoIds, mesDe(desde), reglaRap);
+  // Quien ya tiene liquidación de este mes con su RAP pendiente: lo cotizó ahí.
+  const rapEnLiquidacion = basesRap ? await conRapEnLiquidacion(prisma, empleadoIds, mesDe(desde)) : new Set<string>();
+
   // Fechas de ausencia por persona: cada semana con faltas pierde UN séptimo día.
   const ausenciasPorEmp = new Map<string, Date[]>();
   const extraPorEmp = new Map<string, HorasExtraPorJornada>();
@@ -325,6 +335,12 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
         }
       : null;
 
+    // A mes vencido: la base del mes anterior. Lo del mes de salida lo toma la
+    // liquidación; si ya la hay con el RAP pendiente, aquí no se descuenta nada.
+    const rapMesVencido = basesRap
+      ? { base: rapEnLiquidacion.has(emp.id) ? CERO : basesRap.porEmpleado.get(emp.id)?.base ?? CERO }
+      : null;
+
     // Lectura de memoria: ninguna consulta dentro del bucle.
     const bonoEval = bonos.get(emp.id);
     const bonificaciones = bonoEval ? bonoEval.bonoMonto : CERO;
@@ -362,6 +378,7 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       // IHSS mensual pactado en la ficha; null = por porcentaje.
       ihssMontoFijoMensual: emp.ihssMontoFijo,
       quincena,
+      rapMesVencido,
     };
     let result = calcularPlanilla(entradaCalculo, parametros);
 
@@ -416,6 +433,8 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       sucursalId: emp.sucursalId,
       divisionId: emp.departamento.divisionId,
       departamentoId: emp.departamentoId,
+      // Para el comprobante: el puesto de ese período, aunque después cambie.
+      puesto: emp.puesto?.nombre ?? null,
       salarioBase: result.salarioBase,
       // Informativo para la boleta: días efectivamente laborados. El descuento
       // por ausencia NO se deriva de este campo, viaja en `ausencias`.

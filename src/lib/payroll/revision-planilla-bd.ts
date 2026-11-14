@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { correoDeComprobantes } from "@/lib/email/destinatario";
 import { nombreCompleto } from "@/lib/utils";
 import { excesosDeJornada, revisarPlanilla, type LineaRevision, type RevisionPlanilla } from "./revision-planilla";
+import { puntosRapMesVencido } from "./rap-mes-vencido-bd";
 
 const CAMPOS_LINEA = {
   empleadoId: true,
@@ -51,7 +52,7 @@ export interface PlanillaAnterior {
  * Trabaja sobre TODAS las líneas, sin importar el filtro que se esté viendo en pantalla.
  */
 export async function cargarRevision(
-  db: Pick<PrismaClient, "planilla" | "planillaDetalle" | "marcaje">,
+  db: PrismaClient,
   planilla: { id: string; tipo: Prisma.PlanillaWhereInput["tipo"]; fechaInicio: Date; fechaFin: Date; sucursalId: string | null; divisionId: string | null; departamentoId: string | null }
 ): Promise<{ revision: RevisionPlanilla; anterior: PlanillaAnterior | null }> {
   // Días del período de quienes están en la planilla: jornada máxima (Arts. 332 y 333).
@@ -79,5 +80,14 @@ export async function cargarRevision(
     }),
   ]);
   const previas = anterior ? await db.planillaDetalle.findMany({ where: { planillaId: anterior.id }, select: CAMPOS_LINEA }) : null;
-  return { revision: revisarPlanilla(actual.map(aLinea), previas ? previas.map(aLinea) : null, excesosDeJornada(dias)), anterior };
+  const lineas = actual.map(aLinea);
+  const revision = revisarPlanilla(lineas, previas ? previas.map(aLinea) : null, excesosDeJornada(dias));
+  // RAP a mes vencido: quién quedó sin base y por qué. Sin la opción no consulta nada más.
+  // Lo que cambia dinero va antes de «sin cuenta» y «sin correo»; quién entró, al final.
+  const rap = await puntosRapMesVencido(db, planilla, lineas);
+  const informativos = revision.puntos.findIndex((p) => p.clave === "sin-cuenta" || p.clave === "sin-correo");
+  const soloInforma = (p: { clave: string }) => p.clave === "rap-nuevos" || p.clave === "rap-liquidacion";
+  revision.puntos.splice(informativos < 0 ? revision.puntos.length : informativos, 0, ...rap.filter((p) => !soloInforma(p)));
+  revision.puntos.push(...rap.filter(soloInforma));
+  return { revision, anterior };
 }

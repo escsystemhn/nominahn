@@ -1,15 +1,22 @@
 /**
- * El comprobante en PDF: lo que se descarga. Un archivo .html no se abre bien en
- * un teléfono, ni se puede entregar a un banco como constancia de ingresos.
+ * El comprobante en PDF: lo que se descarga y se imprime. Un archivo .html no se
+ * abre bien en un teléfono, ni se puede entregar a un banco como constancia de ingresos.
  *
- * Mismo pdfmake y misma tipografía estándar que los demás documentos. El diseño
- * es el de `comprobante-html.ts`, y el texto sale de las mismas funciones.
+ * MEDIA CARTA, DOS COPIAS (pedido del 2026-11-14): una hoja carta con el mismo
+ * comprobante dos veces, separado por una línea de corte: arriba la copia del
+ * empleado y abajo la de la empresa, cada una con su firma; la empresa archiva la
+ * firmada. Cada copia vive en su mitad (396 pt) con posición absoluta, así una no
+ * empuja a la otra; los tamaños están medidos para que quepa el caso más largo que
+ * produce `construirBoleta` (4 ingresos frente a 13 deducciones, con aviso de estado).
+ * Si alguna vez no cabe, cada copia va en su propia hoja, en la mitad de arriba.
+ *
+ * Mismo pdfmake y misma tipografía estándar que los demás documentos. El texto sale
+ * de las mismas funciones que `comprobante-html.ts`.
  */
 
 import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { pdfmakeListo } from "@/lib/reportes/salida";
 import { PRODUCTO } from "@/lib/marca";
-import { LOGO_CAJA_ALTO, LOGO_CAJA_ANCHO } from "@/lib/organizacion/logo";
 import type { LogoDocumento } from "@/lib/organizacion/logo-bd";
 import { avisoDeEstado, filasDelTrabajador, lineasDeMembrete, PIE_COMPROBANTE, seFirma, type DatosBoleta } from "./comprobante";
 
@@ -19,41 +26,49 @@ const TENUE = "#55656E";
 const FILETE_SUAVE = "#E8EDF0";
 const ALERTA = "#B91C1C";
 
-/** Carta menos los márgenes laterales de 48 pt. */
-const ANCHO_UTIL = 516;
-const ANCHO_DERECHA = 170;
-const SEPARACION = 24;
+/** Carta: 612 × 792 pt. Cada copia ocupa media hoja. */
+const ANCHO_HOJA = 612;
+const MEDIA_HOJA = 396;
+const MARGEN_X = 36;
+const MARGEN_Y = 20;
+const ANCHO_UTIL = ANCHO_HOJA - 2 * MARGEN_X; // 540
+/** Lo que puede medir una copia sin invadir la línea de corte. */
+const ALTO_COPIA = MEDIA_HOJA - 2 * MARGEN_Y + 6;
+const ANCHO_DERECHA = 160;
+const SEPARACION = 20;
 const ANCHO_LISTA = (ANCHO_UTIL - SEPARACION) / 2;
-const ANCHO_FECHA = 150;
+const ANCHO_FECHA = 130;
+const LOGO_MAX: [number, number] = [110, 38];
 const GROSOR_FILETE_SUAVE = 0.4;
+
+/** Medidas de una fila de importes según cuántas haya: con muchas, más juntas. */
+const densidad = (filas: number) => (filas > 9 ? { relleno: 1.3, fuente: 7.5 } : { relleno: 2.2, fuente: 8 });
 
 const cuadro = (c: unknown) => c as Content;
 
 /** Línea horizontal del ancho dado. */
-const filete = (ancho: number, grosor: number, color: string, margen: [number, number, number, number] = [0, 0, 0, 0]) => cuadro({
-  canvas: [{ type: "line", x1: 0, y1: 0, x2: ancho, y2: 0, lineWidth: grosor, lineColor: color }],
+const filete = (ancho: number, grosor: number, color: string, margen: [number, number, number, number] = [0, 0, 0, 0], guiones?: { length: number; space: number }) => cuadro({
+  canvas: [{ type: "line", x1: 0, y1: 0, x2: ancho, y2: 0, lineWidth: grosor, lineColor: color, ...(guiones ? { dash: guiones } : {}) }],
   margin: margen,
 });
 
-function membrete(d: DatosBoleta, logo: LogoDocumento | null | undefined): Content {
+function membrete(d: DatosBoleta, logo: LogoDocumento | null | undefined, copia: string): Content {
+  const lineas = lineasDeMembrete(d).map((l) => ({ text: l, fontSize: 7.5, color: TENUE, margin: [0, 1.5, 0, 0] }));
+  const textoEmpresa = { width: "*", stack: [{ text: d.empresa, fontSize: 10.5, bold: true, color: TINTA }, ...lineas] };
   return cuadro({
     columns: [
-      {
-        width: "*",
-        stack: [
-          logo ? { image: `data:image/png;base64,${logo.png.toString("base64")}`, fit: [LOGO_CAJA_ANCHO * 0.75, LOGO_CAJA_ALTO * 0.75], margin: [0, 0, 0, 8] } : { text: "" },
-          { text: d.empresa, fontSize: 11.5, bold: true, color: TINTA },
-          ...lineasDeMembrete(d).map((l) => ({ text: l, fontSize: 8.5, color: TENUE, margin: [0, 2.5, 0, 0] })),
-        ],
-      },
+      // El logo a la izquierda y no encima: en media hoja no sobra altura.
+      ...(logo ? [{ width: "auto", image: `data:image/png;base64,${logo.png.toString("base64")}`, fit: LOGO_MAX, margin: [0, 0, 10, 0] }] : []),
+      textoEmpresa,
       {
         width: ANCHO_DERECHA,
         alignment: "right",
         stack: [
-          { text: "Comprobante de pago", fontSize: 11.5, bold: true, color: TINTA },
-          { text: d.tipoPlanilla, fontSize: 8.5, color: TENUE, margin: [0, 2.5, 0, 0] },
-          { text: d.periodo, fontSize: 8.5, color: TENUE, margin: [0, 2.5, 0, 0] },
-          d.fechaPago ? { text: `Fecha de pago ${d.fechaPago}`, fontSize: 8.5, color: TENUE, margin: [0, 2.5, 0, 0] } : { text: "" },
+          { text: copia.toUpperCase(), fontSize: 6.5, bold: true, color: TENUE, characterSpacing: 0.6, margin: [0, 0, 0, 2] },
+          { text: "Comprobante de pago", fontSize: 10.5, bold: true, color: TINTA },
+          { text: d.tipoPlanilla, fontSize: 7.5, color: TENUE, margin: [0, 1.5, 0, 0] },
+          { text: d.periodo, fontSize: 7.5, color: TENUE, margin: [0, 1.5, 0, 0] },
+          d.fechaPago ? { text: `Fecha de pago ${d.fechaPago}`, fontSize: 7.5, color: TENUE, margin: [0, 1.5, 0, 0] } : { text: "" },
         ],
       },
     ],
@@ -63,31 +78,38 @@ function membrete(d: DatosBoleta, logo: LogoDocumento | null | undefined): Conte
 
 function trabajadorYNeto(d: DatosBoleta): Content {
   const celda = ([etiqueta, valor]: [string, string]) => ({
-    stack: [{ text: etiqueta, fontSize: 8.5, color: TENUE }, { text: valor, fontSize: 9, color: TEXTO, margin: [0, 2, 0, 0] }],
-    margin: [0, 4, 8, 0],
+    stack: [{ text: etiqueta, fontSize: 6.5, color: TENUE }, { text: valor, fontSize: 8, color: TEXTO, margin: [0, 1, 0, 0] }],
+    margin: [0, 3, 6, 0],
   });
-  const filas = filasDelTrabajador(d).map((f) => [celda(f[0]), f[1] ? celda(f[1]) : { text: "" }]);
+  // Los datos de dos en dos, como en pantalla, pero en tres columnas: ahorra una fila.
+  const datos = filasDelTrabajador(d).flat();
+  const filas: Content[][] = [];
+  for (let i = 0; i < datos.length; i += 3) {
+    const fila = datos.slice(i, i + 3).map(celda) as Content[];
+    while (fila.length < 3) fila.push({ text: "" });
+    filas.push(fila);
+  }
 
   return cuadro({
     columns: [
       {
         width: "*",
         stack: [
-          { text: d.nombreEmpleado, fontSize: 12, bold: true, color: TINTA, margin: [0, 0, 0, 3] },
-          { table: { widths: ["*", "*"], body: filas }, layout: "noBorders" },
+          { text: d.nombreEmpleado, fontSize: 10.5, bold: true, color: TINTA },
+          filas.length ? { table: { widths: ["*", "*", "*"], body: filas }, layout: "noBorders" } : { text: "" },
         ],
       },
       {
         width: ANCHO_DERECHA,
         stack: [
-          { text: "Neto a recibir", fontSize: 8.5, color: TENUE, alignment: "right", margin: [0, 0, 0, 2] },
+          { text: "Neto a recibir", fontSize: 7.5, color: TENUE, alignment: "right", margin: [0, 0, 0, 1] },
           {
             // Tabla de ancho automático para que el doble filete mida lo mismo que la cifra.
             columns: [
               { width: "*", text: "" },
               {
                 width: "auto",
-                table: { widths: ["auto"], body: [[{ text: d.salarioNeto, fontSize: 22, bold: true, color: TINTA, noWrap: true }], [{ text: "", fontSize: 1 }]] },
+                table: { widths: ["auto"], body: [[{ text: d.salarioNeto, fontSize: 16, bold: true, color: TINTA, noWrap: true }], [{ text: "", fontSize: 1 }]] },
                 layout: {
                   hLineWidth: (i: number) => (i === 1 || i === 2 ? 0.8 : 0),
                   hLineColor: () => TINTA,
@@ -95,7 +117,7 @@ function trabajadorYNeto(d: DatosBoleta): Content {
                   paddingLeft: () => 0,
                   paddingRight: () => 0,
                   paddingTop: () => 0,
-                  paddingBottom: (i: number) => (i === 0 ? 3 : 0),
+                  paddingBottom: (i: number) => (i === 0 ? 2 : 0),
                 },
               },
             ],
@@ -104,24 +126,25 @@ function trabajadorYNeto(d: DatosBoleta): Content {
       },
     ],
     columnGap: SEPARACION,
-    margin: [0, 11, 0, 12],
+    margin: [0, 6, 0, 7],
   });
 }
 
 /** `filas` iguala las dos columnas para que los totales queden a la misma altura. */
 function lista(titulo: string, pares: Array<[string, string]>, etiquetaTotal: string, total: string, filas: number): Content {
+  const { relleno: r, fuente: f } = densidad(filas);
   const lineas = pares.length
-    ? pares.map(([k, v]) => [{ text: k, fontSize: 9, margin: [0, 3, 6, 3] }, { text: v, fontSize: 9, alignment: "right", noWrap: true, margin: [0, 3, 0, 3] }])
-    : [[{ text: `Sin ${titulo.toLowerCase()} en este período`, fontSize: 9, color: TENUE, colSpan: 2, margin: [0, 3, 0, 3] }, {}]];
+    ? pares.map(([k, v]) => [{ text: k, fontSize: f, margin: [0, r, 6, r] }, { text: v, fontSize: f, alignment: "right", noWrap: true, margin: [0, r, 0, r] }])
+    : [[{ text: `Sin ${titulo.toLowerCase()} en este período`, fontSize: f, color: TENUE, colSpan: 2, margin: [0, r, 0, r] }, {}]];
   // El relleno no lleva filete, y ese grosor lo compensa abajo: si no, los dos totales no coinciden.
-  const relleno = Array.from({ length: Math.max(0, filas - Math.max(pares.length, 1)) }, () => [
-    { text: " ", fontSize: 9, margin: [0, 3, 6, 3 + GROSOR_FILETE_SUAVE] }, { text: " ", fontSize: 9, margin: [0, 3, 0, 3 + GROSOR_FILETE_SUAVE] },
+  const vacias = Array.from({ length: Math.max(0, filas - Math.max(pares.length, 1)) }, () => [
+    { text: " ", fontSize: f, margin: [0, r, 6, r + GROSOR_FILETE_SUAVE] }, { text: " ", fontSize: f, margin: [0, r, 0, r + GROSOR_FILETE_SUAVE] },
   ]);
   const cuerpo = [
-    [{ text: titulo, bold: true, fontSize: 9, color: TINTA, colSpan: 2, margin: [0, 0, 0, 4] }, {}],
+    [{ text: titulo, bold: true, fontSize: 8, color: TINTA, colSpan: 2, margin: [0, 0, 0, 2.5] }, {}],
     ...lineas,
-    ...relleno,
-    [{ text: etiquetaTotal, bold: true, fontSize: 9, color: TINTA, margin: [0, 5, 6, 0] }, { text: total, bold: true, fontSize: 9, color: TINTA, alignment: "right", noWrap: true, margin: [0, 5, 0, 0] }],
+    ...vacias,
+    [{ text: etiquetaTotal, bold: true, fontSize: 8, color: TINTA, margin: [0, 3, 6, 0] }, { text: total, bold: true, fontSize: 8, color: TINTA, alignment: "right", noWrap: true, margin: [0, 3, 0, 0] }],
   ];
   const ultima = cuerpo.length - 1;
   return cuadro({
@@ -140,17 +163,38 @@ function lista(titulo: string, pares: Array<[string, string]>, etiquetaTotal: st
   });
 }
 
-export async function pdfComprobante(d: DatosBoleta, logo?: LogoDocumento | null): Promise<Buffer> {
-  const pdfmake = pdfmakeListo();
+/**
+ * Lo que mide una copia, por arriba: sirve para decidir si las dos caben en una
+ * hoja. Cuenta las líneas de texto con su interlineado (Helvetica ≈ 1.16 × tamaño).
+ */
+export function altoEstimadoCopia(d: DatosBoleta, conLogo: boolean): number {
+  const lh = (pt: number) => pt * 1.16;
+  const filas = Math.max(d.ingresos.length, d.deducciones.length, 1);
+  const { relleno, fuente } = densidad(filas);
+  // Una línea de contacto larga se parte en dos.
+  const lineasMembrete = lineasDeMembrete(d).reduce((n, l) => n + (l.length > 95 ? 2 : 1), 0);
+  const izquierda = lh(10.5) + lineasMembrete * (lh(7.5) + 1.5);
+  const derecha = lh(6.5) + 2 + lh(10.5) + 3 * (lh(7.5) + 1.5);
+  const membrete = Math.max(izquierda, derecha, conLogo ? LOGO_MAX[1] : 0);
+  const datos = Math.ceil(filasDelTrabajador(d).flat().length / 3);
+  const trabajador = Math.max(lh(10.5) + datos * (3 + lh(6.5) + 1 + lh(8)), lh(7.5) + 1 + lh(16) + 3) + 13;
+  const listas = lh(8) + 2.5 + filas * (lh(fuente) + 2 * relleno + GROSOR_FILETE_SUAVE) + 3 + lh(8) + 2;
+  const aviso = avisoDeEstado(d.estado) ? lh(8) + 6 + 8 : 0;
+  const letras = d.netoEnLetras ? lh(7.5) * (d.netoEnLetras.length > 120 ? 2 : 1) + 6 : 0;
+  const firma = seFirma(d) ? 22 + 1 + lh(7) + 3 : 0;
+  const pie = lh(6.5) + 6;
+  return aviso + membrete + 7 + trabajador + listas + letras + firma + pie;
+}
+
+function copia(d: DatosBoleta, logo: LogoDocumento | null | undefined, rotulo: string): Content[] {
   const aviso = avisoDeEstado(d.estado);
   const filas = Math.max(d.ingresos.length, d.deducciones.length, 1);
-
   const contenido: Content[] = [
     aviso
-      ? cuadro({ table: { widths: ["*"], body: [[{ text: aviso.texto, bold: true, fontSize: 9.5, color: ALERTA, margin: [6, 4, 6, 4] }]] }, layout: { hLineColor: () => ALERTA, vLineColor: () => ALERTA, hLineWidth: () => 1, vLineWidth: () => 1 }, margin: [0, 0, 0, 14] })
+      ? cuadro({ table: { widths: ["*"], body: [[{ text: aviso.texto, bold: true, fontSize: 8, color: ALERTA, margin: [5, 2, 5, 2] }]] }, layout: { hLineColor: () => ALERTA, vLineColor: () => ALERTA, hLineWidth: () => 1, vLineWidth: () => 1 }, margin: [0, 0, 0, 8] })
       : { text: "" },
-    membrete(d, logo),
-    filete(ANCHO_UTIL, 1.5, TINTA, [0, 14, 0, 0]),
+    membrete(d, logo, rotulo),
+    filete(ANCHO_UTIL, 1.2, TINTA, [0, 7, 0, 0]),
     trabajadorYNeto(d),
     cuadro({
       columns: [
@@ -160,35 +204,63 @@ export async function pdfComprobante(d: DatosBoleta, logo?: LogoDocumento | null
       columnGap: SEPARACION,
     }),
     d.netoEnLetras
-      ? { text: [{ text: "Son: ", color: TENUE }, { text: d.netoEnLetras }], fontSize: 9, margin: [0, 14, 0, 0] }
+      ? { text: [{ text: "Son: ", color: TENUE }, { text: d.netoEnLetras }], fontSize: 7.5, margin: [0, 6, 0, 0] }
       : { text: "" },
   ];
 
   if (seFirma(d)) {
     contenido.push(cuadro({
       columns: [
-        { width: ANCHO_UTIL - ANCHO_FECHA - SEPARACION, stack: [filete(ANCHO_UTIL - ANCHO_FECHA - SEPARACION, 0.6, TINTA), { text: "Recibí conforme (firma del trabajador)", fontSize: 8.5, color: TENUE, margin: [0, 4, 0, 0] }] },
-        { width: ANCHO_FECHA, stack: [filete(ANCHO_FECHA, 0.6, TINTA), { text: "Fecha", fontSize: 8.5, color: TENUE, margin: [0, 4, 0, 0] }] },
+        { width: ANCHO_UTIL - ANCHO_FECHA - SEPARACION, stack: [filete(ANCHO_UTIL - ANCHO_FECHA - SEPARACION, 0.6, TINTA), { text: "Recibí conforme (firma del trabajador)", fontSize: 7, color: TENUE, margin: [0, 3, 0, 0] }] },
+        { width: ANCHO_FECHA, stack: [filete(ANCHO_FECHA, 0.6, TINTA), { text: "Fecha", fontSize: 7, color: TENUE, margin: [0, 3, 0, 0] }] },
       ],
       columnGap: SEPARACION,
-      margin: [0, 46, 0, 0],
-      unbreakable: true,
+      margin: [0, 22, 0, 0],
     }));
   }
 
   contenido.push({
     text: `${d.emitido ? `Emitido el ${d.emitido} con ${PRODUCTO}.` : `Emitido con ${PRODUCTO}.`} ${PIE_COMPROBANTE}`,
-    fontSize: 7.5,
+    fontSize: 6.5,
     color: TENUE,
-    margin: [0, 22, 0, 0],
+    margin: [0, 6, 0, 0],
   });
+  return contenido;
+}
+
+export const COPIAS_COMPROBANTE = ["Copia del empleado", "Copia de la empresa"] as const;
+
+export async function pdfComprobante(d: DatosBoleta, logo?: LogoDocumento | null): Promise<Buffer> {
+  const pdfmake = pdfmakeListo();
+  const aviso = avisoDeEstado(d.estado);
+  const caben = altoEstimadoCopia(d, !!logo) <= ALTO_COPIA;
+
+  const corte = cuadro({
+    stack: [
+      filete(ANCHO_HOJA - 2 * 18, 0.5, TENUE, [0, 0, 0, 0], { length: 4, space: 3 }),
+      { text: "cortar aquí", fontSize: 5.5, color: TENUE, alignment: "center", margin: [0, 2, 0, 0] },
+    ],
+    absolutePosition: { x: 18, y: MEDIA_HOJA },
+  });
+
+  // Cada copia en su mitad, con posición absoluta: si una crece, no mueve a la otra.
+  const contenido: Content[] = caben
+    ? [
+        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[0]), absolutePosition: { x: MARGEN_X, y: MARGEN_Y } }),
+        corte,
+        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[1]), absolutePosition: { x: MARGEN_X, y: MEDIA_HOJA + MARGEN_Y } }),
+      ]
+    : [
+        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[0]) }),
+        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[1]), pageBreak: "before" }),
+      ];
 
   const definicion: TDocumentDefinitions = {
     pageSize: "LETTER",
-    pageMargins: [48, 44, 48, 44],
+    pageMargins: [MARGEN_X, MARGEN_Y, MARGEN_X, MARGEN_Y],
     defaultStyle: { font: "Helvetica", color: TEXTO },
     info: { title: `Comprobante de pago del ${d.periodo}`, producer: PRODUCTO },
-    watermark: aviso ? { text: aviso.marca, color: ALERTA, opacity: 0.1, bold: true } : undefined,
+    watermark: aviso ? { text: aviso.marca, color: ALERTA, opacity: 0.08, bold: true } : undefined,
     content: contenido,
   };
   return pdfmake.createPdf(definicion).getBuffer();

@@ -71,6 +71,25 @@ describe("boleta — dónde estaba la persona al pagarle", () => {
     expect(b).toMatchObject({ sucursal: "Oriente", departamento: "Ventas", division: null });
   });
 
+  it("el puesto de la línea manda; si no lo guardó (antes del 2026-11-14), el actual", () => {
+    const empleado = { ...conEmpleado.empleado, puesto: { nombre: "Gerente" } };
+    expect(construirBoleta(detalle(), { ...conEmpleado, empleado, ubicacion: { puesto: "Cajera" } }).puesto).toBe("Cajera");
+    expect(construirBoleta(detalle(), { ...conEmpleado, empleado, ubicacion: { puesto: null } }).puesto).toBe("Gerente");
+    expect(construirBoleta(detalle(), conEmpleado).puesto).toBeNull();
+  });
+
+  it("con la jerarquía de nómina: primero el grupo y luego la sucursal (la división)", () => {
+    const ubicacion = { sucursal: { id: "g", nombre: "Grupo PAGSA" }, division: { nombre: "San Pedro Sula" } };
+    expect(construirBoleta(detalle(), { ...conEmpleado, ubicacion, jerarquia: true }).ubicacion).toEqual(["Grupo PAGSA", "Sucursal San Pedro Sula"]);
+    // Sin la palabra en el nombre, se le antepone.
+    expect(construirBoleta(detalle(), { ...conEmpleado, ubicacion: { ...ubicacion, sucursal: { id: "c", nombre: "Confidencial" } }, jerarquia: true }).ubicacion)
+      .toEqual(["Grupo Confidencial", "Sucursal San Pedro Sula"]);
+    // Sin jerarquía: sucursal y división, como se llaman en el resto del sistema.
+    expect(construirBoleta(detalle(), { ...conEmpleado, ubicacion }).ubicacion).toEqual(["Sucursal Grupo PAGSA", "División San Pedro Sula"]);
+    // Sin división, sólo el primero.
+    expect(construirBoleta(detalle(), { ...conEmpleado, ubicacion: { sucursal: ubicacion.sucursal }, jerarquia: true }).ubicacion).toEqual(["Grupo PAGSA"]);
+  });
+
   it("sucursalDeBoleta da la misma que el documento, de ahí sale el logo", () => {
     expect(sucursalDeBoleta({ sucursal: { id: "antes", nombre: "Norte" } }, conEmpleado.empleado)?.id).toBe("antes");
     expect(sucursalDeBoleta({ sucursal: null }, conEmpleado.empleado)?.id).toBe("hoy");

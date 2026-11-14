@@ -309,7 +309,7 @@ const navItems: NavEntry[] = [
     href: "/configuracion",
     label: "Configuración",
     icon: <IconCog />,
-    permisos: ["configuracion.ver", "configuracion.editar"],
+    permisos: ["configuracion.ver", "configuracion.editar", "configuracion.respaldos"],
   },
 ];
 

@@ -175,6 +175,8 @@ export interface DatosFiniquito {
   conceptos: ConceptoFiniquito[];
   totalPrestaciones: number;
   deducciones: number;
+  /** Una línea por deducción (préstamos y anticipos, retenciones de ley). */
+  deduccionesDetalle?: { concepto: string; base: string; monto: number }[];
   totalAPagar: number;
   totalEnLetras: string;
   observaciones: string[];
@@ -213,10 +215,19 @@ export async function pdfFiniquito(d: DatosFiniquito): Promise<Buffer> {
           { text: "Total de prestaciones", colSpan: 3, bold: true, fontSize: 9.5, margin: [4, 4, 4, 2] }, {}, {},
           { text: d.moneda(d.totalPrestaciones), bold: true, fontSize: 9.5, alignment: "right", margin: [4, 4, 4, 2] },
         ],
-        [
-          { text: "Deducciones (anticipos y préstamos)", colSpan: 3, fontSize: 9, margin: [4, 2, 4, 2] }, {}, {},
-          { text: d.deducciones ? `− ${d.moneda(d.deducciones)}` : d.moneda(0), fontSize: 9, alignment: "right", margin: [4, 2, 4, 2] },
-        ],
+        // Con detalle (finiquitos que llevan retenciones de ley, como el RAP a mes
+        // vencido), una línea por deducción; sin él, la línea de siempre.
+        // El signo es el guion ASCII: la fuente del PDF no trae «−» (U+2212) y lo pinta como una comilla.
+        ...(d.deduccionesDetalle && d.deduccionesDetalle.length > 0
+          ? d.deduccionesDetalle.map((x) => [
+              { text: x.concepto, fontSize: 9, margin: [4, 2, 4, 2] },
+              { text: x.base, colSpan: 2, fontSize: 8, color: TENUE, margin: [4, 2, 4, 2] }, {},
+              { text: `- ${d.moneda(x.monto)}`, fontSize: 9, alignment: "right", margin: [4, 2, 4, 2] },
+            ])
+          : [[
+              { text: "Deducciones (anticipos y préstamos)", colSpan: 3, fontSize: 9, margin: [4, 2, 4, 2] }, {}, {},
+              { text: d.deducciones ? `- ${d.moneda(d.deducciones)}` : d.moneda(0), fontSize: 9, alignment: "right", margin: [4, 2, 4, 2] },
+            ]]),
         [
           { text: "Total a pagar", colSpan: 3, bold: true, fontSize: 10.5, fillColor: "#EBF0F2", margin: [4, 5, 4, 5] }, {}, {},
           { text: d.moneda(d.totalAPagar), bold: true, fontSize: 10.5, fillColor: "#EBF0F2", alignment: "right", margin: [4, 5, 4, 5] },

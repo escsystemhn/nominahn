@@ -1,10 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { money } from "@/lib/payroll/money";
+import { PARAMETROS_DEFAULT } from "@/lib/payroll/calculos-hn";
 import { conMontosDelPeriodo, MARCA_MONTO_PERIODO } from "@/lib/payroll/deducciones";
 import {
-  armarMatriz, decidirCelda, estadosDelPeriodo, observacionMontoPeriodo, sugerirTiposNuevos, totalDeCelda, validarMontos,
-  type ContextoMontos, type DeduccionParaEstado, type EmpleadoMatriz, type EstadoCelda,
+  armarMatriz, decidirBaseRap, decidirCelda, estadosDelPeriodo, observacionMontoPeriodo, sugerirTiposNuevos, totalDeCelda, validarMontos,
+  type ContextoMontos, type DeduccionParaEstado, type EmpleadoMatriz, type EstadoCelda, type OperacionMonto, type ResultadoMontos, type ContextoBaseRap,
 } from "@/lib/importacion/montos-periodo";
+
+/** Sólo los montos de deducción (sin las bases del RAP). */
+const montosDe = (r: ResultadoMontos) => r.operaciones.filter((o): o is OperacionMonto => o.clase === "MONTO_PERIODO");
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`);
 const PERIODO = { tipo: "QUINCENAL" as const, desde: "2026-11-01", hasta: "2026-11-15" };
@@ -133,7 +137,7 @@ describe("validar el archivo de montos del período", () => {
     ].join("\n"), contexto(), todos);
     expect(r.incidencias.filter((i) => i.severidad === "ERROR")).toHaveLength(0);
     expect([r.nuevos, r.cambian, r.seQuitan]).toEqual([1, 1, 0]);
-    expect(r.operaciones.map((o) => `${o.referencia}:${o.accion}:${o.monto}`)).toEqual([
+    expect(montosDe(r).map((o) => `${o.referencia}:${o.accion}:${o.monto}`)).toEqual([
       "010122 Empleado 010122, Cooperativa AUDI:PONER:5100.00",
       "010130 Empleado 010130, Préstamo RAP:PONER:2076.09",
     ]);
@@ -152,12 +156,12 @@ describe("validar el archivo de montos del período", () => {
     const r = validarMontos(["codigo,PTMO-RAP,seguro medico", "010001,100,1000"].join("\n"), contexto(), todos);
     expect(r.columnasDesconocidas).toEqual([]);
     expect(r.operaciones).toHaveLength(1); // la cooperativa no viene: no se quita
-    expect(r.operaciones[0].tipoDeduccionId).toBe("rap");
+    expect(montosDe(r)[0].tipoDeduccionId).toBe("rap");
   });
 
   it("acepta coma decimal y separador de miles en las celdas", () => {
     const r = validarMontos(["Codigo Empleado;Préstamo RAP (PTMO-RAP)", "010130;1.399,41"].join("\n"), contexto(), todos);
-    expect(r.operaciones[0].monto).toBe("1399.41");
+    expect(montosDe(r)[0].monto).toBe("1399.41");
   });
 
   it("errores con su línea: empleado inexistente, repetido, fuera de alcance, inactivo y monto ilegible", () => {
@@ -212,7 +216,7 @@ describe("columnas que todavía no son tipos", () => {
   it("una columna renombrada que conserva «(CÓDIGO)» sigue siendo de ese tipo", () => {
     const r = validarMontos(["Codigo Empleado,Coop de la empresa (COOP-AUDI)", "010130,100"].join("\n"), contexto(), todos);
     expect(r.columnasDesconocidas).toEqual([]);
-    expect(r.operaciones[0].tipoDeduccionId).toBe("audi");
+    expect(montosDe(r)[0].tipoDeduccionId).toBe("audi");
   });
 
   it("propone crear las columnas con montos, con código y categoría, y no los totales ni las vacías", () => {
@@ -262,5 +266,81 @@ describe("archivo exportado", () => {
     const r = validarMontos(csv, ctx, todos);
     expect(r.operaciones).toHaveLength(0);
     expect(r.incidencias).toHaveLength(0);
+  });
+});
+
+// ─── Base del RAP a mes vencido ─────────────────────────────────────────────
+
+describe("columna «Base RAP (mes anterior)»", () => {
+  const baseRap = (o: Partial<ContextoBaseRap> = {}): ContextoBaseRap => ({
+    mes: "2026-11",
+    regla: "ANTERIOR",
+    // 010122 ya tiene base importada; 010001 sólo la de sus planillas de octubre.
+    importadas: new Map([["id-010122", money(50000)]]),
+    automaticas: new Map([["id-010001", money(30000)], ["id-010122", money(30000)]]),
+    planillasMes: new Map(),
+    parametros: PARAMETROS_DEFAULT,
+    ...o,
+  });
+  const CABB = "Codigo Empleado,Empleado,Departamento,Base RAP (mes anterior)";
+
+  it("decidir la celda: vacía vuelve a la del sistema; igual a la del sistema no se guarda", () => {
+    expect(decidirBaseRap(null, money(30000), money(30000))).toEqual({ accion: "IGUAL" });
+    expect(decidirBaseRap(null, money(30000), null)).toEqual({ accion: "IGUAL" });
+    expect(decidirBaseRap(money(50000), money(30000), null)).toMatchObject({ accion: "QUITAR" });
+    expect(decidirBaseRap(money(50000), money(30000), money(50000))).toEqual({ accion: "IGUAL" });
+    expect(decidirBaseRap(null, money(30000), money(0))).toMatchObject({ accion: "PONER" });
+  });
+
+  it("un archivo sólo con la base vale: crea, quita y deja igual, con el RAP en la vista previa", () => {
+    const r = validarMontos([CABB, "010001,A,Adm,35000", "010122,B,Adm,", "010130,C,Adm,"].join("\n"), contexto({ baseRap: baseRap() }), todos);
+    expect(r.incidencias.filter((i) => i.severidad === "ERROR")).toEqual([]);
+    expect(r.operaciones.map((o) => `${o.clase}:${o.accion}:${o.despues}`)).toEqual(["BASE_RAP:PONER:35000.00", "BASE_RAP:QUITAR:30000.00"]);
+    expect([r.nuevos, r.seQuitan, r.sinCambio]).toEqual([1, 1, 1]);
+    // 35,000 − 11,903.13 = 23,096.87 → 346.45 de cada parte; Reserva 4 % = 1,400.
+    expect(r.previsualizacion[0].cambios?.join(" ")).toMatch(/RAP L.*346\.45 del trabajador y L.*346\.45 del patrono, Reserva L.*1,400\.00/);
+    expect(r.previsualizacion[1].cambios?.join(" ")).toMatch(/vuelve a la de las planillas de octubre/);
+  });
+
+  it("no deja cambiar la base si ya hay una planilla del mes aprobada, ni ponérsela a un inactivo", () => {
+    const ctx = contexto({ baseRap: baseRap({ planillasMes: new Map([["id-010001", { estado: "APROBADA" as const }]]) }) });
+    const r = validarMontos([CABB, "010001,A,Adm,35000", "010999,X,Adm,20000"].join("\n"), ctx, todos);
+    const errores = r.incidencias.filter((i) => i.severidad === "ERROR").map((i) => i.mensaje);
+    expect(errores).toEqual([
+      expect.stringMatching(/planilla de noviembre de 2026 aprobada/),
+      expect.stringMatching(/no está activo/),
+    ]);
+    expect(r.operaciones).toEqual([]);
+  });
+
+  it("con una planilla del mes en borrador, avisa que hay que recalcularla", () => {
+    const ctx = contexto({ baseRap: baseRap({ planillasMes: new Map([["id-010001", { estado: "BORRADOR" as const }]]) }) });
+    const r = validarMontos([CABB, "010001,A,Adm,35000"].join("\n"), ctx, todos);
+    expect(r.incidencias.map((i) => i.mensaje).join(" ")).toMatch(/vuelva a calcularla para que tome la base nueva/);
+  });
+
+  it("si el RAP no va a mes vencido, la columna se ignora con un aviso (no es un tipo nuevo)", () => {
+    const r = validarMontos([`${CABB},Cooperativa AUDI (COOP-AUDI)`, "010001,A,Adm,35000,500"].join("\n"), contexto(), todos);
+    expect(r.columnasDesconocidas).toEqual([]);
+    expect(r.incidencias.map((i) => i.mensaje).join(" ")).toMatch(/sólo se usa con el RAP a mes vencido/);
+    expect(r.operaciones.every((o) => o.clase === "MONTO_PERIODO")).toBe(true);
+  });
+
+  it("al exportar va después del empleado, con la importada o la del sistema; no suma al total", () => {
+    const ctx = contexto({ baseRap: baseRap() });
+    const { columnas, filas, total } = armarMatriz(
+      [
+        { id: "id-010001", codigo: "010001", nombre: "A", departamento: "Adm" },
+        { id: "id-010122", codigo: "010122", nombre: "B", departamento: "Adm" },
+        { id: "id-010130", codigo: "010130", nombre: "C", departamento: "Adm" },
+      ],
+      TIPOS, ctx.estados, ctx.baseRap,
+    );
+    expect(columnas[3].etiqueta).toBe("Base RAP (mes anterior)");
+    expect(filas.map((f) => f[3])).toEqual(["30000.00", "50000.00", ""]);
+    expect(total.toFixed(2)).toBe("6774.39");
+    // Ida y vuelta: lo exportado no cambia nada.
+    const csv = [columnas.map((c) => c.etiqueta).join(","), ...filas.map((f) => f.join(","))].join("\n");
+    expect(validarMontos(csv, ctx, todos).operaciones).toEqual([]);
   });
 });
