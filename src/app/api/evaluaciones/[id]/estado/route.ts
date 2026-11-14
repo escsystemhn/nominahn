@@ -4,7 +4,8 @@ import type { Permiso } from "@/lib/auth/permisos";
 import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { audit, getClientInfo } from "@/lib/audit";
-import { calcularBonoEvaluacion, marcarBonoAplicado } from "@/lib/evaluaciones/bonus-engine";
+import { bonoParaCalificacion } from "@/lib/evaluaciones/bonus-engine";
+import { calificacionPonderada, consolidarCriterios, consolidarParticipantes } from "@/lib/evaluaciones/calificacion";
 import { z } from "zod";
 import { parsearBody } from "@/lib/http/validar";
 import { EstadoEvaluacion as EstadoEvaluacionEnum } from "@prisma/client";
@@ -73,42 +74,73 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Sin permisos para esta transición" }, { status: 403 });
   }
 
-  // Al finalizar: consolidar calificación, calcular bono, registrar fecha de firma
+  // Al finalizar: consolidar la calificación, dejar a la vista el bono y la fecha de firma.
   const extraData: Record<string, unknown> = {};
+  let consolidados: ReturnType<typeof consolidarCriterios> | null = null;
   if (nuevoEstado === "FINALIZADA") {
-    // Calcular promedio ponderado de participantes completados
     const participantes = await prisma.evaluacionParticipante.findMany({
-      where: { evaluacionId: id, estado: "COMPLETADO", calificacion: { not: null } },
+      where: { evaluacionId: id, estado: "COMPLETADO" },
+      select: {
+        calificacion: true,
+        criteriosParticipante: { select: { competenciaId: true, criterio: true, calificacion: true, peso: true } },
+      },
     });
 
+    let nota: number | null;
     if (participantes.length > 0) {
-      const suma = participantes.reduce((acc, p) => acc + Number(p.calificacion), 0);
-      extraData.calificacion = suma / participantes.length;
+      // 360°: cada evaluador vale lo mismo, y cada uno por sus aspectos ponderados.
+      const filas = participantes.map((p) => ({
+        calificacion: p.calificacion === null ? null : Number(p.calificacion),
+        criterios: p.criteriosParticipante.map((c) => ({
+          competenciaId: c.competenciaId,
+          criterio: c.criterio,
+          calificacion: Number(c.calificacion),
+          peso: Number(c.peso),
+        })),
+      }));
+      nota = consolidarParticipantes(filas);
+      consolidados = consolidarCriterios(filas.flatMap((f) => f.criterios));
+    } else {
+      // Directa: la nota de sus aspectos (lo que ya se guardó al calificarlos).
+      const criterios = await prisma.criterioEvaluacion.findMany({
+        where: { evaluacionId: id, participanteId: null },
+        select: { calificacion: true, peso: true },
+      });
+      nota = calificacionPonderada(criterios.map((c) => ({ calificacion: Number(c.calificacion), peso: Number(c.peso) })));
     }
 
+    // Antes una evaluación sin respuestas se cerraba con 0 y así quedaba para siempre.
+    if (nota === null) {
+      return NextResponse.json({ error: "La evaluación no tiene calificaciones: califique sus aspectos antes de finalizarla." }, { status: 422 });
+    }
+
+    extraData.calificacion = nota;
+    if (evaluacion.desempeno === null) extraData.desempeno = nota;
     extraData.fechaFirma = new Date();
 
-    // Motor de bono
-    const bono = await calcularBonoEvaluacion(
-      evaluacion.empleadoId,
-      evaluacion.tipo
-    );
-    if (bono) {
-      extraData.bonoPorcentaje = bono.bonoPorcentaje;
-      extraData.bonoMonto = bono.bonoMonto;
+    // El bono queda a la vista, pero NO se marca aplicado: lo marca la planilla que lo
+    // paga (calculo-planilla-bd.ts). Antes se marcaba aquí y la planilla nunca lo pagaba.
+    const bono = await bonoParaCalificacion(evaluacion.empleadoId, evaluacion.tipo, nota);
+    extraData.bonoPorcentaje = bono?.bonoPorcentaje ?? null;
+    extraData.bonoMonto = bono?.bonoMonto ?? null;
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (consolidados && consolidados.length > 0) {
+      await tx.criterioEvaluacion.deleteMany({ where: { evaluacionId: id, participanteId: null } });
+      await tx.criterioEvaluacion.createMany({
+        data: consolidados.map((c) => ({
+          evaluacionId: id,
+          participanteId: null,
+          competenciaId: c.competenciaId,
+          criterio: c.criterio,
+          calificacion: c.calificacion as number,
+          peso: c.peso,
+        })),
+      });
     }
-  }
-
-  const updated = await prisma.evaluacion.update({
-    where: { id },
-    data: { estado: nuevoEstado, ...extraData },
+    return tx.evaluacion.update({ where: { id }, data: { estado: nuevoEstado, ...extraData } });
   });
-
-  // Si finalizó con bono, marcarlo aplicado
-  if (nuevoEstado === "FINALIZADA" && extraData.bonoMonto) {
-    const bono = await calcularBonoEvaluacion(evaluacion.empleadoId, evaluacion.tipo);
-    if (bono) await marcarBonoAplicado(bono.evaluacionId, bono.bonoMonto, bono.bonoPorcentaje);
-  }
 
   const { ip, userAgent } = getClientInfo(req);
   await audit({
@@ -118,7 +150,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     usuarioId: g.usuario.id,
     usuarioEmail: g.usuario.email ?? undefined,
     valorAnterior: { estado: estadoActual },
-    valorNuevo: { estado: nuevoEstado },
+    valorNuevo: { estado: nuevoEstado, ...(nuevoEstado === "FINALIZADA" ? { calificacion: extraData.calificacion } : {}) },
     ip,
     userAgent,
   });

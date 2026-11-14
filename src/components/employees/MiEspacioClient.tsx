@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAvisos } from "@/components/ui/Avisos";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
@@ -10,6 +11,7 @@ import FranjaCifras from "@/components/ui/FranjaCifras";
 import { Campo } from "@/components/ui/ModalForm";
 import MisPrestamos from "@/components/portal/MisPrestamos";
 import MisConstancias from "@/components/portal/MisConstancias";
+import MisCapacitaciones from "@/components/portal/MisCapacitaciones";
 import SaludFamilia from "@/components/employees/SaludFamilia";
 
 interface Props {
@@ -62,7 +64,7 @@ const TIPOS = [
   { v: "OTRO", l: "Otro" },
 ];
 
-type Tab = "solicitudes" | "boletas" | "prestamos" | "constancias" | "datos" | "salud" | "aprobaciones";
+type Tab = "solicitudes" | "boletas" | "prestamos" | "constancias" | "capacitaciones" | "datos" | "salud" | "aprobaciones";
 
 const CAMPOS_DATOS: { k: keyof MisDatos; l: string }[] = [
   { k: "telefonoPersonal", l: "Teléfono personal" },
@@ -100,7 +102,11 @@ async function obtenerEspacio(puedeAprobar: boolean, soloAprobaciones: boolean):
 
 export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDisponibles, diasTomados, puedeAprobar, soloAprobaciones = false }: Props) {
   const { avisar } = useAvisos();
-  const [tab, setTab] = useState<Tab>(soloAprobaciones ? "aprobaciones" : "solicitudes");
+  // ?tab=capacitaciones: el visor de material vuelve a la pestaña de donde salió.
+  const pedida = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(
+    soloAprobaciones ? "aprobaciones" : pedida === "capacitaciones" || pedida === "constancias" || pedida === "boletas" ? pedida : "solicitudes"
+  );
   const [permisos, setPermisos] = useState<Permiso[]>([]);
   const [aprobaciones, setAprobaciones] = useState<Permiso[]>([]);
   const [boletas, setBoletas] = useState<Boleta[]>([]);
@@ -199,6 +205,7 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
     ["boletas", "Mis boletas"],
     ["prestamos", "Préstamos"],
     ["constancias", "Constancias"],
+    ["capacitaciones", "Capacitaciones"],
     ["datos", "Mis datos"],
     ["salud", "Salud y familia"],
     ...(puedeAprobar ? ([["aprobaciones", `Aprobaciones${aprobaciones.length ? ` (${aprobaciones.length})` : ""}`]] as [Tab, string][]) : []),
@@ -350,6 +357,8 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
       {tab === "prestamos" && <MisPrestamos />}
 
       {tab === "constancias" && <MisConstancias />}
+
+      {tab === "capacitaciones" && <MisCapacitaciones />}
 
       {tab === "salud" && <SaludFamilia endpoint="/api/mi-espacio/salud-familia" descripcionPropia />}
 

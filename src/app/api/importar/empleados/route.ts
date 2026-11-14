@@ -19,6 +19,7 @@ import { cargarCatalogos, validar, type ComprobadorAlcance } from "@/lib/importa
 import { crearLote, leerArchivo, MAX_FILAS_ARCHIVO } from "@/lib/importacion/lote";
 import { ACEPTA_PLANTILLA, textoDeArchivo } from "@/lib/importacion/xlsx";
 import type { InformeValidacion, ModoImportacion } from "@/lib/importacion/tipos";
+import { filasLeidas } from "@/lib/importacion/tipos";
 
 const MODOS: ModoImportacion[] = ["CREAR", "ACTUALIZAR", "CREAR_O_ACTUALIZAR"];
 
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
 
   // Un archivo enorme se rechaza tras validar y no antes, para poder decir
   // cuántas filas traía en vez de un "demasiado grande" a ciegas.
-  const totalFilas = resultado.filas.length + resultado.totalOmitir;
+  const totalFilas = filasLeidas(resultado);
   if (totalFilas > MAX_FILAS_ARCHIVO) {
     return NextResponse.json(
       {

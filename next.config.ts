@@ -136,7 +136,9 @@ const nextConfig: NextConfig = {
         // trae su propia política, más estricta, y con la general nunca llegaba al
         // navegador. Es HTML armado a mano con lo que escriben los usuarios, y se
         // abre con la sesión de quien lo mira.
-        source: "/:path((?!api/mis-boletas/).*)",
+        // Ni el contenido del material de capacitación: lleva `sandbox` para que, abierto
+        // suelto, el navegador no muestre su visor de PDF con el botón de descarga.
+        source: "/:path((?!api/mis-boletas/|api/capacitaciones/material/).*)",
         headers: [{ key: "Content-Security-Policy", value: csp }],
       },
       {

@@ -6,6 +6,7 @@ import AsistenciaClient from "@/components/attendance/AsistenciaClient";
 import BarraDatos from "@/components/importacion/BarraDatos";
 import PageHeader from "@/components/ui/PageHeader";
 import FranjaCifras from "@/components/ui/FranjaCifras";
+import Link from "next/link";
 
 export const metadata = { title: "Asistencia" };
 
@@ -77,15 +78,22 @@ export default async function AsistenciaPage({
         title="Control de asistencia"
         description={`Marcajes del ${formatDate(fecha)}: entradas, salidas, almuerzo y horas extra.`}
         actions={
+          <div className="flex flex-wrap gap-2">
+          {puede(usuario, "asistencia.gestionar") && (
+            <Link href={`/asistencia/carga-rapida?fecha=${fechaStr}${sp.sucursalId ? `&sucursalId=${sp.sucursalId}` : ""}`} className="btn btn-secondary">
+              Carga rápida
+            </Link>
+          )}
           <BarraDatos
             recurso="horas-extra"
             puedeExportar={puede(usuario, "asistencia.ver")}
             puedeImportar={puede(usuario, "asistencia.gestionar")}
             filtros={{ fecha: fechaStr, sucursalId: sp.sucursalId }}
             notaExportar="Se exportan las horas extra de todo el mes de la fecha elegida."
-            tituloImportacion="Importar horas extra"
-            ayudaImportacion="Cada fila dice cuántas horas hizo un empleado un día, según su recargo: 25 %, 50 %, 75 % o 100 %. Ponga sólo las cantidades: el sistema calcula el costo. Cada fila reemplaza las horas de ese día, así que subir el mismo archivo otra vez no las duplica."
+            tituloImportacion="Importar horas"
+            ayudaImportacion="Cada fila es un empleado y un día, identificado por su código o su DNI: las horas normales, las extra según su recargo (25 %, 50 %, 75 % o 100 %) o la ausencia. Ponga sólo las cantidades: el sistema calcula el costo. Antes de aplicar verá cada fila con sus errores. Cada fila reemplaza las horas de ese día, así que subir el mismo archivo otra vez no las duplica."
           />
+          </div>
         }
       />
 

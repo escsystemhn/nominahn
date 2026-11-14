@@ -252,9 +252,15 @@ export const COLUMNAS_HORAS_EXTRA: readonly ColumnaCsv[] = [
   {
     clave: "empleado_codigo",
     etiqueta: "Codigo Empleado",
-    descripcion: "Código del empleado. Debe existir.",
-    requerido: true,
+    descripcion: "Código del empleado. Ponga el código o el DNI: con uno basta; si pone los dos, deben ser de la misma persona.",
     ejemplo: "EMP-0001",
+  },
+  {
+    clave: "identidad",
+    etiqueta: "DNI",
+    descripcion: "Número de identidad del empleado, 13 dígitos, con o sin guiones. Sirve en lugar del código.",
+    sensible: true,
+    ejemplo: "0801-1990-12345",
   },
   {
     clave: "empleado_nombre",
@@ -265,10 +271,12 @@ export const COLUMNAS_HORAS_EXTRA: readonly ColumnaCsv[] = [
   {
     clave: "fecha",
     etiqueta: "Fecha",
-    descripcion: "DD/MM/AAAA. El día en que se hicieron las horas. Cada fila reemplaza las horas extra de ese día.",
+    descripcion: "DD/MM/AAAA. El día trabajado. Cada fila reemplaza las horas de ese día.",
     requerido: true,
     ejemplo: "15/10/2026",
   },
+  { clave: "normales", etiqueta: "Horas normales", descripcion: "Horas de la jornada ordinaria trabajadas ese día. Opcional: en blanco conserva las que tenga. No cambian el salario (la planilla paga el salario del período); sirven para los indicadores de asistencia.", ejemplo: "8" },
+  { clave: "ausencia", etiqueta: "Ausencia", descripcion: "Sí = faltó ese día sin permiso: se descuenta en la planilla y la fila no lleva horas. No = trabajó (borra una ausencia anterior). En blanco = conserva lo que tenga.", ejemplo: "No" },
   { clave: "diurnas", etiqueta: "Extra 25%", descripcion: "Horas extra trabajadas en el período diurno (5:00 a 19:00): recargo de 25 % sobre la hora diurna (Art. 330). Sólo la cantidad: el sistema calcula el costo. En blanco = 0.", ejemplo: "2" },
   { clave: "mixtas", etiqueta: "Extra 50%", descripcion: "Horas extra de una jornada diurna o mixta trabajadas en el período nocturno (19:00 a 5:00): recargo de 50 % sobre la hora diurna (Art. 330). En blanco = 0.", ejemplo: "1.5" },
   { clave: "nocturnas", etiqueta: "Extra 75%", descripcion: "Horas extra que prolongan una jornada nocturna: recargo de 75 % sobre la hora nocturna, salario ÷ 30 ÷ 6 (Art. 330). En blanco = 0.", ejemplo: "0" },

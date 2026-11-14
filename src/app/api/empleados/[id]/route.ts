@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { formasIdentidad, normalizarIdentidad } from "@/lib/empleados/identidad";
 import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { alcanzaEmpleado, alcanzaUbicacion } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
@@ -140,6 +141,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!parsed.ok) return parsed.response;
   // `motivo` no es columna; el resto (`data`) ya está acotado por el allowlist.
   const { salarioBase, motivo, ...data } = parsed.data;
+
+  // DNI: 13 dígitos, guardado sin guiones; otro empleado con el mismo número en
+  // cualquiera de las dos formas es el mismo DNI.
+  if (data.identidad !== undefined && data.identidad !== null) {
+    const dni = normalizarIdentidad(data.identidad);
+    if (dni && !dni.ok) return NextResponse.json({ error: dni.error }, { status: 400 });
+    data.identidad = dni?.ok ? dni.valor : null;
+    if (data.identidad && (await prisma.empleado.findFirst({ where: { identidad: { in: formasIdentidad(data.identidad) }, id: { not: id } }, select: { id: true } }))) {
+      return NextResponse.json({ error: "Ya existe otro empleado con ese número de identidad" }, { status: 409 });
+    }
+  }
 
   const revision = revisarCambioEstado({
     estadoActual: empleadoActual.estado,

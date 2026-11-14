@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { audit, getClientInfo } from "@/lib/audit";
 import { z } from "zod";
 import { parsearBody, zPorcentaje } from "@/lib/http/validar";
+import { estadoDirecta, guardarCriteriosConsolidados, zCriterioDirecto } from "@/lib/evaluaciones/consolidado";
+import type { EstadoEvaluacion } from "@prisma/client";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,6 +23,8 @@ const schemaPatch = z
     desempeno: zPorcentaje.optional(),
     potencial: zPorcentaje.optional(),
     calificacion: zPorcentaje.optional(),
+    // Calificar o corregir los aspectos de una evaluación directa: recalcula la nota.
+    criterios: z.array(zCriterioDirecto).min(1).max(60).optional(),
   })
   .refine((d) => Object.values(d).some((v) => v !== undefined), { error: "Sin cambios" });
 
@@ -86,7 +90,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const parsed = await parsearBody(req, schemaPatch);
   if (!parsed.ok) return parsed.response;
-  const { comentarios, fortalezas, mejoras, objetivos, desempeno, potencial, calificacion } = parsed.data;
+  const { comentarios, fortalezas, mejoras, objetivos, desempeno, potencial, calificacion, criterios } = parsed.data;
 
   const actual = await prisma.evaluacion.findUnique({ where: { id } });
   // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
@@ -98,17 +102,39 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Evaluación no editable en estado " + actual.estado }, { status: 422 });
   }
 
-  const updated = await prisma.evaluacion.update({
-    where: { id },
-    data: {
-      ...(comentarios !== undefined ? { comentarios } : {}),
-      ...(fortalezas !== undefined ? { fortalezas } : {}),
-      ...(mejoras !== undefined ? { mejoras } : {}),
-      ...(objetivos !== undefined ? { objetivos } : {}),
-      ...(desempeno !== undefined ? { desempeno } : {}),
-      ...(potencial !== undefined ? { potencial } : {}),
-      ...(calificacion !== undefined ? { calificacion } : {}),
-    },
+  // En una 360° las notas las dan sus evaluadores; corregirlas aquí las pisaría al finalizar.
+  if (criterios) {
+    const evaluadores = await prisma.evaluacionParticipante.count({ where: { evaluacionId: id } });
+    if (evaluadores > 0) {
+      return NextResponse.json({ error: "Esta evaluación la califican sus evaluadores por su enlace: no se corrige aquí." }, { status: 422 });
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    let porCriterios: { calificacion?: number; desempeno?: number; estado?: EstadoEvaluacion } = {};
+    if (criterios) {
+      const nota = await guardarCriteriosConsolidados(tx, id, criterios);
+      porCriterios = {
+        calificacion: nota ?? 0,
+        // El eje de desempeño del nine-box sigue a la nota, salvo que se fije a mano.
+        ...(desempeno === undefined && nota !== null ? { desempeno: nota } : {}),
+        estado: estadoDirecta(criterios),
+      };
+    }
+    return tx.evaluacion.update({
+      where: { id },
+      data: {
+        ...(comentarios !== undefined ? { comentarios } : {}),
+        ...(fortalezas !== undefined ? { fortalezas } : {}),
+        ...(mejoras !== undefined ? { mejoras } : {}),
+        ...(objetivos !== undefined ? { objetivos } : {}),
+        ...(desempeno !== undefined ? { desempeno } : {}),
+        ...(potencial !== undefined ? { potencial } : {}),
+        // Con aspectos, la nota sale de ellos; una nota a mano sólo vale sin aspectos.
+        ...(calificacion !== undefined && !criterios ? { calificacion } : {}),
+        ...porCriterios,
+      },
+    });
   });
 
   const { ip, userAgent } = getClientInfo(req);

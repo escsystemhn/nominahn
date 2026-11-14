@@ -17,6 +17,7 @@ import { reabrirContrato } from "@/lib/empleados/contratos-bd";
 import { parsearBody, zFecha } from "@/lib/http/validar";
 import { validarTransicionLiquidacion, accionesLiquidacion, type EstadoLiquidacion } from "@/lib/payroll/estado-prestaciones";
 import { hoyHN } from "@/lib/utils";
+import { liberarAnticipos } from "@/lib/prestaciones/anticipos-bd";
 
 const schema = z.object({
   estado: z.enum(["APROBADA", "PAGADA", "ANULADA"]),
@@ -78,6 +79,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const actualizada = await prisma.$transaction(async (tx) => {
     const r = await tx.liquidacionFinal.update({ where: { id }, data });
+    if (estado === "ANULADA") {
+      // Lo que el finiquito había tomado vuelve a como estaba: los anticipos pagados
+      // aparte quedan otra vez por rebajar y los préstamos recuperan su saldo.
+      await liberarAnticipos(tx, { liquidacionFinalId: id });
+      const deudas = Array.isArray(liq.deudasSaldadas) ? (liq.deudasSaldadas as Array<{ id: string; saldo: number; activo: boolean; observacion: string | null }>) : [];
+      for (const d of deudas) {
+        await tx.deduccionEmpleado.updateMany({
+          where: { id: d.id },
+          data: { saldo: d.saldo, activo: d.activo, observacion: d.observacion },
+        });
+      }
+    }
     if (estado === "ANULADA" && reactivarEmpleado) {
       const empleado = await tx.empleado.findUnique({ where: { id: liq.empleadoId }, select: { fechaSalida: true } });
       if (empleado?.fechaSalida) await reabrirContrato(tx, liq.empleadoId, empleado.fechaSalida);

@@ -4,25 +4,11 @@ import { alcanzaEmpleado, filtroEmpleados, alcanceEsTotal } from "@/lib/auth/alc
 import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { ESTADOS_CALIFICABLES, registrarRespuesta, SinCalificacion, zRespuestaParticipante } from "@/lib/evaluaciones/respuesta";
 
 type Params = { params: Promise<{ id: string }> };
 
-const submitSchema = z.object({
-  participanteId: z.string(),
-  calificacion: z.number().min(0).max(100),
-  comentarios: z.string().optional(),
-  criterios: z
-    .array(
-      z.object({
-        criterio: z.string(),
-        competenciaId: z.string().optional(),
-        calificacion: z.number().min(0).max(100),
-        peso: z.number().default(1),
-        comentario: z.string().optional(),
-      })
-    )
-    .default([]),
-});
+const submitSchema = zRespuestaParticipante.extend({ participanteId: z.string() });
 
 /** GET /api/evaluaciones/[id]/participantes — lista los participantes */
 export async function GET(_req: NextRequest, { params }: Params) {
@@ -77,7 +63,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     where: { id: participanteId, evaluacionId: id },
     include: {
       evaluador: { select: { id: true, sucursalId: true, departamentoId: true } },
-      evaluacion: { select: { empleado: { select: { id: true, sucursalId: true, departamentoId: true } } } },
+      evaluacion: { select: { estado: true, empleado: { select: { id: true, sucursalId: true, departamentoId: true } } } },
     },
   });
   if (!participante) return NextResponse.json({ error: "Participante no encontrado" }, { status: 404 });
@@ -92,6 +78,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (participante.estado === "COMPLETADO") {
     return NextResponse.json({ error: "Ya fue completada por este evaluador" }, { status: 409 });
   }
+  // Una evaluación pendiente de firma, finalizada o cancelada ya no recibe calificaciones
+  // (el enlace sin sesión ya lo exigía; esta ruta no).
+  if (!(ESTADOS_CALIFICABLES as readonly string[]).includes(participante.evaluacion.estado)) {
+    return NextResponse.json({ error: "La evaluación ya no recibe calificaciones" }, { status: 422 });
+  }
 
   /**
    * Quien envía la evaluación tiene que ser el evaluador asignado. Quien
@@ -105,43 +96,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 });
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.evaluacionParticipante.update({
-      where: { id: participanteId },
-      data: {
-        calificacion,
-        comentarios,
-        estado: "COMPLETADO",
-        fechaCompletado: new Date(),
-      },
-    });
-
-    if (criterios.length > 0) {
-      await tx.criterioEvaluacion.createMany({
-        data: criterios.map((c) => ({
-          evaluacionId: id,
-          participanteId,
-          competenciaId: c.competenciaId,
-          criterio: c.criterio,
-          calificacion: c.calificacion,
-          peso: c.peso,
-          comentario: c.comentario,
-        })),
-      });
-    }
-
-    // Verificar si todos los participantes completaron → pasar a PENDIENTE_FIRMA automáticamente
-    const pendientes = await tx.evaluacionParticipante.count({
-      where: { evaluacionId: id, estado: { not: "COMPLETADO" } },
-    });
-
-    if (pendientes === 0) {
-      await tx.evaluacion.update({
-        where: { id },
-        data: { estado: "PENDIENTE_FIRMA" },
-      });
-    }
-  });
-
-  return NextResponse.json({ ok: true });
+  try {
+    const nota = await prisma.$transaction((tx) => registrarRespuesta(tx, id, participanteId, { calificacion, comentarios, criterios }));
+    return NextResponse.json({ ok: true, calificacion: nota });
+  } catch (e) {
+    if (e instanceof SinCalificacion) return NextResponse.json({ error: e.message }, { status: 400 });
+    throw e;
+  }
 }

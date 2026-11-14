@@ -63,6 +63,8 @@ interface Props {
   tipoPlanilla: TipoPlanillaPeriodo;
   /** Solicitudes de préstamo por atender: van bajo el título, no encima. */
   solicitudes?: React.ReactNode;
+  /** Pestaña «Anticipos de prestaciones» (negociación y adelantos de décimos); sin ella no se muestra. */
+  anticipos?: React.ReactNode;
 }
 
 /** Los de ley y la retención fija de ISR: se configuran en Parámetros de ley. */
@@ -88,10 +90,11 @@ export default function DeduccionesClient({
   etiquetaSucursal,
   tipoPlanilla,
   solicitudes,
+  anticipos,
 }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
-  const [tab, setTab] = useState<"tipos" | "empleados">("tipos");
+  const [tab, setTab] = useState<"tipos" | "empleados" | "anticipos">("tipos");
   const [loading, setLoading] = useState(false);
   /** `undefined`: cerrada; `null`: uno nuevo. */
   const [editando, setEditando] = useState<TipoEditable | null | undefined>(undefined);
@@ -156,7 +159,7 @@ export default function DeduccionesClient({
     <div className="space-y-6">
       <PageHeader
         title="Deducciones"
-        description="Tipos de deducción y su asignación a cada empleado."
+        description={anticipos ? "Tipos de deducción, su asignación a cada empleado y los anticipos de prestaciones pagados aparte." : "Tipos de deducción y su asignación a cada empleado."}
         actions={
           <>
             <BarraDatos
@@ -193,7 +196,7 @@ export default function DeduccionesClient({
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">
-        {(["tipos", "empleados"] as const).map((t) => (
+        {(anticipos ? (["tipos", "empleados", "anticipos"] as const) : (["tipos", "empleados"] as const)).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -201,10 +204,12 @@ export default function DeduccionesClient({
               tab === t ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
-            {t === "tipos" ? "Tipos de deducción" : "Asignaciones por empleado"}
+            {t === "tipos" ? "Tipos de deducción" : t === "empleados" ? "Asignaciones por empleado" : "Anticipos de prestaciones"}
           </button>
         ))}
       </div>
+
+      {tab === "anticipos" && anticipos}
 
       {tab === "tipos" && (
         <div className="space-y-3">

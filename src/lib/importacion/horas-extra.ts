@@ -1,5 +1,7 @@
 /**
- * Validación y aplicación de una importación de horas extra.
+ * Validación y aplicación de una importación de horas: las extra por recargo y, desde
+ * noviembre de 2026, las normales y la ausencia del día. El empleado se identifica por
+ * su código o por su DNI.
  *
  * Una fila dice cuántas horas extra hizo una persona UN DÍA, y REEMPLAZA las que ese
  * día tuviera: subir dos veces el archivo no las duplica, y una columna en blanco
@@ -45,6 +47,10 @@ export interface FilaHorasExtra {
   feriado: string;
   /** `null` = conserva la que hubiera. */
   observacion: string | null;
+  /** Horas normales; `null` = conserva las que hubiera. */
+  normales: string | null;
+  /** `null` = conserva lo que hubiera; true = ausencia (sin horas); false = trabajó. */
+  ausencia: boolean | null;
   cambios: string[];
   referencia: string;
 }
@@ -71,6 +77,7 @@ export interface EmpleadoRef {
 }
 
 export interface MarcajeRef {
+  normales: string;
   diurnas: string;
   mixtas: string;
   nocturnas: string;
@@ -93,6 +100,8 @@ export interface PlanillaRef {
 export interface CatalogosHorasExtra {
   /** código de empleado normalizado → empleado */
   empleados: Map<string, EmpleadoRef>;
+  /** DNI, sólo los 13 dígitos → empleado */
+  porIdentidad: Map<string, EmpleadoRef>;
   /** `${empleadoId}|AAAA-MM-DD` → marcaje de ese día */
   marcajes: Map<string, MarcajeRef>;
   planillas: PlanillaRef[];
@@ -103,6 +112,7 @@ export interface CatalogosHorasExtra {
 export type ComprobadorAlcance = (e: { id: string; sucursalId: string; departamentoId: string }) => boolean;
 
 const norm = (s: string) => s.trim().toLowerCase();
+const soloDigitos = (s: string) => s.replace(/\D/g, "");
 const dia = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Las fechas válidas del archivo: sólo se consultan esos días. */
@@ -125,7 +135,7 @@ export async function cargarCatalogos(db: PrismaClient, texto: string): Promise<
   const [empleados, marcajes, planillas] = await Promise.all([
     db.empleado.findMany({
       select: {
-        id: true, codigo: true, primerNombre: true, primerApellido: true, sucursalId: true, departamentoId: true,
+        id: true, codigo: true, identidad: true, primerNombre: true, primerApellido: true, sucursalId: true, departamentoId: true,
         estado: true, fechaIngreso: true, fechaSalida: true,
       },
     }),
@@ -134,7 +144,7 @@ export async function cargarCatalogos(db: PrismaClient, texto: string): Promise<
       : db.marcaje.findMany({
           where: { fecha: { in: fechas } },
           select: {
-            empleadoId: true, fecha: true, horasExtraDiurna: true, horasExtraMixta: true, horasExtraNocturna: true,
+            empleadoId: true, fecha: true, horasNormales: true, horasExtraDiurna: true, horasExtraMixta: true, horasExtraNocturna: true,
             horasFeriado: true, esAusencia: true, fuente: true, observacion: true,
           },
         }),
@@ -150,21 +160,23 @@ export async function cargarCatalogos(db: PrismaClient, texto: string): Promise<
         }),
   ]);
 
+  const refs = empleados.map((e) => ({
+    identidad: e.identidad,
+    ref: {
+      id: e.id, codigo: e.codigo, nombre: `${e.primerNombre} ${e.primerApellido}`,
+      sucursalId: e.sucursalId, departamentoId: e.departamentoId, estado: e.estado,
+      fechaIngreso: dia(e.fechaIngreso), fechaSalida: e.fechaSalida ? dia(e.fechaSalida) : null,
+    },
+  }));
   return {
-    empleados: new Map(
-      empleados.map((e) => [
-        norm(e.codigo),
-        {
-          id: e.id, codigo: e.codigo, nombre: `${e.primerNombre} ${e.primerApellido}`,
-          sucursalId: e.sucursalId, departamentoId: e.departamentoId, estado: e.estado,
-          fechaIngreso: dia(e.fechaIngreso), fechaSalida: e.fechaSalida ? dia(e.fechaSalida) : null,
-        },
-      ])
-    ),
+    empleados: new Map(refs.map(({ ref }) => [norm(ref.codigo), ref])),
+    // La identidad puede estar guardada con o sin guiones: se compara por sus dígitos.
+    porIdentidad: new Map(refs.filter((r) => r.identidad).map((r) => [soloDigitos(r.identidad!), r.ref])),
     marcajes: new Map(
       marcajes.map((m) => [
         `${m.empleadoId}|${dia(m.fecha)}`,
         {
+          normales: m.horasNormales.toString(),
           diurnas: m.horasExtraDiurna.toString(), mixtas: m.horasExtraMixta.toString(),
           nocturnas: m.horasExtraNocturna.toString(), feriado: m.horasFeriado.toString(),
           esAusencia: m.esAusencia, fuente: m.fuente, observacion: m.observacion,
@@ -204,13 +216,14 @@ export function validar(
   const tiene = (clave: string) => indices[clave] !== undefined;
   const celda = (fila: string[], clave: string) => (tiene(clave) ? fila[indices[clave]] : undefined);
 
-  for (const clave of ["empleado_codigo", "fecha"]) {
-    if (!tiene(clave)) {
-      incidencias.push({ linea: 1, severidad: "ERROR", mensaje: `Falta la columna obligatoria "${clave}". Descargue la plantilla para ver el formato.` });
-    }
+  if (!tiene("fecha")) {
+    incidencias.push({ linea: 1, severidad: "ERROR", mensaje: `Falta la columna obligatoria "Fecha". Descargue la plantilla para ver el formato.` });
   }
-  if (!COLUMNAS_HORAS.some((c) => tiene(c.clave))) {
-    incidencias.push({ linea: 1, severidad: "ERROR", mensaje: "El archivo no trae ninguna columna de horas. Descargue la plantilla para ver el formato." });
+  if (!tiene("empleado_codigo") && !tiene("identidad")) {
+    incidencias.push({ linea: 1, severidad: "ERROR", mensaje: "Falta la columna del empleado: «Codigo Empleado» o «DNI». Descargue la plantilla para ver el formato." });
+  }
+  if (!COLUMNAS_HORAS.some((c) => tiene(c.clave)) && !tiene("normales") && !tiene("ausencia")) {
+    incidencias.push({ linea: 1, severidad: "ERROR", mensaje: "El archivo no trae ninguna columna de horas ni de ausencia. Descargue la plantilla para ver el formato." })
   }
   if (incidencias.some((i) => i.severidad === "ERROR")) {
     return { filas, incidencias, previsualizacion, columnasDesconocidas: desconocidas, totalOmitir };
@@ -225,15 +238,30 @@ export function validar(
     const anota = (columna: string | undefined, mensaje: string, sev: "ERROR" | "AVISO" = "ERROR") =>
       (sev === "ERROR" ? errores : avisos).push({ linea, columna, severidad: sev, mensaje });
 
-    // ─── Empleado ───────────────────────────────────────────────────────────
+    // ─── Empleado: por código o por DNI ─────────────────────────────────────
     const codigo = (celda(celdas, "empleado_codigo") ?? "").trim();
+    const dniBruto = (celda(celdas, "identidad") ?? "").trim();
     let empleado = codigo ? catalogos.empleados.get(norm(codigo)) : undefined;
-    if (!codigo) {
-      anota("Codigo Empleado", "Es obligatorio.");
-    } else if (!empleado) {
+    let porDni: EmpleadoRef | undefined;
+    if (dniBruto) {
+      const r = v.identidad(dniBruto);
+      if (!r.ok) anota("DNI", r.error);
+      else {
+        porDni = catalogos.porIdentidad.get(r.valor);
+        if (!porDni) anota("DNI", `No hay un empleado con DNI ${dniBruto}.`);
+      }
+    }
+    if (!codigo && !dniBruto) {
+      anota("Codigo Empleado", "Ponga el código o el DNI del empleado.");
+    } else if (codigo && !empleado) {
       anota("Codigo Empleado", `No existe un empleado con código "${codigo}".`);
-    } else if (!alcanza(empleado)) {
-      anota("Codigo Empleado", "Este empleado está fuera de su alcance de datos.");
+    } else if (empleado && porDni && empleado.id !== porDni.id) {
+      anota("DNI", `El DNI es de ${porDni.codigo}, ${porDni.nombre}, no de ${empleado.codigo}.`);
+      empleado = undefined;
+    }
+    empleado = empleado ?? porDni;
+    if (empleado && !alcanza(empleado)) {
+      anota(codigo ? "Codigo Empleado" : "DNI", "Este empleado está fuera de su alcance de datos.");
       empleado = undefined;
     }
 
@@ -256,8 +284,33 @@ export function validar(
         horasValidas = false;
       }
     }
-    if (conValor === 0) {
-      anota(undefined, "No indica horas. Ponga las de ese día, o 0 para borrar las que tenga.");
+    // Horas normales y ausencia: opcionales; en blanco conservan lo que hubiera.
+    let normales: Money | null = null;
+    if (!v.vacia(celda(celdas, "normales"))) {
+      const r = v.decimal(celda(celdas, "normales"), { min: 0, max: 24 });
+      if (r.ok) normales = r.valor;
+      else {
+        anota("Horas normales", r.error);
+        horasValidas = false;
+      }
+    }
+    let ausencia: boolean | null = null;
+    if (!v.vacia(celda(celdas, "ausencia"))) {
+      const r = v.booleano(celda(celdas, "ausencia"));
+      if (r.ok) ausencia = r.valor;
+      else {
+        anota("Ausencia", r.error);
+        horasValidas = false;
+      }
+    }
+
+    if (conValor === 0 && normales === null && ausencia === null) {
+      anota(undefined, "No indica horas ni ausencia. Ponga las de ese día, o 0 para borrar las que tenga.");
+      horasValidas = false;
+    }
+    const conHoras = COLUMNAS_HORAS.some((c) => !horas[c.clave].isZero()) || (normales !== null && !normales.isZero());
+    if (ausencia === true && conHoras) {
+      anota("Ausencia", "Un día de ausencia no lleva horas: deje las horas en blanco o en 0, o quite la ausencia.");
       horasValidas = false;
     }
 
@@ -309,7 +362,9 @@ export function validar(
 
     // ─── Tope diario ────────────────────────────────────────────────────────
     const totalExtra = sumar(horas.diurnas, horas.mixtas, horas.nocturnas);
-    if (totalExtra.greaterThan(MAX_ORDINARIA_MAS_EXTRA_H)) {
+    if (normales !== null && sumar(normales, totalExtra).greaterThan(MAX_ORDINARIA_MAS_EXTRA_H)) {
+      anota(undefined, `Normales más extra suman ${sumar(normales, totalExtra).toFixed(2)} horas en un día. La ley pone el máximo en ${MAX_ORDINARIA_MAS_EXTRA_H} horas (Art. 332).`);
+    } else if (totalExtra.greaterThan(MAX_ORDINARIA_MAS_EXTRA_H)) {
       anota(undefined, `Suman ${totalExtra.toFixed(2)} horas extra en un día. La ley pone el máximo en ${MAX_ORDINARIA_MAS_EXTRA_H} horas contando la jornada (Art. 332).`);
     } else if (totalExtra.greaterThan(EXTRAS_CON_JORNADA_ORDINARIA)) {
       anota(undefined, `Con una jornada de 8 horas, ${totalExtra.toFixed(2)} horas extra pasan del máximo de ${MAX_ORDINARIA_MAS_EXTRA_H} horas diarias (Art. 332).`, "AVISO");
@@ -329,12 +384,19 @@ export function validar(
       }
       accion = "ACTUALIZAR";
 
-      if (existente.esAusencia) anota("Fecha", "Ese día tiene una ausencia registrada. Corríjala en Asistencia antes de cargarle horas.");
+      // Con «Ausencia = No» la fila corrige la ausencia; sin decirlo, se respeta.
+      if (existente.esAusencia && ausencia === null && conHoras) {
+        anota("Ausencia", "Ese día tiene una ausencia registrada. Ponga «No» en Ausencia para cambiarla por horas trabajadas, o corríjala en Asistencia.");
+      }
 
       for (const { clave: c, etiqueta } of COLUMNAS_HORAS) {
         const antes = money(existente[c]);
         if (!antes.equals(horas[c])) cambios.push(`${etiqueta} ${antes.toFixed(2)} → ${horas[c].toFixed(2)}`);
       }
+      if (normales !== null && !money(existente.normales).equals(normales)) {
+        cambios.push(`Horas normales ${money(existente.normales).toFixed(2)} → ${normales.toFixed(2)}`);
+      }
+      if (ausencia !== null && ausencia !== existente.esAusencia) cambios.push(ausencia ? "Marca ausencia" : "Quita la ausencia");
       if (observacion !== null && observacion !== existente.observacion) cambios.push("Observación");
 
       const teniaExtras = !sumar(existente.diurnas, existente.mixtas, existente.nocturnas, existente.feriado).isZero();
@@ -348,7 +410,7 @@ export function validar(
         previsualizacion.push({ linea, accion: "OMITIR", referencia, cambios: ["Ese día no tiene marcaje y el modo es sólo actualización."] });
         continue;
       }
-      if (COLUMNAS_HORAS.every((c) => horas[c.clave].isZero())) {
+      if (!conHoras && ausencia !== true) {
         totalOmitir++;
         incidencias.push(...errores, ...avisos);
         if (errores.length === 0) previsualizacion.push({ linea, accion: "OMITIR", referencia, cambios: ["Sin horas que registrar."] });
@@ -376,6 +438,8 @@ export function validar(
       nocturnas: horas.nocturnas.toFixed(2),
       feriado: horas.feriado.toFixed(2),
       observacion,
+      normales: normales === null ? null : normales.toFixed(2),
+      ausencia,
       cambios,
       referencia,
     });
@@ -405,6 +469,10 @@ export async function aplicar(tx: Prisma.TransactionClient, filas: FilaHorasExtr
       horasExtraNocturna: fila.nocturnas,
       horasFeriado: fila.feriado,
       fuente: "PLANTILLA",
+      ...(fila.normales !== null ? { horasNormales: fila.normales } : {}),
+      // Una ausencia no lleva horas, ni normales.
+      ...(fila.ausencia !== null ? { esAusencia: fila.ausencia } : {}),
+      ...(fila.ausencia === true ? { horasNormales: 0 } : {}),
     };
     const fecha = new Date(fila.fecha);
     const marcaje = await tx.marcaje.upsert({

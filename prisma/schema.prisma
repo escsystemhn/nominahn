@@ -181,6 +181,7 @@ model Sucursal {
   coberturas       CoberturaSucursal[]
   horariosAtencion HorarioAtencion[]
   detallesPlanilla PlanillaDetalle[]
+  trasladosRecibidos TrasladoTemporal[]
   logo             LogoSucursal?
 }
 
@@ -478,6 +479,7 @@ enum TipoImportacion {
   EMPLEADOS
   DEDUCCIONES
   HORAS_EXTRA
+  HORARIOS
 }
 
 enum EstadoLote {
@@ -656,12 +658,15 @@ model Empleado {
   capacitaciones       ParticipanteCapacitacion[]
   liquidacionesDecimo  LiquidacionDecimo[]
   liquidacionesFinales LiquidacionFinal[]
+  anticiposPrestacion  AnticipoPrestacion[]
   documentosEmitidos   DocumentoEmitido[]
   solicitudesPrestamo  SolicitudPrestamo[]
   incapacidades        Incapacidad[]
   asignacionesTurno    AsignacionTurno[]
   preferenciaHorario   PreferenciaHorario?
   horarioDias          HorarioDia[]
+  trasladosTemporales  TrasladoTemporal[]
+  vistasMaterial       VistaMaterial[]
   acumuladosIsr        AcumuladoIsr[]
   basesRap             BaseRapMes[]
   fichaMedica          FichaMedica?
@@ -1238,6 +1243,8 @@ model LiquidacionDecimo {
   montoGravado    Decimal      @default(0) @db.Decimal(12, 2)
   isrRetenido     Decimal      @default(0) @db.Decimal(12, 2)
   montoPagado     Decimal      @default(0) @db.Decimal(12, 2)
+  /// Adelantos de este décimo ya pagados aparte (AnticipoPrestacion): se restan del neto.
+  adelantos       Decimal      @default(0) @db.Decimal(12, 2)
   estado          EstadoDecimo @default(CALCULADA)
   /// Marca la liquidación proporcional emitida al terminar la relación laboral.
   esProporcional  Boolean      @default(false)
@@ -1248,9 +1255,66 @@ model LiquidacionDecimo {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
+  anticipos AnticipoPrestacion[]
+
   // Un empleado tiene una sola liquidación de cada décimo por año.
   @@unique([empleadoId, tipo, anio])
   @@index([anio, tipo, estado])
+}
+
+enum TipoAnticipoPrestacion {
+  /// Pago a cuenta de la cesantía: se rebaja del auxilio de cesantía al liquidar.
+  NEGOCIACION_PRESTACIONES
+  /// Adelanto del 13.º: se resta del décimo de ese año (o del proporcional al liquidar).
+  ADELANTO_DECIMO_TERCERO
+  /// Adelanto del 14.º: ídem, sobre el décimo cuarto del año de pago indicado.
+  ADELANTO_DECIMO_CUARTO
+}
+
+enum EstadoAnticipoPrestacion {
+  /// Pagado al empleado y todavía sin descontar.
+  VIGENTE
+  /// Ya rebajado de una liquidación final o de un décimo (ver montoAplicado).
+  APLICADO
+  ANULADO
+}
+
+/// Pagos hechos APARTE de la planilla (cheque o transferencia) a cuenta de prestaciones.
+///
+/// No son deducciones de planilla: no tocan el salario. La negociación de prestaciones se
+/// rebaja de la cesantía al liquidar, hasta dejarla en cero (el exceso se informa, no se
+/// cobra de otros conceptos); el adelanto de un décimo se resta al pagar ese décimo o, si
+/// el empleado sale antes, del décimo proporcional de su finiquito. Decisión de Edbin,
+/// 2026-11-14.
+model AnticipoPrestacion {
+  id                  String                   @id @default(cuid())
+  empleadoId          String
+  empleado            Empleado                 @relation(fields: [empleadoId], references: [id])
+  tipo                TipoAnticipoPrestacion
+  monto               Decimal                  @db.Decimal(12, 2)
+  fechaPago           DateTime                 @db.Date
+  /// Adelantos: año del PAGO del décimo (13.º en diciembre, 14.º en junio de ese año).
+  anioDecimo          Int?
+  /// Negociación: período de servicio que cubre (informativo).
+  periodoDesde        DateTime?                @db.Date
+  periodoHasta        DateTime?                @db.Date
+  /// Cheque, transferencia o documento con que se pagó.
+  referencia          String?
+  observacion         String?                  @db.Text
+  estado              EstadoAnticipoPrestacion @default(VIGENTE)
+  /// Lo que efectivamente se rebajó: menos que el monto si excedía la cesantía o el décimo.
+  montoAplicado       Decimal?                 @db.Decimal(12, 2)
+  liquidacionFinalId  String?
+  liquidacionFinal    LiquidacionFinal?        @relation(fields: [liquidacionFinalId], references: [id])
+  liquidacionDecimoId String?
+  liquidacionDecimo   LiquidacionDecimo?       @relation(fields: [liquidacionDecimoId], references: [id])
+  registradoPor       String?
+  motivoAnulacion     String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@index([empleadoId, tipo, estado])
+  @@index([tipo, anioDecimo, estado])
 }
 
 // ─── LIQUIDACIÓN FINAL DE PRESTACIONES ────────────────────────────────────────
@@ -1309,8 +1373,13 @@ model LiquidacionFinal {
   fechaPago          DateTime?         @db.Date
   calculadoPor       String?
   aprobadoPor        String?
+  /// Préstamos y adelantos de salario que este finiquito dio por saldados, con su saldo
+  /// ANTERIOR ([{ id, saldo, activo, observacion, cobrado }]): al anularlo se restituyen.
+  deudasSaldadas     Json?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
+
+  anticipos AnticipoPrestacion[]
 
   @@index([empleadoId])
   @@index([estado])
@@ -1358,7 +1427,8 @@ model CriterioEvaluacion {
   competencia    CompetenciaDefinicion?  @relation(fields: [competenciaId], references: [id])
   criterio       String // nombre del criterio si no está en catálogo
   nivelRequerido Int? // 1-5 según NivelCompetencia
-  calificacion   Decimal                 @default(0) @db.Decimal(4, 2) // 0-100
+  // 0-100: Decimal(5,2), porque con (4,2) un 100 desbordaba la columna.
+  calificacion   Decimal                 @default(0) @db.Decimal(5, 2)
   peso           Decimal                 @default(1) @db.Decimal(4, 2)
   comentario     String?
 }
@@ -1389,6 +1459,12 @@ model CompetenciaDefinicion {
   descripcion String?  @db.Text
   categoria   String   @default("CORE") // CORE | LIDERAZGO | TECNICA | COMPORTAMIENTO
   activa      Boolean  @default(true)
+  // Aspecto general: se evalúa a quien no tenga aspectos asignados en su puesto.
+  general        Boolean         @default(false)
+  // En qué evaluación se usa; null = en las dos.
+  tipoEvaluacion TipoEvaluacion?
+  // Peso como aspecto general; en un puesto manda el peso de PuestoCompetencia.
+  peso           Decimal         @default(1) @db.Decimal(4, 2)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1770,6 +1846,52 @@ model Capacitacion {
   updatedAt          DateTime           @updatedAt
 
   participantes ParticipanteCapacitacion[]
+  materiales    MaterialCapacitacion[]
+}
+
+enum TipoMaterial {
+  MANUAL
+  VIDEO
+  DOCUMENTO
+}
+
+/// Material de una capacitación (manuales y documentos en PDF, videos MP4/WebM, imágenes).
+///
+/// Se guarda en el disco del servidor, fuera de `public/` (UPLOAD_DIR/capacitaciones), y
+/// sólo se entrega en el visor: por partes (Range), con un enlace firmado de vida corta
+/// atado a quien lo pidió y siempre `inline`. Decisión de Edbin, 2026-11-14.
+model MaterialCapacitacion {
+  id             String       @id @default(cuid())
+  capacitacionId String
+  capacitacion   Capacitacion @relation(fields: [capacitacionId], references: [id], onDelete: Cascade)
+  titulo         String
+  descripcion    String?
+  tipo           TipoMaterial
+  /// Nombre interno en disco: UUID + extensión. Nunca el que traía el archivo.
+  archivo        String       @unique
+  mime           String
+  tamano         Int
+  orden          Int          @default(0)
+  subidoPor      String?
+  createdAt      DateTime     @default(now())
+
+  vistas VistaMaterial[]
+
+  @@index([capacitacionId, orden])
+}
+
+/// Quién abrió cada material, para el avance de la capacitación.
+model VistaMaterial {
+  id         String               @id @default(cuid())
+  materialId String
+  material   MaterialCapacitacion @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  empleadoId String
+  empleado   Empleado             @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  primeraVez DateTime             @default(now())
+  ultimaVez  DateTime             @default(now())
+  veces      Int                  @default(1)
+
+  @@unique([materialId, empleadoId])
 }
 
 model ParticipanteCapacitacion {
@@ -2367,6 +2489,32 @@ model PlanHorario {
   dias          HorarioDia[]
 
   @@index([estado, desde])
+}
+
+/// Préstamo TEMPORAL de un empleado a otra sucursal para los horarios rotativos.
+///
+/// No cambia su sucursal, su planilla ni dónde se le paga: sólo dónde trabaja esos días.
+/// Mientras dura, los planes de la sucursal de destino lo incluyen como personal de ella
+/// (ausente fuera de estas fechas) y los de su sucursal lo dan por ausente («Trasladado a…»).
+/// Decisión de Edbin, 2026-11-14.
+model TrasladoTemporal {
+  id                String   @id @default(cuid())
+  empleadoId        String
+  empleado          Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  /// Su sucursal cuando se registró (informativo: la de verdad sigue en Empleado).
+  sucursalOrigenId  String
+  sucursalDestinoId String
+  sucursalDestino   Sucursal @relation(fields: [sucursalDestinoId], references: [id])
+  desde             DateTime @db.Date
+  hasta             DateTime @db.Date
+  motivo            String?
+  anulado           Boolean  @default(false)
+  creadoPor         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([sucursalDestinoId, desde, hasta])
+  @@index([empleadoId, desde])
 }
 
 /// Un día de una persona en un plan.

@@ -26,6 +26,36 @@ export interface Novedad {
 export const NOVEDADES: Record<string, Novedad[]> = {
   "2.0": [
     {
+      titulo: "Tablero ejecutivo",
+      detalle: "Fuerza laboral, rotación, puntualidad, ausentismo, horas extra, costo de nómina frente al período anterior, pasivo laboral y décimos menos adelantos por sucursal, con filtros y exportación a Excel y PDF.",
+      modulo: "Reportes",
+    },
+    {
+      titulo: "Traslados entre sucursales",
+      detalle: "El plan de horarios trae personal de otra sucursal por unos días sin cambiar su planilla, y se puede cargar desde Excel: una fila por empleado y día.",
+      modulo: "Horarios",
+    },
+    {
+      titulo: "Adelantos de décimos y negociación",
+      detalle: "Registre adelantos del 13.º y 14.º, que se restan al pagar el décimo, y la negociación de prestaciones, que se resta de la cesantía al liquidar.",
+      modulo: "Prestaciones",
+    },
+    {
+      titulo: "Carga rápida de horas",
+      detalle: "Horas ordinarias y extra de muchas personas en una cuadrícula que se llena con el teclado, o desde Excel con el DNI o el código.",
+      modulo: "Asistencia",
+    },
+    {
+      titulo: "Material de capacitación",
+      detalle: "Manuales, videos y documentos en cada capacitación, que el personal ve en Mi espacio sin poder descargarlos.",
+      modulo: "Talento",
+    },
+    {
+      titulo: "Evaluaciones por aspectos",
+      detalle: "La calificación final es el promedio ponderado de los aspectos evaluados, que se configuran en general o por puesto.",
+      modulo: "Talento",
+    },
+    {
       titulo: "Respaldos automáticos",
       detalle: "Respalde la base y los adjuntos a mano o cada día, en un disco, una carpeta de red o la nube (S3), cifrados con contraseña. En Configuración → Respaldos.",
       modulo: "Configuración",

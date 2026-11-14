@@ -8,11 +8,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requerirPermiso } from "@/lib/auth/guard";
+import { puede, requerirPermiso } from "@/lib/auth/guard";
 import { filtroEmpleados } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { generarCsv, cabecerasDescarga, delimitadorPedido } from "@/lib/importacion/csv";
-import { COLUMNAS_HORAS_EXTRA, etiquetas } from "@/lib/importacion/columnas";
+import { COLUMNAS_HORAS_EXTRA, columnasVisibles, etiquetas } from "@/lib/importacion/columnas";
 import { cabecerasXlsx, plantillaXlsx } from "@/lib/importacion/xlsx";
 import { fechaCalendario, formatDate, hoyHN, nombreCompleto } from "@/lib/utils";
 
@@ -25,14 +25,17 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const delimitador = delimitadorPedido(searchParams.get("delimitador"));
 
+  // El DNI es dato personal: sólo sale para quien puede ver datos personales.
+  const columnas = columnasVisibles(COLUMNAS_HORAS_EXTRA, puede(g.usuario, "empleados.pii"));
+
   if (searchParams.get("plantilla") === "1") {
-    const paraLlenar = COLUMNAS_HORAS_EXTRA.filter((c) => !c.soloLectura);
+    const paraLlenar = columnas.filter((c) => !c.soloLectura);
     if (searchParams.get("formato") === "xlsx") {
-      return new NextResponse(new Uint8Array(await plantillaXlsx(paraLlenar)), { headers: cabecerasXlsx("plantilla_horas_extra.xlsx") });
+      return new NextResponse(new Uint8Array(await plantillaXlsx(paraLlenar, [], { listas: { ausencia: ["Sí", "No"] } })), { headers: cabecerasXlsx("plantilla_horas.xlsx") });
     }
     // Sin fila de ejemplo: su código podría ser el de un empleado real, con horas que se pagarían.
     const csv = generarCsv(etiquetas(paraLlenar), [], delimitador);
-    return new NextResponse(csv, { headers: cabecerasDescarga("plantilla_horas_extra.csv") });
+    return new NextResponse(csv, { headers: cabecerasDescarga("plantilla_horas.csv") });
   }
 
   const fechaPedida = searchParams.get("fecha") ?? "";
@@ -44,7 +47,7 @@ export async function GET(req: NextRequest) {
 
   const where: Prisma.MarcajeWhereInput = {
     fecha: { gte: desde, lte: hasta },
-    OR: [{ horasExtra: { gt: 0 } }, { horasFeriado: { gt: 0 } }],
+    OR: [{ horasExtra: { gt: 0 } }, { horasFeriado: { gt: 0 } }, { esAusencia: true }],
     empleado: { AND: [filtroEmpleados(g.usuario), sucursalId ? { sucursalId } : {}] },
   };
 
@@ -56,14 +59,17 @@ export async function GET(req: NextRequest) {
   const marcajes = await prisma.marcaje.findMany({
     where,
     select: {
-      fecha: true, horasExtraDiurna: true, horasExtraMixta: true, horasExtraNocturna: true, horasFeriado: true, observacion: true,
-      empleado: { select: { codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true } },
+      fecha: true, horasNormales: true, esAusencia: true, horasExtraDiurna: true, horasExtraMixta: true, horasExtraNocturna: true, horasFeriado: true, observacion: true,
+      empleado: { select: { codigo: true, identidad: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true } },
     },
     orderBy: [{ fecha: "asc" }, { empleado: { primerApellido: "asc" } }],
   });
 
   const valorDe: Record<string, (m: (typeof marcajes)[number]) => string> = {
     empleado_codigo: (m) => m.empleado.codigo,
+    identidad: (m) => m.empleado.identidad ?? "",
+    normales: (m) => m.horasNormales.toFixed(2),
+    ausencia: (m) => (m.esAusencia ? "Sí" : "No"),
     empleado_nombre: (m) => nombreCompleto(m.empleado),
     fecha: (m) => formatDate(m.fecha),
     diurnas: (m) => m.horasExtraDiurna.toFixed(2),
@@ -73,8 +79,8 @@ export async function GET(req: NextRequest) {
     observacion: (m) => m.observacion ?? "",
   };
 
-  const filas = marcajes.map((m) => COLUMNAS_HORAS_EXTRA.map((c) => valorDe[c.clave]?.(m) ?? ""));
-  const csv = generarCsv(etiquetas(COLUMNAS_HORAS_EXTRA), filas, delimitador);
+  const filas = marcajes.map((m) => columnas.map((c) => valorDe[c.clave]?.(m) ?? ""));
+  const csv = generarCsv(etiquetas(columnas), filas, delimitador);
 
   const { ip, userAgent } = getClientInfo(req);
   await audit({

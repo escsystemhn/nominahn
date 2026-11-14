@@ -30,6 +30,7 @@
 
 import { money, redondear, maximo, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
 import { calcularVacacionesDevengadas, diaComercial, diasVacacionesPorAnio } from "./calculos-hn";
+import { CONCEPTO_ADELANTO_13, CONCEPTO_ADELANTO_14, CONCEPTO_NEGOCIACION } from "@/lib/prestaciones/anticipos";
 
 export type CausaTerminacion =
   | "DESPIDO_INJUSTIFICADO"
@@ -249,6 +250,15 @@ export interface EntradaLiquidacion {
    * patrono sólo paga la diferencia (Decreto 47-2024, Art. 6).
    */
   saldoFondoReserva?: MoneyInput;
+  /**
+   * Negociación de prestaciones ya pagada aparte (AnticipoPrestacion): se rebaja de la
+   * cesantía, después del Fondo de Reserva, hasta dejarla en cero. Lo que exceda se
+   * informa y NO se cobra de los demás conceptos (decisión de Edbin, 2026-11-14).
+   */
+  negociacionPrestaciones?: MoneyInput;
+  /** Adelantos del 13.º y del 14.º en curso ya pagados aparte: se rebajan del proporcional. */
+  adelantoDecimoTercero?: MoneyInput;
+  adelantoDecimoCuarto?: MoneyInput;
 }
 
 /** Concepto con que se rebaja de la cesantía lo que entrega el Fondo de Reserva Laboral. */
@@ -275,6 +285,8 @@ export interface ResultadoLiquidacion {
   totalAPagar: Money;
   /** Avisos sobre topes aplicados o derechos que no corresponden. */
   observaciones: string[];
+  /** Lo que se rebajó de cada anticipo pagado aparte (nunca más que el concepto). */
+  rebajas: { negociacion: Money; adelanto13: Money; adelanto14: Money };
 }
 
 /**
@@ -301,6 +313,9 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
     deducciones = 0,
     deduccionesLegales = [],
     saldoFondoReserva = 0,
+    negociacionPrestaciones = 0,
+    adelantoDecimoTercero = 0,
+    adelantoDecimoCuarto = 0,
   } = entrada;
 
   const t = calcularTiempoServicio(fechaIngreso, fechaSalida);
@@ -310,6 +325,8 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
 
   const conceptos: ConceptoLiquidacion[] = [];
   const observaciones: string[] = [];
+  const negociado = maximo(money(negociacionPrestaciones), 0);
+  let rebajaNegociacion = CERO;
 
   const agregar = (concepto: string, dias: number | null, monto: Money, base: string) => {
     if (monto.isZero()) return;
@@ -347,13 +364,26 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
     // RAP y se descuenta de la cesantía; en renuncia (35 %) y muerte (75 %) el
     // patrono completa sólo lo que falte hasta esos porcentajes.
     const fondo = maximo(money(saldoFondoReserva), 0);
+    const rebajaFondo = fondo.greaterThan(0) ? minimo(fondo, cesantia) : CERO;
     if (fondo.greaterThan(0)) {
-      const rebaja = minimo(fondo, cesantia);
+      const rebaja = rebajaFondo;
       agregar(CONCEPTO_FONDO_RESERVA, null, rebaja.negated(), "Decreto 47-2024, Art. 6");
       observaciones.push(
         `De la cesantía se rebajan ${rebaja.toFixed(2)} del Fondo de Reserva Laboral: ese saldo lo entrega el RAP, el patrono paga la diferencia.` +
           (fondo.greaterThan(cesantia)
             ? ` El fondo supera la cesantía en ${fondo.minus(cesantia).toFixed(2)}: el RAP le entrega esa diferencia como prima de antigüedad.`
+            : "")
+      );
+    }
+
+    // Negociación de prestaciones ya pagada: se rebaja de lo que queda de cesantía.
+    if (negociado.greaterThan(0)) {
+      rebajaNegociacion = redondear(minimo(negociado, maximo(cesantia.minus(rebajaFondo), 0)));
+      agregar(CONCEPTO_NEGOCIACION, null, rebajaNegociacion.negated(), "Pagada por anticipado (Art. 120 C.T.)");
+      observaciones.push(
+        `De la cesantía se rebajan ${rebajaNegociacion.toFixed(2)} de la negociación de prestaciones ya pagada.` +
+          (negociado.greaterThan(rebajaNegociacion)
+            ? ` Lo pagado supera la cesantía en ${negociado.minus(rebajaNegociacion).toFixed(2)}: ese exceso no se descuenta de los demás conceptos.`
             : "")
       );
     }
@@ -380,6 +410,12 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
   } else if (diasBase === 0 && t.mesesCompletos < CESANTIA_MESES_MINIMOS) {
     observaciones.push(
       `Menos de ${CESANTIA_MESES_MINIMOS} meses de servicio: no genera auxilio de cesantía.`
+    );
+  }
+
+  if (negociado.greaterThan(0) && !(diasBase > 0 && porcentaje > 0)) {
+    observaciones.push(
+      `Hay ${negociado.toFixed(2)} de negociación de prestaciones ya pagada, pero esta terminación no genera cesantía: no se rebaja de los demás conceptos.`
     );
   }
 
@@ -410,6 +446,21 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
   // Los calcula `./decimos.ts`; aquí sólo entran como importe ya devengado.
   agregar("Décimo tercer mes proporcional", null, money(decimoTerceroDevengado), "Decreto 112-82");
   agregar("Décimo cuarto mes proporcional", null, money(decimoCuartoDevengado), "Decreto 135-94");
+
+  // Adelantos de esos décimos ya pagados aparte: se rebajan del proporcional, sin dejarlo
+  // en negativo; lo que exceda se informa.
+  const rebajarAdelanto = (adelanto: MoneyInput, devengado: MoneyInput, concepto: string, nombre: string): Money => {
+    const pagado = maximo(money(adelanto), 0);
+    if (!pagado.greaterThan(0)) return CERO;
+    const rebaja = redondear(minimo(pagado, maximo(money(devengado), 0)));
+    agregar(concepto, null, rebaja.negated(), "Pagado por anticipado");
+    if (pagado.greaterThan(rebaja)) {
+      observaciones.push(`El adelanto del ${nombre} (${pagado.toFixed(2)}) supera su proporcional en ${pagado.minus(rebaja).toFixed(2)}: ese exceso no se descuenta de los demás conceptos.`);
+    }
+    return rebaja;
+  };
+  const rebaja13 = rebajarAdelanto(adelantoDecimoTercero, decimoTerceroDevengado, CONCEPTO_ADELANTO_13, "décimo tercer mes");
+  const rebaja14 = rebajarAdelanto(adelantoDecimoCuarto, decimoCuartoDevengado, CONCEPTO_ADELANTO_14, "décimo cuarto mes");
 
   // ── Adeudos pendientes ─────────────────────────────────────────────────────
   agregar("Salarios pendientes", null, money(salariosPendientes), "Art. 367 C.T.");
@@ -446,6 +497,7 @@ export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiqui
     deduccionesDetalle,
     totalAPagar: redondear(totalPrestaciones.minus(deduccionesAplicadas)),
     observaciones,
+    rebajas: { negociacion: rebajaNegociacion, adelanto13: rebaja13, adelanto14: rebaja14 },
   };
 }
 

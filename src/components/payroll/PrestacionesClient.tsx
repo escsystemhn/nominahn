@@ -80,6 +80,8 @@ interface Decimo {
   montoGravado: string | number;
   isrRetenido: string | number;
   montoPagado: string | number;
+  /** Adelantos de este décimo pagados aparte, ya restados del neto. */
+  adelantos?: string | number;
   estado: EstadoDecimo;
   esProporcional: boolean;
   fechaPago: string | null;
@@ -264,6 +266,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
       devengado: suma("montoDevengado"),
       isr: suma("isrRetenido"),
       neto: suma("montoPagado"),
+      adelantos: vigentes.reduce((s, d) => s + Number(d.adelantos ?? 0), 0),
       calculadas: filas.filter((d) => d.estado === "CALCULADA").map((d) => d.id),
     };
   }, [decimos]);
@@ -553,6 +556,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                 { label: "Empleados", valor: resumenDec.empleados },
                 { label: "Devengado", valor: formatCurrency(resumenDec.devengado) },
                 { label: "ISR retenido", valor: formatCurrency(resumenDec.isr) },
+                ...(resumenDec.adelantos > 0 ? [{ label: "Adelantos ya pagados", valor: formatCurrency(resumenDec.adelantos) }] : []),
                 { label: "Neto a pagar", valor: formatCurrency(resumenDec.neto), destacada: true },
               ]}
             />
@@ -589,6 +593,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                       <th className="num">Devengado</th>
                       <th className="num">Exento</th>
                       <th className="num">ISR</th>
+                      {resumenDec.adelantos > 0 && <th className="num">Adelantos</th>}
                       <th className="num">Neto</th>
                       <th>Estado</th>
                       <th><span className="sr-only">Acciones</span></th>
@@ -608,6 +613,9 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
                           <td data-etiqueta="Devengado" className="num whitespace-nowrap">{formatCurrency(Number(d.montoDevengado))}</td>
                           <td data-etiqueta="Exento" className="num whitespace-nowrap text-gray-500">{formatCurrency(Number(d.montoExento))}</td>
                           <td data-etiqueta="ISR" className="num whitespace-nowrap text-gray-500">{formatCurrency(Number(d.isrRetenido))}</td>
+                          {resumenDec.adelantos > 0 && (
+                            <td data-etiqueta="Adelantos" className="num whitespace-nowrap text-gray-500">{Number(d.adelantos ?? 0) > 0 ? `− ${formatCurrency(Number(d.adelantos))}` : ""}</td>
+                          )}
                           <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(Number(d.montoPagado))}</td>
                           <td data-etiqueta="Estado">
                             <EstadoBadge valor={d.estado} />

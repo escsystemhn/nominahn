@@ -161,6 +161,12 @@
     @apply h-auto py-2;
   }
 
+  /* Lo mismo una lista (select con `size` o `multiple`): muestra las filas que pide. */
+  select.input[size],
+  select.input[multiple] {
+    @apply h-auto py-1;
+  }
+
   .panel {
     @apply rounded-xl border border-gray-200 bg-white;
   }

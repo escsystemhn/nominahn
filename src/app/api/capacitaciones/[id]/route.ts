@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requerirPermiso } from "@/lib/auth/guard";
+import { puede, requerirPermiso } from "@/lib/auth/guard";
+import { formatoIdentidad } from "@/lib/empleados/identidad";
 import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { filtroCapacitaciones, filtroCapacitacionesCompletas } from "@/lib/capacitaciones/alcance";
 import { nombreCompleto } from "@/lib/utils";
@@ -25,7 +26,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     include: {
       participantes: {
         where: filtroPorEmpleado(g.usuario),
-        include: { empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, codigo: true } } },
+        include: { empleado: { select: { primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, codigo: true, identidad: true } } },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -37,6 +38,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     empleadoId: p.empleadoId,
     nombre: nombreCompleto(p.empleado),
     codigo: p.empleado.codigo,
+    // El DNI es dato personal: sólo para quien puede ver datos personales.
+    identidad: puede(g.usuario, "empleados.pii") ? formatoIdentidad(p.empleado.identidad) || null : null,
     asistio: p.asistio,
     aprobado: p.aprobado,
     calificacion: p.calificacion,

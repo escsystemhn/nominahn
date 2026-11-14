@@ -5,14 +5,8 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useAvisos } from "@/components/ui/Avisos";
 import { PRODUCTO } from "@/lib/marca";
-
-interface Competencia {
-  id: string;
-  nombre: string;
-  descripcion?: string;
-  nivelRequerido: string;
-  peso: number;
-}
+import { calificacionPonderada } from "@/lib/evaluaciones/calificacion";
+import type { Aspecto } from "@/lib/evaluaciones/aspectos";
 
 interface EvalData {
   participante: { id: string; rol: string; evaluador: { primerNombre: string; primerApellido: string } };
@@ -23,8 +17,11 @@ interface EvalData {
     empleado: { primerNombre: string; primerApellido: string; puesto?: { nombre: string } };
     campana?: { nombre: string };
   };
-  competenciasRequeridas: Competencia[];
+  aspectos: Aspecto[];
 }
+
+/** Clave estable de un aspecto: su id de catálogo o, en la lista base, su nombre. */
+const clave = (a: Aspecto) => a.competenciaId ?? a.nombre;
 
 const ROL_LABEL: Record<string, string> = {
   AUTOEVALUACION: "Autoevaluación",
@@ -56,6 +53,8 @@ export default function EvaluarPage() {
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comentarios, setComentarios] = useState<Record<string, string>>({});
   const [calGeneral, setCalGeneral] = useState(0);
+  // Un aspecto sin tocar no está calificado (no es un 0).
+  const [tocados, setTocados] = useState<Set<string>>(new Set());
   const [comentGeneral, setComentGeneral] = useState("");
 
   useEffect(() => {
@@ -67,9 +66,8 @@ export default function EvaluarPage() {
           else setError(json.error ?? "Error al cargar");
         } else {
           setData(json);
-          // Inicializar scores
           const init: Record<string, number> = {};
-          for (const c of json.competenciasRequeridas) init[c.id] = 0;
+          for (const a of json.aspectos as Aspecto[]) init[clave(a)] = 0;
           setScores(init);
         }
       })
@@ -81,21 +79,21 @@ export default function EvaluarPage() {
     e.preventDefault();
     if (!data) return;
 
-    // Validar que todas las competencias tienen calificación
-    for (const c of data.competenciasRequeridas) {
-      if (!scores[c.id] || scores[c.id] === 0) {
-        avisar.error(`Por favor califica la competencia: ${c.nombre}`);
+    // Cada aspecto tiene que haberse calificado (un 0 puesto a propósito vale).
+    for (const a of data.aspectos) {
+      if (!tocados.has(clave(a))) {
+        avisar.error(`Falta calificar: ${a.nombre}`);
         return;
       }
     }
 
     setEnviando(true);
-    const criteriosPayload = data.competenciasRequeridas.map((c) => ({
-      criterio: c.nombre,
-      competenciaId: c.id,
-      calificacion: scores[c.id] ?? 0,
-      peso: c.peso,
-      comentario: comentarios[c.id],
+    const criteriosPayload = data.aspectos.map((a) => ({
+      criterio: a.nombre,
+      competenciaId: a.competenciaId,
+      calificacion: scores[clave(a)] ?? 0,
+      peso: a.peso,
+      comentario: comentarios[clave(a)],
     }));
 
     const res = await fetch(`/api/evaluar/${token}`, {
@@ -157,7 +155,9 @@ export default function EvaluarPage() {
     );
   }
 
-  const { participante, evaluacion, competenciasRequeridas } = data;
+  const { participante, evaluacion, aspectos } = data;
+  // Con aspectos, la nota es su promedio ponderado; la general sólo cuenta si no hay aspectos.
+  const notaAspectos = calificacionPonderada(aspectos.map((a) => ({ calificacion: tocados.has(clave(a)) ? scores[clave(a)] : null, peso: a.peso })));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-8 px-4">
@@ -206,24 +206,29 @@ export default function EvaluarPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Competencias */}
-          {competenciasRequeridas.length > 0 && (
+          {aspectos.length > 0 && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="font-semibold text-gray-800 mb-4">Competencias requeridas</h2>
+              <h2 className="font-semibold text-gray-800 mb-4">Aspectos a evaluar</h2>
               <div className="space-y-6">
-                {competenciasRequeridas.map((comp) => (
-                  <div key={comp.id} className="border-b border-gray-100 pb-5 last:border-0 last:pb-0">
+                {aspectos.map((comp) => (
+                  <div key={clave(comp)} className="border-b border-gray-100 pb-5 last:border-0 last:pb-0">
                     <div className="flex items-start justify-between gap-4 mb-2">
                       <div>
                         <p className="font-medium text-gray-900 text-sm">{comp.nombre}</p>
                         {comp.descripcion && (
                           <p className="text-xs text-gray-500 mt-0.5">{comp.descripcion}</p>
                         )}
-                        <p className="text-xs text-blue-600 mt-1">
-                          Nivel requerido: {NIVEL_LABEL[comp.nivelRequerido] ?? comp.nivelRequerido}
-                        </p>
+                        {comp.nivelRequerido && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            Nivel requerido: {NIVEL_LABEL[comp.nivelRequerido] ?? comp.nivelRequerido}
+                          </p>
+                        )}
+                        {aspectos.some((a) => a.peso !== comp.peso) && (
+                          <p className="text-xs text-gray-500 mt-0.5">Peso {comp.peso}</p>
+                        )}
                       </div>
                       <div className="text-right min-w-[48px]">
-                        <span className="text-2xl font-bold text-blue-700">{scores[comp.id] ?? 0}</span>
+                        <span className="text-2xl font-bold text-blue-700">{tocados.has(clave(comp)) ? scores[clave(comp)] : "—"}</span>
                         <p className="text-xs text-gray-500">/ 100</p>
                       </div>
                     </div>
@@ -234,8 +239,13 @@ export default function EvaluarPage() {
                       min={0}
                       max={100}
                       step={5}
-                      value={scores[comp.id] ?? 0}
-                      onChange={(e) => setScores((prev) => ({ ...prev, [comp.id]: Number(e.target.value) }))}
+                      value={scores[clave(comp)] ?? 0}
+                      aria-label={`Calificación de ${comp.nombre}`}
+                      onChange={(e) => {
+                        const k = clave(comp);
+                        setScores((prev) => ({ ...prev, [k]: Number(e.target.value) }));
+                        setTocados((prev) => new Set(prev).add(k));
+                      }}
                       className="w-full accent-blue-600 mb-2"
                     />
                     <div className="flex justify-between text-xs text-gray-500 mb-3">
@@ -244,8 +254,8 @@ export default function EvaluarPage() {
 
                     <textarea
                       placeholder="Comentario sobre esta competencia (opcional)"
-                      value={comentarios[comp.id] ?? ""}
-                      onChange={(e) => setComentarios((prev) => ({ ...prev, [comp.id]: e.target.value }))}
+                      value={comentarios[clave(comp)] ?? ""}
+                      onChange={(e) => setComentarios((prev) => ({ ...prev, [clave(comp)]: e.target.value }))}
                       rows={2}
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
                     />
@@ -260,19 +270,24 @@ export default function EvaluarPage() {
             <h2 className="font-semibold text-gray-800 mb-4">Calificación general</h2>
 
             <div className="flex items-center gap-4 mb-3">
-              <span className="text-3xl font-bold text-blue-700">{calGeneral}</span>
+              <span className="text-3xl font-bold text-blue-700">{aspectos.length > 0 ? (notaAspectos ?? "—") : calGeneral}</span>
               <span className="text-gray-500">/ 100</span>
             </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={calGeneral}
-              onChange={(e) => setCalGeneral(Number(e.target.value))}
-              className="w-full accent-blue-600 mb-4"
-              required
-            />
+            {aspectos.length > 0 ? (
+              <p className="mb-4 text-xs text-gray-500">Es el promedio de los aspectos, cada uno con su peso.</p>
+            ) : (
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={calGeneral}
+                onChange={(e) => setCalGeneral(Number(e.target.value))}
+                className="w-full accent-blue-600 mb-4"
+                aria-label="Calificación general"
+                required
+              />
+            )}
 
             <label className="block text-sm font-medium text-gray-700 mb-1">Comentarios generales</label>
             <textarea
@@ -286,7 +301,7 @@ export default function EvaluarPage() {
 
           <button
             type="submit"
-            disabled={enviando || calGeneral === 0}
+            disabled={enviando || (aspectos.length > 0 ? tocados.size < aspectos.length : calGeneral === 0)}
             className="w-full py-3 bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white font-semibold rounded-xl transition-colors text-sm"
           >
             {enviando ? "Enviando..." : "Enviar evaluación"}

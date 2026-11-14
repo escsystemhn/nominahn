@@ -10,6 +10,7 @@ import { normalizarReglas } from "./reglas";
 import { minutosDeHora, jornadaDeHoras } from "./ley";
 import { rango, sumarDias, edadEn } from "./fechas";
 import { unificarPuestosPorNombre } from "@/lib/organizacion/puestos";
+import { destinoEn, type TrasladoPlan } from "./traslados";
 import {
   PREFERENCIAS_VACIAS,
   type Alerta,
@@ -106,10 +107,54 @@ const TIPO_PERMISO: Record<string, string> = {
   SIN_GOCE: "Permiso sin goce de sueldo", OTRO: "Permiso",
 };
 
+/** Un traslado temporal con los nombres que muestra la pantalla. */
+export type TrasladoConNombres = TrasladoPlan & { empleadoNombre: string; origenNombre: string; destinoNombre: string };
+
+/** De dónde viene quien está en el plan por un traslado temporal. */
+export interface TrasladoDe {
+  sucursalNombre: string;
+  desde: string;
+  hasta: string;
+}
+
+/** Traslados (no anulados) que tocan el período en esas sucursales, de ida o de vuelta. */
+export async function trasladosDelPeriodo(
+  db: Db,
+  o: { desde: string; hasta: string; sucursalesIds?: string[]; empleadoIds?: string[] }
+): Promise<TrasladoConNombres[]> {
+  const donde: Prisma.TrasladoTemporalWhereInput[] = [];
+  if (o.sucursalesIds) donde.push({ sucursalDestinoId: { in: o.sucursalesIds } }, { empleado: { sucursalId: { in: o.sucursalesIds } } });
+  if (o.empleadoIds) donde.push({ empleadoId: { in: o.empleadoIds } });
+  const filas = await db.trasladoTemporal.findMany({
+    where: { anulado: false, desde: { lte: aFecha(o.hasta) }, hasta: { gte: aFecha(o.desde) }, ...(donde.length ? { OR: donde } : {}) },
+    select: {
+      id: true, empleadoId: true, sucursalOrigenId: true, sucursalDestinoId: true, desde: true, hasta: true, motivo: true,
+      sucursalDestino: { select: { nombre: true } },
+      empleado: { select: { primerNombre: true, primerApellido: true, sucursal: { select: { id: true, nombre: true } } } },
+    },
+    orderBy: [{ desde: "asc" }],
+  });
+  return filas.map((t) => ({
+    id: t.id,
+    empleadoId: t.empleadoId,
+    // La sucursal de HOY: si lo cambiaron de sucursal después, el traslado se lee desde la nueva.
+    sucursalOrigenId: t.empleado.sucursal.id,
+    sucursalDestinoId: t.sucursalDestinoId,
+    desde: ymd(t.desde),
+    hasta: ymd(t.hasta),
+    motivo: t.motivo,
+    empleadoNombre: `${t.empleado.primerNombre} ${t.empleado.primerApellido}`,
+    origenNombre: t.empleado.sucursal.nombre,
+    destinoNombre: t.sucursalDestino.nombre,
+  }));
+}
+
 export interface Contexto {
   desde: string;
   hasta: string;
-  empleados: (EmpleadoPlan & { puestoNombre: string })[];
+  empleados: (EmpleadoPlan & { puestoNombre: string; trasladoDe?: TrasladoDe })[];
+  /** Traslados temporales que entran a o salen de las sucursales del plan. */
+  traslados: TrasladoConNombres[];
   turnos: (TurnoCatalogo & { tipoDeclarado: string })[];
   requisitos: Requisito[];
   horarioAtencion: HorarioAtencionDia[];
@@ -130,11 +175,17 @@ export async function cargarContexto(
   const desde = aFecha(o.desde);
   const hasta = aFecha(o.hasta);
 
-  const [sucursales, filasEmp, turnos, coberturas, horarios, feriados, permisos, incapacidades] = await Promise.all([
+  // Traslados temporales: quien viene de otra sucursal entra al plan como personal de la
+  // de destino (ausente fuera de esas fechas); quien se va, queda ausente esos días.
+  const traslados = await trasladosDelPeriodo(db, { desde: o.desde, hasta: o.hasta, sucursalesIds: o.sucursalesIds });
+  const enPlanSuc = new Set(o.sucursalesIds);
+  const vienen = traslados.filter((t) => enPlanSuc.has(t.sucursalDestinoId) && !enPlanSuc.has(t.sucursalOrigenId));
+
+  const [sucursales, filasEmp, turnos, coberturas, horarios, feriados] = await Promise.all([
     db.sucursal.findMany({ where: { id: { in: o.sucursalesIds } }, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
     db.empleado.findMany({
       where: {
-        sucursalId: { in: o.sucursalesIds },
+        OR: [{ sucursalId: { in: o.sucursalesIds } }, { id: { in: [...new Set(vienen.map((t) => t.empleadoId))] } }],
         estado: { notIn: ["INACTIVO", "SUSPENDIDO"] },
         puestoId: { not: null },
         fechaIngreso: { lte: hasta },
@@ -150,8 +201,12 @@ export async function cargarContexto(
     db.coberturaSucursal.findMany({ where: { sucursalId: { in: o.sucursalesIds }, activo: true }, include: { puesto: { select: { nombre: true } } } }),
     db.horarioAtencion.findMany({ where: { sucursalId: { in: o.sucursalesIds } } }),
     db.feriado.findMany({ where: { activo: true, fecha: { gte: desde, lte: hasta }, OR: [{ sucursalId: null }, { sucursalId: { in: o.sucursalesIds } }] } }),
-    db.permiso.findMany({ where: { estado: "APROBADO", fechaInicio: { lte: hasta }, fechaFin: { gte: desde }, empleado: { sucursalId: { in: o.sucursalesIds } } } }),
-    db.incapacidad.findMany({ where: { anulada: false, fechaInicio: { lte: hasta }, fechaFin: { gte: desde }, empleado: { sucursalId: { in: o.sucursalesIds } } } }),
+  ]);
+  // Por persona y no por sucursal: así entran también los permisos de quien viene trasladado.
+  const idsEmp = filasEmp.map((e) => e.id);
+  const [permisos, incapacidades] = await Promise.all([
+    db.permiso.findMany({ where: { estado: "APROBADO", fechaInicio: { lte: hasta }, fechaFin: { gte: desde }, empleadoId: { in: idsEmp } } }),
+    db.incapacidad.findMany({ where: { anulada: false, fechaInicio: { lte: hasta }, fechaFin: { gte: desde }, empleadoId: { in: idsEmp } } }),
   ]);
 
   // Lo que usan el generador y el validador es el puesto común a todos los de su
@@ -163,17 +218,22 @@ export async function cargarContexto(
   ]);
   const puestoComun = (id: string) => unificados.get(id) ?? id;
 
-  const empleados = filasEmp.map((e) => ({
-    id: e.id,
-    codigo: e.codigo,
-    nombre: [e.primerNombre, e.segundoNombre, e.primerApellido, e.segundoApellido].filter(Boolean).join(" "),
-    puestoId: puestoComun(e.puestoId!),
-    puestoNombre: e.puesto?.nombre ?? "",
-    sucursalId: e.sucursalId,
-    edad: edadEn(ymd(e.fechaNacimiento), o.desde),
-    exento: reglas.puestosExentos.includes(e.puestoId!),
-    preferencias: aPreferencias(e.preferenciaHorario),
-  }));
+  const empleados = filasEmp.map((e) => {
+    // Quien viene de otra sucursal cuenta, en este plan, como personal de la de destino.
+    const viene = enPlanSuc.has(e.sucursalId) ? undefined : vienen.find((t) => t.empleadoId === e.id);
+    return {
+      id: e.id,
+      codigo: e.codigo,
+      nombre: [e.primerNombre, e.segundoNombre, e.primerApellido, e.segundoApellido].filter(Boolean).join(" "),
+      puestoId: puestoComun(e.puestoId!),
+      puestoNombre: e.puesto?.nombre ?? "",
+      sucursalId: viene ? viene.sucursalDestinoId : e.sucursalId,
+      edad: edadEn(ymd(e.fechaNacimiento), o.desde),
+      exento: reglas.puestosExentos.includes(e.puestoId!),
+      preferencias: aPreferencias(e.preferenciaHorario),
+      ...(viene ? { trasladoDe: { sucursalNombre: viene.origenNombre, desde: viene.desde, hasta: viene.hasta } } : {}),
+    };
+  });
 
   const ausencias: Ausencia[] = [];
   const dentro = (f: string) => f >= o.desde && f <= o.hasta;
@@ -186,6 +246,18 @@ export async function cargarContexto(
   for (const e of filasEmp) {
     const ingreso = ymd(e.fechaIngreso);
     if (ingreso > o.desde) for (const f of rango(o.desde, sumarDias(ingreso, -1))) ausencias.push({ empleadoId: e.id, fecha: f, motivo: "Aún no ingresa" });
+    for (const f of rango(o.desde, o.hasta)) {
+      const destino = destinoEn(traslados, e.id, f);
+      if (enPlanSuc.has(e.sucursalId)) {
+        // Prestado a una sucursal que no está en este plan: ese día no se cuenta con él.
+        if (destino && !enPlanSuc.has(destino)) {
+          ausencias.push({ empleadoId: e.id, fecha: f, motivo: `Trasladado a ${traslados.find((t) => t.sucursalDestinoId === destino)?.destinoNombre ?? "otra sucursal"}` });
+        }
+      } else if (!destino || !enPlanSuc.has(destino)) {
+        // Viene trasladado: fuera de sus fechas no está en estas sucursales.
+        ausencias.push({ empleadoId: e.id, fecha: f, motivo: "Fuera de su traslado" });
+      }
+    }
   }
 
   // Últimos 7 días ya publicados: continuidad de rachas, descansos y horas de la semana.
@@ -219,6 +291,7 @@ export async function cargarContexto(
     reglas,
     sucursales,
     nombres: { sucursales: Object.fromEntries(sucursales.map((s) => [s.id, s.nombre])), puestos: nombresPuestos },
+    traslados,
   };
 }
 
@@ -264,9 +337,10 @@ export async function planConValidacion(db: Db, planId: string) {
   const reglas = normalizarReglas(plan.reglas);
   const ctx = await cargarContexto(db, { desde: ymd(plan.desde), hasta: ymd(plan.hasta), sucursalesIds: plan.sucursalesIds, reglas, excluirPlanId: plan.id });
   const dias = plan.dias.map(diaDeFila);
-  // Sólo las personas que están en el plan (alguien pudo darse de baja después).
+  // Sólo las personas que están en el plan (alguien pudo darse de baja después), y quien
+  // viene trasladado aunque todavía no tenga días: así aparece para asignarle turnos.
   const enPlan = new Set(dias.map((d) => d.empleadoId));
-  const empleados = ctx.empleados.filter((e) => enPlan.has(e.id));
+  const empleados = ctx.empleados.filter((e) => enPlan.has(e.id) || e.trasladoDe);
   const validacion = validarPlan({ ...ctx, empleados, dias });
   const resumenGuardado = (plan.resumen ?? {}) as Partial<ResumenGuardado>;
   return { plan, ctx: { ...ctx, empleados }, dias, validacion, notas: resumenGuardado.notas ?? [] };

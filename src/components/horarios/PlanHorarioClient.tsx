@@ -17,11 +17,27 @@ import FranjaCifras from "@/components/ui/FranjaCifras";
 import { horaDeMinutos, ETIQUETA_EXTRA, type ClaseExtra } from "@/lib/horarios/ley";
 import { rango, fechaCorta, diaIso, periodoTexto, enumerar } from "@/lib/horarios/fechas";
 import type { Alerta, DiaCalculado, EmpleadoPlan, Faltante, ResumenEmpleado } from "@/lib/horarios/tipos";
+import AsistenteImportacion from "@/components/importacion/AsistenteImportacion";
+import TrasladoTemporalModal from "./TrasladoTemporalModal";
+
+interface Traslado {
+  id: string;
+  empleadoId: string;
+  empleadoNombre: string;
+  origenNombre: string;
+  destinoNombre: string;
+  sucursalDestinoId: string;
+  desde: string;
+  hasta: string;
+  motivo: string | null;
+}
 
 interface Datos {
   plan: { id: string; nombre: string; desde: string; hasta: string; estado: string; sucursalesIds: string[]; publicadoPor: string | null; publicadoAt: string | null };
-  empleados: (EmpleadoPlan & { puestoNombre: string })[];
+  empleados: (EmpleadoPlan & { puestoNombre: string; trasladoDe?: { sucursalNombre: string; desde: string; hasta: string } })[];
   sucursales: { id: string; nombre: string }[];
+  /** Traslados temporales que entran a o salen de las sucursales del plan. */
+  traslados: Traslado[];
   puestos: Record<string, string>;
   turnos: { id: string; codigo: string; nombre: string; entrada: number; salida: number; pausa: number }[];
   feriados: { fecha: string; sucursalId: string | null; nombre: string }[];
@@ -63,6 +79,8 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
   const [guardando, setGuardando] = useState(false);
   const [filtroNivel, setFiltroNivel] = useState<"" | Alerta["nivel"]>("");
   const [filtroTipo, setFiltroTipo] = useState<"" | Alerta["tipo"]>("");
+  const [importando, setImportando] = useState(false);
+  const [trayendo, setTrayendo] = useState(false);
 
   const cargar = useCallback(async () => {
     const r = await fetch(`/api/horarios/planes/${id}`, { cache: "no-store" });
@@ -180,6 +198,8 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
           <a className="btn btn-secondary" href={`/api/horarios/planes/${id}/exportar?formato=xlsx`}>Excel</a>
           <a className="btn btn-secondary" href={`/api/horarios/planes/${id}/exportar?formato=pdf`}>PDF</a>
           <a className="btn btn-secondary" href={`/api/horarios/planes/${id}/exportar?formato=json`}>JSON</a>
+          {editable && <button type="button" className="btn btn-secondary" onClick={() => setImportando(true)}>Importar de Excel</button>}
+          {editable && <button type="button" className="btn btn-secondary" onClick={() => setTrayendo(true)}>Personal de otra sucursal</button>}
           {puedeEditar && plan.estado === "BORRADOR" && <button type="button" className="btn btn-primary" disabled={errLegales.length > 0} title={errLegales.length ? "Corrija los errores legales antes de publicar" : undefined} onClick={() => accion("publicar")}>Publicar</button>}
           {puedeEditar && plan.estado !== "BORRADOR" && <button type="button" className="btn btn-secondary" onClick={() => accion("borrador")}>Volver a borrador</button>}
           {puedeEditar && plan.estado !== "ARCHIVADO" && <button type="button" className="btn btn-ghost" onClick={() => accion("archivar")}>Archivar</button>}
@@ -263,6 +283,11 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
                       <tr key={e.id} className="border-t border-gray-100">
                         <td className="sticky left-0 z-10 bg-white px-3 py-1.5">
                           <span className="font-medium text-gray-900">{e.nombre}</span>
+                          {e.trasladoDe && (
+                            <span className="block text-xs text-blue-800" data-trasladado-de title="Traslado temporal: su sucursal y su planilla no cambian">
+                              De {e.trasladoDe.sucursalNombre}, {e.trasladoDe.desde === e.trasladoDe.hasta ? fechaCorta(e.trasladoDe.desde) : `${fechaCorta(e.trasladoDe.desde)} a ${fechaCorta(e.trasladoDe.hasta)}`}
+                            </span>
+                          )}
                           {e.edad < 18 && <span className="ml-1 text-xs text-pink-700" title="Menor de edad">{e.edad} años</span>}
                           {e.exento && <span className="ml-1 text-xs text-gray-500" title="Cargo de dirección o confianza (Art. 325)">Art. 325</span>}
                         </td>
@@ -302,7 +327,77 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
               );
             }
           })}
+          {datos.traslados.length > 0 && (
+            <section className="panel overflow-hidden" data-traslados>
+              <h2 className="border-b border-gray-200 px-4 py-3 text-base font-semibold text-gray-900">Traslados temporales</h2>
+              <div className="overflow-x-auto">
+                <table className="table-base">
+                  <thead>
+                    <tr><th>Persona</th><th>De</th><th>A</th><th>Del</th><th>Al</th><th>Motivo</th><th><span className="sr-only">Acciones</span></th></tr>
+                  </thead>
+                  <tbody>
+                    {datos.traslados.map((t) => (
+                      <tr key={t.id}>
+                        <td>{t.empleadoNombre}</td>
+                        <td>{t.origenNombre}</td>
+                        <td>{t.destinoNombre}</td>
+                        <td className="whitespace-nowrap">{fechaCorta(t.desde)}</td>
+                        <td className="whitespace-nowrap">{fechaCorta(t.hasta)}</td>
+                        <td className="text-gray-600">{t.motivo ?? ""}</td>
+                        <td className="text-right">
+                          {puedeEditar && (
+                            <button
+                              type="button"
+                              className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50"
+                              onClick={async () => {
+                                if (!(await confirmar({ titulo: `¿Anular el traslado de ${t.empleadoNombre} a ${t.destinoNombre}?`, detalle: "Sus días en planes en borrador de esa sucursal se quitan.", accion: "Anular", peligro: true }))) return;
+                                const r = await fetch(`/api/horarios/traslados/${t.id}`, { method: "DELETE" });
+                                setAviso(r.ok ? { ok: true, texto: "Traslado anulado." } : { ok: false, texto: (await r.json().catch(() => ({}))).error ?? "No se pudo anular" });
+                                await cargar();
+                              }}
+                            >
+                              Anular
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
+      )}
+
+      {importando && (
+        <AsistenteImportacion
+          recurso="horarios"
+          titulo="Importar horarios de Excel"
+          ayuda="Una fila por empleado y día: código o DNI, fecha, sucursal y turno (su código, D = descanso, A = ausencia) o la entrada y la salida. Otra sucursal del plan para alguien de otra sucursal crea su traslado temporal. Antes de aplicar verá cada fila con sus errores: empleados o sucursales que no existen, fechas fuera del plan, filas repetidas o turnos que se cruzan con otro plan publicado. Lo que el archivo no menciona queda como está."
+          extras={{ planId: id }}
+          plantillas={{
+            xlsx: `/api/exportar/horarios?plantilla=1&planId=${id}&formato=xlsx`,
+            csv: `/api/exportar/horarios?plantilla=1&planId=${id}`,
+            texto: "Descargar este plan en Excel para llenarlo (con instrucciones y los códigos de turno)",
+          }}
+          onHecho={() => void cargar()}
+          onCerrar={() => setImportando(false)}
+        />
+      )}
+      {trayendo && (
+        <TrasladoTemporalModal
+          planId={id}
+          desde={plan.desde}
+          hasta={plan.hasta}
+          sucursales={datos.sucursales}
+          onCerrar={() => setTrayendo(false)}
+          onListo={async (avisoServidor) => {
+            setTrayendo(false);
+            setAviso({ ok: true, texto: "Traslado registrado: la persona ya aparece en el horario para asignarle turnos.", detalle: avisoServidor ? [avisoServidor] : undefined });
+            await cargar();
+          }}
+        />
       )}
 
       {pestana === "resumen" && (

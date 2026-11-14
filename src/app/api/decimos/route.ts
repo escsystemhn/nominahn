@@ -13,6 +13,8 @@ import {
 } from "@/lib/payroll/decimos";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
 import { money, CERO, type Money } from "@/lib/payroll/money";
+import { ADELANTO_DE, repartirAnticipos } from "@/lib/prestaciones/anticipos";
+import { aplicarAnticipos, liberarAnticipos } from "@/lib/prestaciones/anticipos-bd";
 import { z } from "zod";
 import { validarTransicionDecimo, type EstadoDecimo } from "@/lib/payroll/estado-prestaciones";
 import { hoyHN } from "@/lib/utils";
@@ -115,6 +117,20 @@ export async function POST(req: NextRequest) {
   const filas: Prisma.LiquidacionDecimoCreateManyInput[] = [];
   let totalDevengado = CERO;
   let totalIsr = CERO;
+  let totalAdelantos = CERO;
+
+  // Adelantos de este décimo pagados aparte: los vigentes y los que tomó la liquidación
+  // CALCULADA que este cálculo reemplaza. Se restan del neto, sin dejarlo en negativo.
+  const adelantos = await prisma.anticipoPrestacion.findMany({
+    where: {
+      tipo: ADELANTO_DE[tipo],
+      anioDecimo: anio,
+      empleadoId: { in: empleados.map((e) => e.id) },
+      OR: [{ estado: "VIGENTE" }, { estado: "APLICADO", liquidacionDecimo: { anio, tipo, estado: "CALCULADA" } }],
+    },
+    select: { id: true, empleadoId: true, monto: true, fechaPago: true },
+  });
+  const repartos = new Map<string, ReturnType<typeof repartirAnticipos> & { considerados: { id: string }[] }>();
 
   for (const emp of empleados) {
     // Salario promedio PONDERADO por los días de vigencia de cada importe: un
@@ -140,6 +156,10 @@ export async function POST(req: NextRequest) {
       parametros,
     });
 
+    const susAdelantos = adelantos.filter((a) => a.empleadoId === emp.id);
+    const reparto = repartirAnticipos(susAdelantos, fiscal.montoNeto);
+    if (susAdelantos.length > 0) repartos.set(emp.id, { ...reparto, considerados: susAdelantos });
+
     filas.push({
       empleadoId: emp.id,
       tipo,
@@ -152,7 +172,12 @@ export async function POST(req: NextRequest) {
       montoExento: fiscal.montoExento,
       montoGravado: fiscal.montoGravado,
       isrRetenido: fiscal.isrRetenido,
-      montoPagado: fiscal.montoNeto,
+      montoPagado: money(fiscal.montoNeto).minus(reparto.aplicado),
+      adelantos: reparto.aplicado,
+      observaciones: reparto.aplicado.greaterThan(0)
+        ? `Se restan ${reparto.aplicado.toFixed(2)} de adelantos ya pagados.` +
+          (reparto.exceso.greaterThan(0) ? ` El adelanto supera el neto en ${reparto.exceso.toFixed(2)}: ese exceso no se descuenta de otros conceptos.` : "")
+        : null,
       estado: "CALCULADA",
       esProporcional: devengo.esProporcional,
       calculadoPor: g.usuario.id,
@@ -160,6 +185,7 @@ export async function POST(req: NextRequest) {
 
     totalDevengado = totalDevengado.plus(devengo.montoDevengado);
     totalIsr = totalIsr.plus(fiscal.isrRetenido);
+    totalAdelantos = totalAdelantos.plus(reparto.aplicado);
   }
 
   if (filas.length === 0) {
@@ -179,10 +205,23 @@ export async function POST(req: NextRequest) {
   }
 
   await prisma.$transaction(async (tx) => {
+    // Los adelantos que tenía la liquidación que se reemplaza vuelven a quedar libres…
+    await liberarAnticipos(tx, { liquidacionDecimo: { anio, tipo, estado: "CALCULADA", empleadoId: { in: filas.map((f) => f.empleadoId) } } });
     await tx.liquidacionDecimo.deleteMany({
       where: { anio, tipo, estado: "CALCULADA", empleadoId: { in: filas.map((f) => f.empleadoId) } },
     });
     await tx.liquidacionDecimo.createMany({ data: filas });
+    // …y se aplican a la nueva.
+    if (repartos.size > 0) {
+      const nuevas = await tx.liquidacionDecimo.findMany({
+        where: { anio, tipo, empleadoId: { in: [...repartos.keys()] } },
+        select: { id: true, empleadoId: true },
+      });
+      for (const n of nuevas) {
+        const r = repartos.get(n.empleadoId);
+        if (r) await aplicarAnticipos(tx, r.considerados, r.partes, { liquidacionDecimoId: n.id });
+      }
+    }
   }, { timeout: 30000 });
 
   const { ip, userAgent } = getClientInfo(req);
@@ -195,7 +234,7 @@ export async function POST(req: NextRequest) {
     valorNuevo: {
       tipo, anio, sucursalId: sucursalId ?? null,
       empleados: filas.length,
-      totalDevengado, totalIsr,
+      totalDevengado, totalIsr, totalAdelantos,
     },
     ip,
     userAgent,
@@ -208,6 +247,7 @@ export async function POST(req: NextRequest) {
       empleados: filas.length,
       totalDevengado: totalDevengado.toFixed(2),
       totalIsr: totalIsr.toFixed(2),
+      totalAdelantos: totalAdelantos.toFixed(2),
       periodoDesde: ventana.desde,
       periodoHasta: ventana.hasta,
     },
@@ -256,6 +296,8 @@ export async function PATCH(req: NextRequest) {
       });
     } else {
       const nota = `Anulada el ${new Date().toISOString().slice(0, 10)}${motivo ? `: ${motivo}` : ""}`;
+      // Sus adelantos vuelven a quedar por rebajar.
+      await liberarAnticipos(tx, { liquidacionDecimoId: { in: ids } });
       for (const f of filas) {
         await tx.liquidacionDecimo.update({
           where: { id: f.id },

@@ -8,7 +8,7 @@ const ANA: EmpleadoRef = {
 };
 
 const RELOJ: MarcajeRef = {
-  diurnas: "1.50", mixtas: "0", nocturnas: "0", feriado: "0", esAusencia: false, fuente: "BIOMETRICO", observacion: null,
+  normales: "8.00", diurnas: "1.50", mixtas: "0", nocturnas: "0", feriado: "0", esAusencia: false, fuente: "BIOMETRICO", observacion: null,
 };
 
 function catalogos(over: Partial<CatalogosHorasExtra> & { empleado?: Partial<EmpleadoRef> } = {}): CatalogosHorasExtra {
@@ -18,6 +18,7 @@ function catalogos(over: Partial<CatalogosHorasExtra> & { empleado?: Partial<Emp
       ["emp-0001", { ...ANA, ...empleado }],
       ["emp-0002", { ...ANA, id: "e2", codigo: "EMP-0002", nombre: "Luis Discua", sucursalId: "s2" }],
     ]),
+    porIdentidad: new Map([["0801199012345", { ...ANA, ...empleado }]]),
     marcajes: new Map(),
     planillas: [],
     hoy: "2026-11-03",
@@ -200,13 +201,71 @@ describe("formato", () => {
   });
 
   it("exige las columnas obligatorias y alguna de horas", () => {
-    expect(errores(validar("Fecha,Extra 25%\n02/11/2026,1", catalogos(), "CREAR_O_ACTUALIZAR", () => true))[0].mensaje).toContain("empleado_codigo");
-    expect(errores(validar("Codigo Empleado,Fecha\nEMP-0001,02/11/2026", catalogos(), "CREAR_O_ACTUALIZAR", () => true))[0].mensaje).toContain("columna de horas");
+    expect(errores(validar("Fecha,Extra 25%\n02/11/2026,1", catalogos(), "CREAR_O_ACTUALIZAR", () => true))[0].mensaje).toContain("«Codigo Empleado» o «DNI»");
+    expect(errores(validar("Codigo Empleado,Fecha\nEMP-0001,02/11/2026", catalogos(), "CREAR_O_ACTUALIZAR", () => true))[0].mensaje).toContain("ninguna columna de horas");
   });
 
   it("ignora la columna informativa del nombre al volver a subir una exportación", () => {
     const r = validar("Codigo Empleado,Empleado,Fecha,Extra 25%\nEMP-0001,Ana,02/11/2026,1", catalogos(), "CREAR_O_ACTUALIZAR", () => true);
     expect(r.columnasDesconocidas).toEqual([]);
     expect(r.filas).toHaveLength(1);
+  });
+});
+
+describe("DNI, horas normales y ausencia (noviembre de 2026)", () => {
+  const con = (cab: string, fila: string, cat = catalogos()) => validar(`${cab}\n${fila}`, cat, "CREAR_O_ACTUALIZAR", () => true);
+
+  it("identifica al empleado por DNI, con o sin guiones", () => {
+    for (const dni of ["0801-1990-12345", "0801199012345"]) {
+      const r = con("DNI,Fecha,Extra 25%", `${dni},02/11/2026,2`);
+      expect(errores(r)).toEqual([]);
+      expect(r.filas[0].empleadoId).toBe("e1");
+    }
+  });
+
+  it("un DNI que no existe o mal escrito es error de esa fila", () => {
+    expect(errores(con("DNI,Fecha,Extra 25%", "0801199099999,02/11/2026,2"))[0].mensaje).toContain("No hay un empleado con DNI");
+    expect(errores(con("DNI,Fecha,Extra 25%", "0801-90,02/11/2026,2"))[0].columna).toBe("DNI");
+  });
+
+  it("código y DNI de personas distintas: error", () => {
+    const r = con("Codigo Empleado,DNI,Fecha,Extra 25%", "EMP-0002,0801199012345,02/11/2026,2");
+    expect(errores(r)[0].mensaje).toContain("no de EMP-0002");
+    expect(r.filas).toHaveLength(0);
+  });
+
+  it("sin código ni DNI en la fila: error", () => {
+    expect(errores(con("Codigo Empleado,DNI,Fecha,Extra 25%", ",,02/11/2026,2"))[0].mensaje).toContain("código o el DNI");
+  });
+
+  it("registra horas normales sin extras", () => {
+    const r = con("Codigo Empleado,Fecha,Horas normales", "EMP-0001,02/11/2026,8");
+    expect(errores(r)).toEqual([]);
+    expect(r.filas[0]).toMatchObject({ normales: "8.00", diurnas: "0.00", ausencia: null });
+  });
+
+  it("normales más extra no pasan de 12 horas en el día", () => {
+    expect(errores(con("Codigo Empleado,Fecha,Horas normales,Extra 25%", "EMP-0001,02/11/2026,8,5"))[0].mensaje).toContain("13.00 horas");
+  });
+
+  it("una ausencia no lleva horas", () => {
+    const r = con("Codigo Empleado,Fecha,Ausencia", "EMP-0001,02/11/2026,Sí");
+    expect(errores(r)).toEqual([]);
+    expect(r.filas[0]).toMatchObject({ ausencia: true, accion: "CREAR" });
+    expect(errores(con("Codigo Empleado,Fecha,Ausencia,Extra 25%", "EMP-0001,02/11/2026,Sí,2"))[0].columna).toBe("Ausencia");
+  });
+
+  it("sobre un día con ausencia, «Ausencia = No» la corrige; sin decirlo, es error", () => {
+    const cat = catalogos({ marcajes: new Map([["e1|2026-11-02", { ...RELOJ, esAusencia: true, diurnas: "0", normales: "0" }]]) });
+    expect(errores(con("Codigo Empleado,Fecha,Extra 25%", "EMP-0001,02/11/2026,2", cat))[0].columna).toBe("Ausencia");
+    const r = con("Codigo Empleado,Fecha,Ausencia,Horas normales", "EMP-0001,02/11/2026,No,8", cat);
+    expect(errores(r)).toEqual([]);
+    expect(r.filas[0].cambios).toEqual(expect.arrayContaining(["Horas normales 0.00 → 8.00", "Quita la ausencia"]));
+  });
+
+  it("en blanco, normales y ausencia conservan lo que había", () => {
+    const cat = catalogos({ marcajes: new Map([["e1|2026-11-02", RELOJ]]) });
+    const r = con("Codigo Empleado,Fecha,Horas normales,Ausencia,Extra 25%", "EMP-0001,02/11/2026,,,3", cat);
+    expect(r.filas[0]).toMatchObject({ normales: null, ausencia: null, diurnas: "3.00" });
   });
 });

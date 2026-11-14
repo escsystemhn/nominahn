@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import DeduccionesClient from "@/components/payroll/DeduccionesClient";
 import SolicitudesPrestamoPanel from "@/components/payroll/SolicitudesPrestamoPanel";
+import AnticiposPrestacionPanel from "@/components/payroll/AnticiposPrestacionPanel";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import { conAlcance, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { cuotaDelPeriodo, esMontoDelPeriodo } from "@/lib/payroll/deducciones";
@@ -104,6 +105,15 @@ export default async function DeduccionesPage() {
       tipoPlanilla={tipoPlanilla}
       // Con clave: al refrescar tras importar, React lo veía como hijo de una lista sin «key» (2026-11-11).
       solicitudes={puede(usuario, "deducciones.asignar") ? <SolicitudesPrestamoPanel key="solicitudes" /> : null}
+      // Negociación de prestaciones y adelantos de décimos: se pagan aparte y se rebajan de
+      // la cesantía o del décimo. Los registra quien genera prestaciones.
+      anticipos={
+        <AnticiposPrestacionPanel
+          key="anticipos"
+          empleados={empleados.map((e) => ({ id: e.id, codigo: e.codigo, primerNombre: e.primerNombre, segundoNombre: e.segundoNombre, primerApellido: e.primerApellido, segundoApellido: e.segundoApellido }))}
+          puedeRegistrar={puede(usuario, "prestaciones.generar")}
+        />
+      }
     />
   );
 }

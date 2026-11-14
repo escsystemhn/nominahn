@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { formasIdentidad, normalizarIdentidad } from "@/lib/empleados/identidad";
 import { alcanzaUbicacion, conAlcance } from "@/lib/auth/alcance";
 import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
 import { Prisma, EstadoEmpleado } from "@prisma/client";
@@ -154,8 +155,12 @@ export async function POST(req: NextRequest) {
 
   // `identidad` es UNIQUE: un campo en blanco debe guardarse como NULL, que no choca.
   // Como texto vacío, el segundo empleado sin identidad reventaba contra el primero.
-  const identidad = data.identidad?.trim() || null;
-  if (identidad && (await prisma.empleado.findUnique({ where: { identidad }, select: { id: true } }))) {
+  // Se guarda con sus 13 dígitos (sin guiones), igual que la importación: con y sin
+  // guiones eran dos valores distintos para el índice único.
+  const dni = normalizarIdentidad(data.identidad);
+  if (dni && !dni.ok) return NextResponse.json({ error: dni.error }, { status: 400 });
+  const identidad = dni?.ok ? dni.valor : null;
+  if (identidad && (await prisma.empleado.findFirst({ where: { identidad: { in: formasIdentidad(identidad) } }, select: { id: true } }))) {
     return NextResponse.json({ error: "Ya existe otro empleado con ese número de identidad." }, { status: 409 });
   }
 

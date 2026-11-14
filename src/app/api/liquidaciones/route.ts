@@ -14,7 +14,9 @@ import {
   MAX_EMPLEADOS_MICROEMPRESA,
 } from "@/lib/payroll/liquidacion";
 import { calcularDecimo } from "@/lib/payroll/decimos";
-import { money, aNumero, CERO } from "@/lib/payroll/money";
+import { money, aNumero, minimo, sumar, CERO, type MoneyInput } from "@/lib/payroll/money";
+import { anioDecimoEnCurso, ETIQUETA_ANTICIPO, repartirAnticipos } from "@/lib/prestaciones/anticipos";
+import { anticiposParaLiquidacion, aplicarAnticipos, liberarAnticipos } from "@/lib/prestaciones/anticipos-bd";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
 import { CLAVE_RAP_PENDIENTE, mesDe, mesSiguiente, nombreMes } from "@/lib/payroll/rap-mes-vencido";
 import { rapPendienteAlSalir } from "@/lib/payroll/rap-mes-vencido-bd";
@@ -146,25 +148,39 @@ export async function POST(req: NextRequest) {
       (promedio.meses < MESES_PROMEDIO_SALARIO ? " Son menos de seis meses: se promedió con el tiempo que cubren." : "");
 
   // ─── Décimos proporcionales pendientes ─────────────────────────────────────
-  const anio = fechaSalida.getUTCFullYear();
+  // Cada décimo, el de la ventana que contiene la salida. El 14.º va de julio a junio:
+  // antes se usaba el año de la salida y, para una salida de julio en adelante, se
+  // calculaba el 14.º ya pagado en junio y lo de julio a la salida se perdía.
+  const anio13 = anioDecimoEnCurso("DECIMO_TERCERO", fechaSalida);
+  const anio14 = anioDecimoEnCurso("DECIMO_CUARTO", fechaSalida);
   const decimo13 = calcularDecimo({
-    tipo: "DECIMO_TERCERO", anio,
+    tipo: "DECIMO_TERCERO", anio: anio13,
     fechaIngreso: empleado.fechaIngreso, fechaSalida,
     salarioPromedio, hasta: fechaSalida,
   });
   const decimo14 = calcularDecimo({
-    tipo: "DECIMO_CUARTO", anio,
+    tipo: "DECIMO_CUARTO", anio: anio14,
     fechaIngreso: empleado.fechaIngreso, fechaSalida,
     salarioPromedio, hasta: fechaSalida,
   });
 
-  // Lo ya liquidado del año no se paga dos veces.
+  // Lo ya liquidado de esos décimos no se paga dos veces.
   const yaLiquidados = await prisma.liquidacionDecimo.findMany({
-    where: { empleadoId, anio, estado: { in: ["CALCULADA", "PAGADA"] } },
-    select: { tipo: true, montoDevengado: true },
+    where: {
+      empleadoId,
+      estado: { in: ["CALCULADA", "PAGADA"] },
+      OR: [{ tipo: "DECIMO_TERCERO", anio: anio13 }, { tipo: "DECIMO_CUARTO", anio: { in: [anio14, anio14 - 1] } }],
+    },
+    select: { tipo: true, anio: true, montoDevengado: true },
   });
   const pagado = (tipo: "DECIMO_TERCERO" | "DECIMO_CUARTO") =>
-    money(yaLiquidados.find((l) => l.tipo === tipo)?.montoDevengado ?? 0);
+    money(yaLiquidados.find((l) => l.tipo === tipo && l.anio === (tipo === "DECIMO_TERCERO" ? anio13 : anio14))?.montoDevengado ?? 0);
+  // Si sale de julio en adelante, el 14.º anterior (julio a junio) ya debió pagarse en junio.
+  // Si el sistema no lo tiene, se avisa: no se suma solo porque pudo pagarse fuera.
+  const catorceavoAnteriorSinRegistro =
+    anio14 > fechaSalida.getUTCFullYear() &&
+    empleado.fechaIngreso <= new Date(Date.UTC(anio14 - 1, 5, 30)) &&
+    !yaLiquidados.some((l) => l.tipo === "DECIMO_CUARTO" && l.anio === anio14 - 1);
 
   const pendiente13 = money(decimo13.montoDevengado).minus(pagado("DECIMO_TERCERO"));
   const pendiente14 = money(decimo14.montoDevengado).minus(pagado("DECIMO_CUARTO"));
@@ -213,6 +229,12 @@ export async function POST(req: NextRequest) {
   const rapPendiente = await rapPendienteAlSalir(prisma, empleado, fechaSalida, await cargarParametrosLegales());
   const mesesRap = rapPendiente ? enumerar(rapPendiente.meses.map((m) => nombreMes(m.mes).replace(/ de \d{4}$/, ""))) : "";
 
+  // ─── Anticipos pagados aparte ──────────────────────────────────────────────
+  // Negociación de prestaciones (se rebaja de la cesantía) y adelantos de los décimos en
+  // curso (se rebajan del proporcional). Ver AnticipoPrestacion en el esquema.
+  const anticipos = await anticiposParaLiquidacion(prisma, empleadoId, { decimoTercero: anio13, decimoCuarto: anio14 });
+  const suma = (lista: readonly { monto: MoneyInput }[]) => sumar(...lista.map((a) => a.monto));
+
   const resultado = calcularLiquidacion({
     fechaIngreso: empleado.fechaIngreso,
     fechaSalida,
@@ -230,8 +252,26 @@ export async function POST(req: NextRequest) {
       ? [{ clave: CLAVE_RAP_PENDIENTE, concepto: `RAP del trabajador pendiente (${mesesRap})`, base: "Art. 43 Ley del RAP", monto: rapPendiente.empleado }]
       : [],
     saldoFondoReserva: saldoFondo,
+    negociacionPrestaciones: suma(anticipos.negociacion),
+    adelantoDecimoTercero: suma(anticipos.adelanto13),
+    adelantoDecimoCuarto: suma(anticipos.adelanto14),
   });
   resultado.observaciones.unshift(notaPromedio);
+  if (catorceavoAnteriorSinRegistro) {
+    resultado.observaciones.push(
+      `No hay registro del décimo cuarto mes de ${anio14 - 1} (julio de ${anio14 - 2} a junio de ${anio14 - 1}): ` +
+        "si no se le pagó, súmelo en «Otros adeudos»."
+    );
+  }
+  // Cómo se reparte cada rebaja entre los anticipos, del más antiguo al más reciente.
+  const repartos = {
+    negociacion: repartirAnticipos(anticipos.negociacion, resultado.rebajas.negociacion),
+    adelanto13: repartirAnticipos(anticipos.adelanto13, resultado.rebajas.adelanto13),
+    adelanto14: repartirAnticipos(anticipos.adelanto14, resultado.rebajas.adelanto14),
+  };
+  const aplicadoA = new Map(
+    Object.values(repartos).flatMap((r) => r.partes.map((x) => [x.id, x.monto] as const))
+  );
   if (rapPendiente && rapPendiente.meses.length > 0) {
     const pagoEn = nombreMes(mesSiguiente(mesDe(fechaSalida)));
     resultado.observaciones.push(
@@ -249,7 +289,8 @@ export async function POST(req: NextRequest) {
   // Préstamos y anticipos vigentes: se sugieren como deducción del finiquito.
   const deudasVigentes = await prisma.deduccionEmpleado.findMany({
     where: { empleadoId, activo: true, saldo: { gt: 0 }, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO"] } } },
-    select: { id: true, saldo: true, tipoDeduccion: { select: { nombre: true } } },
+    select: { id: true, saldo: true, activo: true, observacion: true, fechaInicio: true, tipoDeduccion: { select: { nombre: true } } },
+    orderBy: { fechaInicio: "asc" },
   });
   const saldoDeduccionesPendientes = deudasVigentes.reduce((acc, d) => acc.plus(money(d.saldo ?? 0)), CERO);
 
@@ -275,12 +316,31 @@ export async function POST(req: NextRequest) {
     saldoFondoReserva: aNumero(saldoFondo),
     fondoReservaEstimado: fondoEstimado,
     deudasVigentes: deudasVigentes.map((d) => ({ id: d.id, nombre: d.tipoDeduccion.nombre, saldo: aNumero(d.saldo ?? 0) })),
+    anticipos: [...anticipos.negociacion, ...anticipos.adelanto13, ...anticipos.adelanto14].map((a) => ({
+      id: a.id,
+      tipo: a.tipo,
+      etiqueta: ETIQUETA_ANTICIPO[a.tipo],
+      monto: aNumero(a.monto),
+      fechaPago: a.fechaPago,
+      anioDecimo: a.anioDecimo,
+      seRebaja: aNumero(aplicadoA.get(a.id) ?? 0),
+    })),
   };
 
   if (!guardar) {
     // Simulación: es lo que la interfaz muestra antes de confirmar.
     return NextResponse.json({ ...respuesta, guardada: false });
   }
+
+  // Préstamos que se dan por saldados: se cobra lo que el finiquito descontó como
+  // «Anticipos y préstamos», del más antiguo al más reciente. Antes se ponían en cero
+  // aunque la deducción se hubiera acotado, y al anular el finiquito no volvían.
+  const cobradoDeudas = liquidarPrestamos ? minimo(money(deducciones ?? 0), resultado.deducciones) : CERO;
+  const repartoDeudas = repartirAnticipos(
+    deudasVigentes.map((d) => ({ id: d.id, monto: d.saldo ?? 0, fechaPago: d.fechaInicio })),
+    cobradoDeudas
+  );
+  const cobroDe = new Map(repartoDeudas.partes.map((x) => [x.id, x.monto]));
 
   const liquidacion = await prisma.$transaction(async (tx) => {
     const creada = await tx.liquidacionFinal.create({
@@ -332,16 +392,47 @@ export async function POST(req: NextRequest) {
         ])),
         observaciones: resultado.observaciones.join("\n") || null,
         calculadoPor: g.usuario.id,
+        // Lo que tenían antes: si el finiquito se anula, se restituye tal cual.
+        deudasSaldadas: liquidarPrestamos && deudasVigentes.length > 0
+          ? deudasVigentes.map((d) => ({
+              id: d.id,
+              saldo: aNumero(d.saldo ?? 0),
+              activo: d.activo,
+              observacion: d.observacion,
+              cobrado: aNumero(cobroDe.get(d.id) ?? 0),
+            }))
+          : undefined,
       },
     });
 
-    // Préstamos saldados con el finiquito: dejan de descontarse.
-    if (liquidarPrestamos && deudasVigentes.length > 0) {
-      await tx.deduccionEmpleado.updateMany({
-        where: { id: { in: deudasVigentes.map((d) => d.id) } },
-        data: { saldo: 0, activo: false, observacion: `Saldada en la liquidación final ${creada.id}` },
-      });
+    // Préstamos y adelantos de salario: dejan de descontarse en planilla (el empleado
+    // sale). Lo que el finiquito no alcanzó a cobrar queda anotado como saldo.
+    if (liquidarPrestamos) {
+      for (const d of deudasVigentes) {
+        const cobrado = cobroDe.get(d.id) ?? CERO;
+        const resta = money(d.saldo ?? 0).minus(cobrado);
+        await tx.deduccionEmpleado.update({
+          where: { id: d.id },
+          data: {
+            saldo: resta.greaterThan(0) ? resta : 0,
+            activo: false,
+            observacion: resta.greaterThan(0)
+              ? `Liquidación final ${creada.id}: se cobraron ${cobrado.toFixed(2)}; quedan ${resta.toFixed(2)} por cobrar aparte`
+              : `Saldada en la liquidación final ${creada.id}`,
+          },
+        });
+      }
     }
+
+    // Anticipos pagados aparte: los de un borrador anterior pasan a éste, y todos los
+    // considerados quedan aplicados a él (con lo que se rebajó a cada uno).
+    await liberarAnticipos(tx, { empleadoId, liquidacionFinal: { estado: "BORRADOR" } });
+    await aplicarAnticipos(
+      tx,
+      [...anticipos.negociacion, ...anticipos.adelanto13, ...anticipos.adelanto14],
+      [...repartos.negociacion.partes, ...repartos.adelanto13.partes, ...repartos.adelanto14.partes],
+      { liquidacionFinalId: creada.id }
+    );
 
     // La liquidación cierra la relación laboral: el empleado queda inactivo y
     // deja de entrar en las planillas siguientes.

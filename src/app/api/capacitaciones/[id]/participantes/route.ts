@@ -6,8 +6,12 @@ import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
 import { filtroCapacitaciones } from "@/lib/capacitaciones/alcance";
 import { z } from "zod";
 import { parsearBody, zId } from "@/lib/http/validar";
+import { formasIdentidad, normalizarIdentidad } from "@/lib/empleados/identidad";
 
-const schemaInscribir = z.object({ empleadoId: zId });
+// Por su id (la lista) o por su DNI, escrito con o sin guiones.
+const schemaInscribir = z
+  .object({ empleadoId: zId.optional(), identidad: z.string().trim().max(40).optional() })
+  .refine((d) => d.empleadoId || d.identidad, { error: "Indique el empleado o su DNI" });
 
 const schemaCalificar = z
   .object({
@@ -30,7 +34,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const parsed = await parsearBody(req, schemaInscribir);
   if (!parsed.ok) return parsed.response;
-  const { empleadoId } = parsed.data;
+  let empleadoId = parsed.data.empleadoId;
+  if (!empleadoId) {
+    const dni = normalizarIdentidad(parsed.data.identidad);
+    if (!dni) return NextResponse.json({ error: "Indique el DNI" }, { status: 400 });
+    if (!dni.ok) return NextResponse.json({ error: dni.error }, { status: 400 });
+    const encontrado = await prisma.empleado.findFirst({ where: { identidad: { in: formasIdentidad(dni.valor) } }, select: { id: true, estado: true } });
+    if (!encontrado) return NextResponse.json({ error: "No hay un empleado con ese DNI." }, { status: 404 });
+    if (encontrado.estado === "INACTIVO") return NextResponse.json({ error: "Ese empleado está inactivo." }, { status: 409 });
+    empleadoId = encontrado.id;
+  }
 
   // Fuera de su alcance, el programa y el empleado responden igual que si no existieran.
   if (!(await prisma.capacitacion.count({ where: { AND: [{ id }, filtroCapacitaciones(g.usuario)] } }))) {

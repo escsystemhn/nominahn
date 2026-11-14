@@ -25,7 +25,7 @@ export interface ColumnaCsv {
 }
 
 /** Lo que completa las rutas /api/importar y /api/exportar. */
-export type RecursoImportacion = "empleados" | "deducciones" | "horas-extra" | "tipos-deduccion";
+export type RecursoImportacion = "empleados" | "deducciones" | "horas-extra" | "tipos-deduccion" | "horarios";
 
 /** Qué se permite hacer con las filas del archivo. */
 export type ModoImportacion = "CREAR" | "ACTUALIZAR" | "CREAR_O_ACTUALIZAR";
@@ -48,6 +48,17 @@ export interface Incidencia {
   mensaje: string;
 }
 
+/**
+ * Filas de datos leídas del archivo: las de la vista previa (altas, cambios y omitidas) y
+ * las que tienen errores. Antes se contaban sólo las primeras y «N filas leídas» salía corto
+ * justo cuando había errores.
+ */
+export function filasLeidas(r: { previsualizacion: { linea: number }[]; incidencias: Incidencia[] }): number {
+  const lineas = new Set(r.previsualizacion.map((f) => f.linea));
+  for (const i of r.incidencias) if (i.severidad === "ERROR" && i.linea > 1) lineas.add(i.linea);
+  return lineas.size;
+}
+
 /** Qué se hará con una fila si se confirma el lote. */
 export type AccionFila = "CREAR" | "ACTUALIZAR" | "OMITIR";
 
@@ -65,7 +76,7 @@ export interface FilaPrevisualizada {
 /** Lo que devuelve la fase de validación. */
 export interface InformeValidacion {
   loteId: string | null;
-  tipo: "EMPLEADOS" | "DEDUCCIONES" | "HORAS_EXTRA";
+  tipo: "EMPLEADOS" | "DEDUCCIONES" | "HORAS_EXTRA" | "HORARIOS";
   nombreArchivo: string;
   totalFilas: number;
   totalCrear: number;

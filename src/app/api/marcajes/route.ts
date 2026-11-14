@@ -4,9 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { empleadoAlAlcance } from "@/lib/auth/alcance-bd";
-import { registrarMarcaje } from "@/lib/asistencia/registrar-marcaje";
-import { turnoDe } from "@/lib/asistencia/turnos";
-import { resolverDescanso } from "@/lib/asistencia/descanso";
+import { registrarJornadaManual } from "@/lib/asistencia/registrar-jornada";
 import { z } from "zod";
 import { parsearBody, zId, zFecha, zEnteroNoNeg } from "@/lib/http/validar";
 
@@ -73,43 +71,16 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parsearBody(req, schema);
   if (!parsed.ok) return parsed.response;
-  const { empleadoId, fecha, horaEntrada, minutosDescanso } = parsed.data;
-  let { horaSalida } = parsed.data;
+  const { empleadoId } = parsed.data;
 
   // Fuera de su alcance responde igual que si no existiera.
   if (!(await empleadoAlAlcance(g.usuario, empleadoId))) {
     return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
   }
 
-  const turno = await turnoDe(empleadoId, fecha);
-
-  // Turno nocturno: quien teclea entrada 22:00 y salida 06:00 sobre la misma
-  // fecha quiere decir las 06:00 del día siguiente. Sólo con un turno que cruza
-  // la medianoche: en un turno de día, una salida anterior a la entrada es un
-  // error de tecleo y debe rechazarse.
-  if (horaEntrada && horaSalida && turno.cruzaMedianoche && horaSalida.getTime() <= horaEntrada.getTime()) {
-    horaSalida = new Date(horaSalida.getTime() + 86_400_000);
-  }
-
-  // Quien teclea 07:00 a 16:00 espera 8 horas, no 9: sin indicar almuerzo, se
-  // descuenta el fijo del turno, igual que cuando el reloj no lo registra.
-  const descanso =
-    minutosDescanso !== undefined
-      ? minutosDescanso
-      : horaEntrada && horaSalida
-        ? resolverDescanso({ entrada: horaEntrada, salida: horaSalida, regla: turno.descanso }).minutos
-        : 0;
-
-  // El reparto de jornada vive en lib/asistencia/registrar-marcaje.ts porque la
-  // ingesta del reloj biométrico llama exactamente al mismo sitio. Ver el
-  // encabezado de ese módulo.
-  const resultado = await registrarMarcaje({
-    ...parsed.data,
-    horaSalida,
-    jornadaHoras: turno.jornadaHoras,
-    tipoJornada: turno.tipoJornada,
-    minutosDescanso: descanso,
-  });
+  // Turno del día, salida que cruza la medianoche, almuerzo y reparto de horas: en
+  // lib/asistencia/registrar-jornada.ts, el mismo camino que la carga rápida en lote.
+  const resultado = await registrarJornadaManual(parsed.data);
 
   if (!resultado.ok) {
     return NextResponse.json({ error: resultado.error }, { status: resultado.status });

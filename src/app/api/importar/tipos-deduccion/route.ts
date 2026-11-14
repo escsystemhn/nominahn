@@ -10,6 +10,7 @@ import { crearLote, leerArchivo, MAX_FILAS_ARCHIVO } from "@/lib/importacion/lot
 import { ACEPTA_PLANTILLA, textoDeArchivo } from "@/lib/importacion/xlsx";
 import { cargarTiposExistentes, validarTipos } from "@/lib/importacion/tipos-deduccion";
 import type { InformeValidacion, ModoImportacion } from "@/lib/importacion/tipos";
+import { filasLeidas } from "@/lib/importacion/tipos";
 
 const MODOS: ModoImportacion[] = ["CREAR", "ACTUALIZAR", "CREAR_O_ACTUALIZAR"];
 
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!lectura.ok) return NextResponse.json({ error: lectura.error }, { status: 400 });
 
   const r = validarTipos(lectura.texto, await cargarTiposExistentes(prisma), modo);
-  const totalFilas = r.filas.length + r.totalOmitir;
+  const totalFilas = filasLeidas(r);
   if (totalFilas > MAX_FILAS_ARCHIVO) {
     return NextResponse.json({ error: `El archivo trae ${totalFilas} filas y el máximo por lote es ${MAX_FILAS_ARCHIVO}.` }, { status: 413 });
   }

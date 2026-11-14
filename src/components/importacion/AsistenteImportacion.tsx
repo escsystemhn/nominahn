@@ -33,6 +33,12 @@ interface Props {
    * pasa a ser la opción inicial. `puedeDescargar`: puede bajar el archivo del período.
    */
   montosDelPeriodo?: { tipoPlanilla: TipoPlanillaPeriodo; puedeDescargar: boolean; puedeCrearTipos: boolean };
+  /** Campos que se mandan con el archivo (el plan de horarios al que se importa). */
+  extras?: Record<string, string>;
+  /** Plantillas propias, en lugar de las genéricas del recurso (la del plan ya trae su gente). */
+  plantillas?: { xlsx: string; csv: string; texto?: string };
+  /** Tras aplicar: para pantallas que leen sus datos por su cuenta y no con router.refresh(). */
+  onHecho?: () => void;
   onCerrar: () => void;
 }
 
@@ -58,7 +64,7 @@ const MODOS: Array<{ valor: ModoImportacion; etiqueta: string; detalle: string }
   },
 ];
 
-export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDelPeriodo, onCerrar }: Props) {
+export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDelPeriodo, extras, plantillas, onHecho, onCerrar }: Props) {
   const router = useRouter();
   const inputArchivo = useRef<HTMLInputElement>(null);
 
@@ -92,6 +98,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
       } else {
         cuerpo.append("modo", modo);
       }
+      for (const [clave, valor] of Object.entries(extras ?? {})) cuerpo.append(clave, valor);
 
       const res = await fetch(ruta, { method: "POST", body: cuerpo });
       const datos = await res.json().catch(() => ({}));
@@ -124,6 +131,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
       setResultado(datos as ResultadoImportacion);
       setPaso("hecho");
       router.refresh();
+      onHecho?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo aplicar la importación.");
     } finally {
@@ -254,12 +262,12 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <a
-                  href={`/api/exportar/${recurso}?plantilla=1&formato=xlsx`}
+                  href={plantillas?.xlsx ?? `/api/exportar/${recurso}?plantilla=1&formato=xlsx`}
                   className="inline-flex items-center gap-2 text-blue-700 hover:text-blue-900 font-medium"
                 >
-                  Descargar plantilla de Excel, con instrucciones
+                  {plantillas?.texto ?? "Descargar plantilla de Excel, con instrucciones"}
                 </a>
-                <a href={`/api/exportar/${recurso}?plantilla=1`} className="text-gray-500 hover:text-gray-800">
+                <a href={plantillas?.csv ?? `/api/exportar/${recurso}?plantilla=1`} className="text-gray-500 hover:text-gray-800">
                   o en CSV
                 </a>
               </div>

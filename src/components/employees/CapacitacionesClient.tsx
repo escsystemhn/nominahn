@@ -8,6 +8,7 @@ import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import FranjaCifras from "@/components/ui/FranjaCifras";
 import { Campo } from "@/components/ui/ModalForm";
+import MaterialCapacitacionPanel from "./MaterialCapacitacionPanel";
 
 interface Capacitacion {
   id: string;
@@ -27,6 +28,8 @@ interface Participante {
   empleadoId: string;
   nombre: string;
   codigo: string;
+  /** Sólo con permiso de datos personales. */
+  identidad: string | null;
   asistio: boolean;
   aprobado: boolean | null;
   calificacion: string | number | null;
@@ -71,6 +74,7 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
 
   const [f, setF] = useState({ nombre: "", tipo: "INTERNA", proveedor: "", fechaInicio: "", fechaFin: "", costoPresupuestado: "", descripcion: "" });
   const [nuevoEmp, setNuevoEmp] = useState("");
+  const [dni, setDni] = useState("");
 
   // Refresco manual tras una mutación: se invoca desde manejadores de eventos,
   // donde sí es correcto llamar a setState de forma síncrona.
@@ -126,11 +130,12 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
     await cargar();
   }
 
-  async function inscribir() {
-    if (!sel || !nuevoEmp) return;
-    const res = await fetch(`/api/capacitaciones/${sel}/participantes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empleadoId: nuevoEmp }) });
+  async function inscribir(porDni = false) {
+    if (!sel || (porDni ? !dni.trim() : !nuevoEmp)) return;
+    const cuerpo = porDni ? { identidad: dni.trim() } : { empleadoId: nuevoEmp };
+    const res = await fetch(`/api/capacitaciones/${sel}/participantes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
     if (!res.ok) { avisar.error((await res.json().catch(() => ({}))).error ?? "No se pudo inscribir."); return; }
-    setNuevoEmp(""); await cargarDetalle(sel); await cargar();
+    setNuevoEmp(""); setDni(""); await cargarDetalle(sel); await cargar();
   }
 
   // Se corresponde con `schemaCalificar` del endpoint: los tres campos son
@@ -249,9 +254,23 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
                     <option value="">Inscribir empleado…</option>
                     {empDisponibles.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                   </select>
-                  <button onClick={inscribir} className="btn btn-secondary">Inscribir</button>
+                  <button onClick={() => void inscribir()} className="btn btn-secondary">Inscribir</button>
                 </div>
               )}
+              {puedeGestionar && (
+                <div className="flex gap-2 border-b border-gray-100 pb-3">
+                  <input
+                    aria-label="DNI a inscribir"
+                    className="input flex-1"
+                    placeholder="O inscriba por DNI: 0801-1990-12345"
+                    value={dni}
+                    onChange={(e) => setDni(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void inscribir(true)}
+                  />
+                  <button onClick={() => void inscribir(true)} className="btn btn-secondary" disabled={!dni.trim()}>Inscribir por DNI</button>
+                </div>
+              )}
+              <MaterialCapacitacionPanel key={sel} capacitacionId={sel} puedeGestionar={puedeGestionar} />
               {participantes.length === 0 ? <p className="text-sm text-gray-500">Este programa todavía no tiene participantes.</p> : (
                 <div className="overflow-x-auto">
                   <table className="table-base">
@@ -266,7 +285,7 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
                     <tbody>
                       {participantes.map((p) => (
                         <tr key={p.id}>
-                          <td>{p.nombre}<div className="text-xs text-gray-500">{p.codigo}</div></td>
+                          <td>{p.nombre}<div className="text-xs text-gray-500">{p.codigo}{p.identidad ? ` · DNI ${p.identidad}` : ""}</div></td>
                           <td>
                             <input type="checkbox" aria-label={`Asistió: ${p.nombre}`} checked={p.asistio} disabled={!puedeGestionar} onChange={(e) => actualizarParticipante(p.id, { asistio: e.target.checked })} />
                           </td>

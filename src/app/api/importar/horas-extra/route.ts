@@ -14,6 +14,7 @@ import { cargarCatalogos, validar } from "@/lib/importacion/horas-extra";
 import { crearLote, leerArchivo, MAX_FILAS_ARCHIVO } from "@/lib/importacion/lote";
 import { ACEPTA_PLANTILLA, textoDeArchivo } from "@/lib/importacion/xlsx";
 import type { InformeValidacion, ModoImportacion } from "@/lib/importacion/tipos";
+import { filasLeidas } from "@/lib/importacion/tipos";
 
 const MODOS: ModoImportacion[] = ["CREAR", "ACTUALIZAR", "CREAR_O_ACTUALIZAR"];
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   const catalogos = await cargarCatalogos(prisma, lectura.texto);
   const resultado = validar(lectura.texto, catalogos, modo, (empleado) => alcanzaEmpleado(g.usuario, empleado));
 
-  const totalFilas = resultado.filas.length + resultado.totalOmitir;
+  const totalFilas = filasLeidas(resultado);
   if (totalFilas > MAX_FILAS_ARCHIVO) {
     return NextResponse.json(
       { error: `El archivo trae ${totalFilas} filas y el máximo por lote es ${MAX_FILAS_ARCHIVO}.` },

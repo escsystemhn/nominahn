@@ -103,6 +103,38 @@ export async function calcularBonoEvaluacion(
   return bonos.get(empleadoId) ?? null;
 }
 
+/**
+ * El bono que corresponde a UNA calificación, sin marcar nada. Se usa al finalizar una
+ * evaluación para dejar a la vista cuánto será el bono.
+ *
+ * POR QUÉ no se marca «aplicado» al finalizar: lo marca la planilla al confirmarse
+ * (calculo-planilla-bd.ts), que es la que lo paga. Antes la ruta de estado lo marcaba
+ * al finalizar y la planilla, que sólo toma los no aplicados, nunca lo pagaba.
+ */
+export async function bonoParaCalificacion(
+  empleadoId: string,
+  tipoEvaluacion: TipoEvaluacion,
+  calificacion: number
+): Promise<{ bonoPorcentaje: number; bonoMonto: Money } | null> {
+  if (!(calificacion > 0)) return null;
+  const [empleado, configs] = await Promise.all([
+    prisma.empleado.findUnique({ where: { id: empleadoId }, select: { salarioBase: true } }),
+    prisma.bonusConfig.findMany({
+      where: { tipoEvaluacion, activo: true },
+      select: { calificacionMin: true, calificacionMax: true, bonoPorcentaje: true },
+    }),
+  ]);
+  if (!empleado) return null;
+  const cfg = configs.find(
+    (c) => money(c.calificacionMin).lessThanOrEqualTo(calificacion) && money(c.calificacionMax).greaterThanOrEqualTo(calificacion)
+  );
+  if (!cfg) return null;
+  return {
+    bonoPorcentaje: Number(cfg.bonoPorcentaje),
+    bonoMonto: redondear(money(empleado.salarioBase).times(money(cfg.bonoPorcentaje))),
+  };
+}
+
 /** Marca la evaluación como bono aplicado. */
 export async function marcarBonoAplicado(
   evaluacionId: string,

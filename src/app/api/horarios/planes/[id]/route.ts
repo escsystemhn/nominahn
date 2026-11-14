@@ -12,7 +12,8 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { conAlcance } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
-import { planConValidacion, actualizarResumen, aFecha, ymd } from "@/lib/horarios/bd";
+import { planConValidacion, actualizarResumen, aFecha, ymd, trasladosDelPeriodo } from "@/lib/horarios/bd";
+import { destinoEn } from "@/lib/horarios/traslados";
 import { rechazoDeAccion, recortarPlan, vistaDePlan, type PlanValidado } from "@/lib/horarios/alcance";
 import { jornadaDeHoras } from "@/lib/horarios/ley";
 
@@ -43,6 +44,7 @@ function respuesta({ plan, ctx, validacion, notas }: PlanValidado) {
     turnos: ctx.turnos.map(({ id: tid, codigo, nombre, entrada, salida, pausa }) => ({ id: tid, codigo, nombre, entrada, salida, pausa })),
     horarioAtencion: ctx.horarioAtencion,
     feriados: ctx.feriados,
+    traslados: ctx.traslados,
     validacion,
     notas,
   };
@@ -76,6 +78,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     where: conAlcance({ id: { in: parsed.data.cambios.map((c) => c.empleadoId) } }, g.usuario), select: { id: true, sucursalId: true },
   })).map((e) => [e.id, e]));
   const turnos = new Map((await prisma.turno.findMany({ where: { activo: true } })).map((t) => [t.id, t]));
+  // Traslados temporales de estas personas en el período del plan.
+  const traslados = await trasladosDelPeriodo(prisma, { desde: ymd(plan.desde), hasta: ymd(plan.hasta), empleadoIds: [...empleados.keys()] });
 
   type Datos = {
     estado: "TURNO" | "DESCANSO" | "AUSENCIA"; manual: boolean; turnoId: string | null; entrada: number | null; salida: number | null;
@@ -97,7 +101,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const pausaTurno = turno && lapsoTurno && lapsoTurno.salida - lapsoTurno.entrada >= Number(turno.almuerzoDesdeHoras) * 60 ? turno.almuerzoMinutos : 0;
       const j = jornadaDeHoras(entrada, salida, c.pausa ?? pausaTurno);
       if (!j) return NextResponse.json({ error: "Horas inválidas" }, { status: 400 });
-      const sucursalId = c.sucursalId || emp.sucursalId;
+      // Sin sucursal indicada: la del traslado de ese día, si lo hay hacia este plan; si no, la suya.
+      const destino = destinoEn(traslados, c.empleadoId, c.fecha);
+      const propia = plan.sucursalesIds.includes(emp.sucursalId);
+      const nombreDestino = traslados.find((t) => t.empleadoId === c.empleadoId && t.sucursalDestinoId === destino)?.destinoNombre;
+      if (!propia && !(destino && plan.sucursalesIds.includes(destino))) {
+        return NextResponse.json({ error: `El ${c.fecha} no está trasladado a las sucursales de este plan: registre o amplíe su traslado.` }, { status: 400 });
+      }
+      if (propia && destino && !plan.sucursalesIds.includes(destino)) {
+        return NextResponse.json({ error: `El ${c.fecha} está trasladado a ${nombreDestino ?? "otra sucursal"}: ese día no trabaja aquí.` }, { status: 400 });
+      }
+      const sucursalId = c.sucursalId || (destino && plan.sucursalesIds.includes(destino) ? destino : emp.sucursalId);
       // Trasladar a alguien a una sucursal que no alcanza responde como si no estuviera en el plan.
       const fueraDeAlcance = vista.acceso === "parcial" && !vista.sucursales.has(sucursalId);
       if (!plan.sucursalesIds.includes(sucursalId) || fueraDeAlcance) return NextResponse.json({ error: "La sucursal no está en este plan" }, { status: 400 });
