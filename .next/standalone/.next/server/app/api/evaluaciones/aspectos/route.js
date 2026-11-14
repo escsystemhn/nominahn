@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/evaluaciones/aspectos/route.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/_0axmlmf4ws7f0._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/_1kc1kh4z1m2ag._.js")
+R.c("server/chunks/_1573tqdbzb95v._.js")
+R.c("server/chunks/_next-internal_server_app_api_evaluaciones_aspectos_route_actions_0-13tzjkhf-0i.js")
+R.m(16647)
+module.exports=R.m(16647).exports

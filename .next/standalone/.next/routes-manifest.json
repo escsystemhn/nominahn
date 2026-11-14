@@ -42,14 +42,14 @@
       "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))?(?:/)?$"
     },
     {
-      "source": "/:path((?!api/mis-boletas/).*)",
+      "source": "/:path((?!api/mis-boletas/|api/capacitaciones/material/).*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         }
       ],
-      "regex": "^(?:/((?!api/mis-boletas/).*))(?:/)?$"
+      "regex": "^(?:/((?!api/mis-boletas/|api/capacitaciones/material/).*))(?:/)?$"
     },
     {
       "source": "/api/:path*",
@@ -69,6 +69,14 @@
     "fallback": []
   },
   "dynamicRoutes": [
+    {
+      "page": "/api/anticipos-prestacion/[id]",
+      "regex": "^/api/anticipos\\-prestacion/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/anticipos\\-prestacion/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
     {
       "page": "/api/auth/[...nextauth]",
       "regex": "^/api/auth/(.+?)(?:/)?$",
@@ -102,12 +110,44 @@
       "namedRegex": "^/api/biometrico/sync/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/capacitaciones/material/[materialId]",
+      "regex": "^/api/capacitaciones/material/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPmaterialId": "nxtPmaterialId"
+      },
+      "namedRegex": "^/api/capacitaciones/material/(?<nxtPmaterialId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/capacitaciones/material/[materialId]/acceso",
+      "regex": "^/api/capacitaciones/material/([^/]+?)/acceso(?:/)?$",
+      "routeKeys": {
+        "nxtPmaterialId": "nxtPmaterialId"
+      },
+      "namedRegex": "^/api/capacitaciones/material/(?<nxtPmaterialId>[^/]+?)/acceso(?:/)?$"
+    },
+    {
+      "page": "/api/capacitaciones/material/[materialId]/contenido",
+      "regex": "^/api/capacitaciones/material/([^/]+?)/contenido(?:/)?$",
+      "routeKeys": {
+        "nxtPmaterialId": "nxtPmaterialId"
+      },
+      "namedRegex": "^/api/capacitaciones/material/(?<nxtPmaterialId>[^/]+?)/contenido(?:/)?$"
+    },
+    {
       "page": "/api/capacitaciones/[id]",
       "regex": "^/api/capacitaciones/([^/]+?)(?:/)?$",
       "routeKeys": {
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/capacitaciones/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/capacitaciones/[id]/material",
+      "regex": "^/api/capacitaciones/([^/]+?)/material(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/capacitaciones/(?<nxtPid>[^/]+?)/material(?:/)?$"
     },
     {
       "page": "/api/capacitaciones/[id]/participantes",
@@ -124,6 +164,14 @@
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/centros\\-costo/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/competencias/[id]",
+      "regex": "^/api/competencias/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/competencias/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
       "page": "/api/configuracion/departamentos/[id]",
@@ -341,6 +389,14 @@
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/horarios/planes/(?<nxtPid>[^/]+?)/exportar(?:/)?$"
+    },
+    {
+      "page": "/api/horarios/traslados/[id]",
+      "regex": "^/api/horarios/traslados/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/horarios/traslados/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
       "page": "/api/incapacidades/[id]",
@@ -575,6 +631,14 @@
       "namedRegex": "^/horarios/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/mi-espacio/material/[id]",
+      "regex": "^/mi\\-espacio/material/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/mi\\-espacio/material/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/planillas/[id]",
       "regex": "^/planillas/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -601,6 +665,12 @@
       "regex": "^/_not\\-found(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/api/anticipos-prestacion",
+      "regex": "^/api/anticipos\\-prestacion(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/anticipos\\-prestacion(?:/)?$"
     },
     {
       "page": "/api/auditoria",
@@ -927,6 +997,12 @@
       "namedRegex": "^/api/evaluaciones(?:/)?$"
     },
     {
+      "page": "/api/evaluaciones/aspectos",
+      "regex": "^/api/evaluaciones/aspectos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/evaluaciones/aspectos(?:/)?$"
+    },
+    {
       "page": "/api/evaluaciones/campanas",
       "regex": "^/api/evaluaciones/campanas(?:/)?$",
       "routeKeys": {},
@@ -943,6 +1019,12 @@
       "regex": "^/api/exportar/empleados(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/exportar/empleados(?:/)?$"
+    },
+    {
+      "page": "/api/exportar/horarios",
+      "regex": "^/api/exportar/horarios(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/exportar/horarios(?:/)?$"
     },
     {
       "page": "/api/exportar/horas-extra",
@@ -993,6 +1075,12 @@
       "namedRegex": "^/api/horarios/reglas(?:/)?$"
     },
     {
+      "page": "/api/horarios/traslados",
+      "regex": "^/api/horarios/traslados(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/horarios/traslados(?:/)?$"
+    },
+    {
       "page": "/api/importar/deducciones",
       "regex": "^/api/importar/deducciones(?:/)?$",
       "routeKeys": {},
@@ -1027,6 +1115,18 @@
       "regex": "^/api/importar/empleados/confirmar(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/importar/empleados/confirmar(?:/)?$"
+    },
+    {
+      "page": "/api/importar/horarios",
+      "regex": "^/api/importar/horarios(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/horarios(?:/)?$"
+    },
+    {
+      "page": "/api/importar/horarios/confirmar",
+      "regex": "^/api/importar/horarios/confirmar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/horarios/confirmar(?:/)?$"
     },
     {
       "page": "/api/importar/horas-extra",
@@ -1089,10 +1189,22 @@
       "namedRegex": "^/api/marcajes(?:/)?$"
     },
     {
+      "page": "/api/marcajes/lote",
+      "regex": "^/api/marcajes/lote(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/marcajes/lote(?:/)?$"
+    },
+    {
       "page": "/api/mi-cuenta/password",
       "regex": "^/api/mi\\-cuenta/password(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/mi\\-cuenta/password(?:/)?$"
+    },
+    {
+      "page": "/api/mi-espacio/capacitaciones",
+      "regex": "^/api/mi\\-espacio/capacitaciones(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/mi\\-espacio/capacitaciones(?:/)?$"
     },
     {
       "page": "/api/mi-espacio/documentos",
@@ -1221,6 +1333,12 @@
       "namedRegex": "^/api/sesion/cierre(?:/)?$"
     },
     {
+      "page": "/api/tablero",
+      "regex": "^/api/tablero(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/tablero(?:/)?$"
+    },
+    {
       "page": "/api/turnos",
       "regex": "^/api/turnos(?:/)?$",
       "routeKeys": {},
@@ -1249,6 +1367,12 @@
       "regex": "^/asistencia(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/asistencia(?:/)?$"
+    },
+    {
+      "page": "/asistencia/carga-rapida",
+      "regex": "^/asistencia/carga\\-rapida(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/asistencia/carga\\-rapida(?:/)?$"
     },
     {
       "page": "/biometrico",
@@ -1447,6 +1571,12 @@
       "regex": "^/reportes(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/reportes(?:/)?$"
+    },
+    {
+      "page": "/tablero",
+      "regex": "^/tablero(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/tablero(?:/)?$"
     },
     {
       "page": "/talento/competencias",

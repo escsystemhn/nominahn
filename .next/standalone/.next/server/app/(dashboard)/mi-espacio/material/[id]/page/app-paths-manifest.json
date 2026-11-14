@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/mi-espacio/material/[id]/page": "app/(dashboard)/mi-espacio/material/[id]/page.js"
+}

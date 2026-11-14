@@ -1,0 +1,13 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/capacitaciones/material/[materialId]/route.js")
+R.c("server/chunks/src_lib_capacitaciones_material_ts_0q86fi-mpkb59._.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/_0vbny1awlx8sv._.js")
+R.c("server/chunks/_043i7o-p2_6a5._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/_1sdzreve3g3gi._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/[root-of-the-server]__1j_5bfb9jk74c._.js")
+R.c("server/chunks/1oeh_server_app_api_capacitaciones_material_[materialId]_route_actions_1sm3z964605xg.js")
+R.m(65211)
+module.exports=R.m(65211).exports

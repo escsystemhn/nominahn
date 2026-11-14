@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/tablero/page": "app/(dashboard)/tablero/page.js"
+}

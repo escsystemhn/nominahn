@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/mi-espacio/capacitaciones/route.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/_1pv6n_-1xbdtk._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/_0ja606m7k78w9._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/1oeh_server_app_api_mi-espacio_capacitaciones_route_actions_1wpgv1qylza9a.js")
+R.m(76760)
+module.exports=R.m(76760).exports

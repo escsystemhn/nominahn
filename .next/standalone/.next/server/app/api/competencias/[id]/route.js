@@ -1,0 +1,11 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/competencias/[id]/route.js")
+R.c("server/chunks/_0fehzzvyvijqw._.js")
+R.c("server/chunks/_19lcm522egpwg._.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/_0ja606m7k78w9._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/_next-internal_server_app_api_competencias_[id]_route_actions_1v-04pav_-ugv.js")
+R.m(16430)
+module.exports=R.m(16430).exports

@@ -1,0 +1,3 @@
+module.exports=[86223,a=>{"use strict";function b(a){return"number"==typeof a&&Number.isFinite(a)}a.s(["O",0,function(a){let c=0,d=0;for(let e of a)b(e.calificacion)&&e.peso>0&&(c+=Math.min(100,Math.max(0,e.calificacion))*e.peso,d+=e.peso);return d>0?Math.round((c/d+Number.EPSILON)*100)/100:null},"w",0,function(a){let c=a.filter(a=>a.peso>0);return c.length>0&&c.every(a=>b(a.calificacion))}])}];
+
+//# sourceMappingURL=src_lib_evaluaciones_calificacion_ts_1ahx5i8s7axrr._.js.map
