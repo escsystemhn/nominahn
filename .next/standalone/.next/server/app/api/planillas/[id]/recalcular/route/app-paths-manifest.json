@@ -1,0 +1,3 @@
+{
+  "/api/planillas/[id]/recalcular/route": "app/api/planillas/[id]/recalcular/route.js"
+}

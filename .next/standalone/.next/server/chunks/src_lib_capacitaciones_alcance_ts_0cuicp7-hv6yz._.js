@@ -1,0 +1,3 @@
+module.exports=[61838,t=>{"use strict";var e=t.i(35040);let r=t=>t.id?[{creadoPor:t.id}]:[];t.s(["U",0,function(t){return(0,e._)(t)?{}:{OR:[{participantes:{some:(0,e.L)(t)}},...r(t)]}},"l",0,function(t){if((0,e._)(t))return{};let i=(0,e.L)(t);return{OR:[{AND:[{participantes:{some:i}},{participantes:{none:{NOT:i}}}]},...r(t)]}}])}];
+
+//# sourceMappingURL=src_lib_capacitaciones_alcance_ts_0cuicp7-hv6yz._.js.map

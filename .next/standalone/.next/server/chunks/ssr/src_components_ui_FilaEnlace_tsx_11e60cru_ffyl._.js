@@ -1,0 +1,3 @@
+module.exports=[8897,a=>{"use strict";var b=a.i(87924),c=a.i(50944),d=a.i(68114);a.s(["default",0,function({href:a,className:e,children:f}){let g=(0,c.useRouter)();return(0,b.jsx)("tr",{onClick:function(b){b.target.closest("a, button, input, select, textarea, label")||window.getSelection()?.toString()||(b.ctrlKey||b.metaKey?window.open(a,"_blank","noopener"):g.push(a))},className:(0,d.c)("cursor-pointer",e),children:f})}])}];
+
+//# sourceMappingURL=src_components_ui_FilaEnlace_tsx_11e60cru_ffyl._.js.map

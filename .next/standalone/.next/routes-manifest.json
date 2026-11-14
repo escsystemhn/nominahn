@@ -19,10 +19,6 @@
       "source": "/:path*",
       "headers": [
         {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-        },
-        {
           "key": "X-Frame-Options",
           "value": "DENY"
         },
@@ -46,32 +42,18 @@
       "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))?(?:/)?$"
     },
     {
-      "source": "/api/:path*",
+      "source": "/:path((?!api/mis-boletas/).*)",
       "headers": [
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        },
-        {
-          "key": "Permissions-Policy",
-          "value": "camera=(), microphone=(), geolocation=(), payment=()"
-        },
-        {
-          "key": "Strict-Transport-Security",
-          "value": "max-age=63072000; includeSubDomains; preload"
-        },
+        }
+      ],
+      "regex": "^(?:/((?!api/mis-boletas/).*))(?:/)?$"
+    },
+    {
+      "source": "/api/:path*",
+      "headers": [
         {
           "key": "Cache-Control",
           "value": "private, no-store, max-age=0"
@@ -184,12 +166,36 @@
       "namedRegex": "^/api/configuracion/puestos/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/configuracion/respaldos/[id]/descargar",
+      "regex": "^/api/configuracion/respaldos/([^/]+?)/descargar(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/respaldos/(?<nxtPid>[^/]+?)/descargar(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/sucursales/[id]",
       "regex": "^/api/configuracion/sucursales/([^/]+?)(?:/)?$",
       "routeKeys": {
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/configuracion/sucursales/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/sucursales/[id]/logo",
+      "regex": "^/api/configuracion/sucursales/([^/]+?)/logo(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/sucursales/(?<nxtPid>[^/]+?)/logo(?:/)?$"
+    },
+    {
+      "page": "/api/deducciones/[id]",
+      "regex": "^/api/deducciones/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/deducciones/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
       "page": "/api/documentos/emitidos/[id]",
@@ -230,6 +236,23 @@
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/empleados/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/empleados/[id]/contratos",
+      "regex": "^/api/empleados/([^/]+?)/contratos(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/empleados/(?<nxtPid>[^/]+?)/contratos(?:/)?$"
+    },
+    {
+      "page": "/api/empleados/[id]/contratos/[contratoId]",
+      "regex": "^/api/empleados/([^/]+?)/contratos/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPcontratoId": "nxtPcontratoId"
+      },
+      "namedRegex": "^/api/empleados/(?<nxtPid>[^/]+?)/contratos/(?<nxtPcontratoId>[^/]+?)(?:/)?$"
     },
     {
       "page": "/api/empleados/[id]/deducciones",
@@ -414,6 +437,14 @@
         "nxtPid": "nxtPid"
       },
       "namedRegex": "^/api/planillas/(?<nxtPid>[^/]+?)/partida(?:/)?$"
+    },
+    {
+      "page": "/api/planillas/[id]/recalcular",
+      "regex": "^/api/planillas/([^/]+?)/recalcular(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/planillas/(?<nxtPid>[^/]+?)/recalcular(?:/)?$"
     },
     {
       "page": "/api/planillas/[id]/sap",
@@ -602,6 +633,12 @@
       "namedRegex": "^/api/biometrico/pines(?:/)?$"
     },
     {
+      "page": "/api/buscar",
+      "regex": "^/api/buscar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/buscar(?:/)?$"
+    },
+    {
       "page": "/api/capacitaciones",
       "regex": "^/api/capacitaciones(?:/)?$",
       "routeKeys": {},
@@ -680,6 +717,18 @@
       "namedRegex": "^/api/configuracion/parametros/isr\\-metodo(?:/)?$"
     },
     {
+      "page": "/api/configuracion/parametros/quincenal",
+      "regex": "^/api/configuracion/parametros/quincenal(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/parametros/quincenal(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/parametros/rap-base",
+      "regex": "^/api/configuracion/parametros/rap\\-base(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/parametros/rap\\-base(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/parametros/vecinal",
       "regex": "^/api/configuracion/parametros/vecinal(?:/)?$",
       "routeKeys": {},
@@ -690,6 +739,24 @@
       "regex": "^/api/configuracion/puestos(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/configuracion/puestos(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/respaldos",
+      "regex": "^/api/configuracion/respaldos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/respaldos(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/respaldos/ejecutar",
+      "regex": "^/api/configuracion/respaldos/ejecutar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/respaldos/ejecutar(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/respaldos/probar",
+      "regex": "^/api/configuracion/respaldos/probar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/respaldos/probar(?:/)?$"
     },
     {
       "page": "/api/configuracion/sap",
@@ -734,6 +801,12 @@
       "namedRegex": "^/api/configuracion/sap/sucursales(?:/)?$"
     },
     {
+      "page": "/api/configuracion/seguridad",
+      "regex": "^/api/configuracion/seguridad(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/seguridad(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/sucursales",
       "regex": "^/api/configuracion/sucursales(?:/)?$",
       "routeKeys": {},
@@ -750,6 +823,12 @@
       "regex": "^/api/cron/evaluaciones(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/cron/evaluaciones(?:/)?$"
+    },
+    {
+      "page": "/api/cron/respaldos",
+      "regex": "^/api/cron/respaldos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/cron/respaldos(?:/)?$"
     },
     {
       "page": "/api/cron/sap",
@@ -774,6 +853,24 @@
       "regex": "^/api/deducciones(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/deducciones(?:/)?$"
+    },
+    {
+      "page": "/api/deducciones/empleados",
+      "regex": "^/api/deducciones/empleados(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/deducciones/empleados(?:/)?$"
+    },
+    {
+      "page": "/api/deducciones/masiva",
+      "regex": "^/api/deducciones/masiva(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/deducciones/masiva(?:/)?$"
+    },
+    {
+      "page": "/api/deducciones/tipos",
+      "regex": "^/api/deducciones/tipos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/deducciones/tipos(?:/)?$"
     },
     {
       "page": "/api/documentos/emitidos",
@@ -848,6 +945,18 @@
       "namedRegex": "^/api/exportar/empleados(?:/)?$"
     },
     {
+      "page": "/api/exportar/horas-extra",
+      "regex": "^/api/exportar/horas\\-extra(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/exportar/horas\\-extra(?:/)?$"
+    },
+    {
+      "page": "/api/exportar/tipos-deduccion",
+      "regex": "^/api/exportar/tipos\\-deduccion(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/exportar/tipos\\-deduccion(?:/)?$"
+    },
+    {
       "page": "/api/formatos-banco",
       "regex": "^/api/formatos\\-banco(?:/)?$",
       "routeKeys": {},
@@ -896,6 +1005,18 @@
       "namedRegex": "^/api/importar/deducciones/confirmar(?:/)?$"
     },
     {
+      "page": "/api/importar/deducciones/periodo",
+      "regex": "^/api/importar/deducciones/periodo(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/deducciones/periodo(?:/)?$"
+    },
+    {
+      "page": "/api/importar/deducciones/periodo/confirmar",
+      "regex": "^/api/importar/deducciones/periodo/confirmar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/deducciones/periodo/confirmar(?:/)?$"
+    },
+    {
       "page": "/api/importar/empleados",
       "regex": "^/api/importar/empleados(?:/)?$",
       "routeKeys": {},
@@ -906,6 +1027,30 @@
       "regex": "^/api/importar/empleados/confirmar(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/importar/empleados/confirmar(?:/)?$"
+    },
+    {
+      "page": "/api/importar/horas-extra",
+      "regex": "^/api/importar/horas\\-extra(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/horas\\-extra(?:/)?$"
+    },
+    {
+      "page": "/api/importar/horas-extra/confirmar",
+      "regex": "^/api/importar/horas\\-extra/confirmar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/horas\\-extra/confirmar(?:/)?$"
+    },
+    {
+      "page": "/api/importar/tipos-deduccion",
+      "regex": "^/api/importar/tipos\\-deduccion(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/tipos\\-deduccion(?:/)?$"
+    },
+    {
+      "page": "/api/importar/tipos-deduccion/confirmar",
+      "regex": "^/api/importar/tipos\\-deduccion/confirmar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/importar/tipos\\-deduccion/confirmar(?:/)?$"
     },
     {
       "page": "/api/incapacidades",
@@ -1070,6 +1215,12 @@
       "namedRegex": "^/api/salarios/aumento\\-colectivo(?:/)?$"
     },
     {
+      "page": "/api/sesion/cierre",
+      "regex": "^/api/sesion/cierre(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/sesion/cierre(?:/)?$"
+    },
+    {
       "page": "/api/turnos",
       "regex": "^/api/turnos(?:/)?$",
       "routeKeys": {},
@@ -1206,6 +1357,12 @@
       "regex": "^/incapacidades(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/incapacidades(?:/)?$"
+    },
+    {
+      "page": "/jerarquia-nomina",
+      "regex": "^/jerarquia\\-nomina(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/jerarquia\\-nomina(?:/)?$"
     },
     {
       "page": "/licencia",

@@ -1,0 +1,3 @@
+{
+  "/api/configuracion/respaldos/[id]/descargar/route": "app/api/configuracion/respaldos/[id]/descargar/route.js"
+}

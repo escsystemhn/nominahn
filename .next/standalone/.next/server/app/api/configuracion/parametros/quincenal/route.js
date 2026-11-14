@@ -1,0 +1,12 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/configuracion/parametros/quincenal/route.js")
+R.c("server/chunks/_1n7k6ycc867-n._.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/_043i7o-p2_6a5._.js")
+R.c("server/chunks/_0auq8uc7cy13x._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/_0ja606m7k78w9._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/1oeh_server_app_api_configuracion_parametros_quincenal_route_actions_05bycla4sv0vx.js")
+R.m(55592)
+module.exports=R.m(55592).exports

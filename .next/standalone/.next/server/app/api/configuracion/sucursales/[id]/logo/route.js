@@ -1,0 +1,11 @@
+var R=require("../../../../../../chunks/[turbopack]_runtime.js")("server/app/api/configuracion/sucursales/[id]/logo/route.js")
+R.c("server/chunks/src_lib_organizacion_logo_ts_1qdr1y2gd9ubz._.js")
+R.c("server/chunks/_0ja606m7k78w9._.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/_0ccb4zw3blvct._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/1oeh_server_app_api_configuracion_sucursales_[id]_logo_route_actions_00ez6u-8uhf66.js")
+R.m(67724)
+module.exports=R.m(67724).exports

@@ -1,0 +1,3 @@
+module.exports=[55242,a=>{"use strict";function b(a,c={}){let d=c.decimales??2,e=a.trim().replace(/^(HNL|L\.?)\s*/i,"").replace(/[\s  ]/g,"");if(""===e)return{ok:!0,valor:null};let f=e.lastIndexOf(","),g=e.lastIndexOf(".");if(f>=0&&g>=0){let a=f>g?",":".";e=e.split(","===a?".":",").join("").replace(a,".")}else if(f>=0){let a=e.split(",");e=2===a.length&&3!==a[1].length?a.join("."):a.join("")}return/^\d+(\.\d+)?$/.test(e)?(e.split(".")[1]??"").length>d?{ok:!1,error:`m\xe1ximo ${d} decimales`}:{ok:!0,valor:Number(e)}:{ok:!1,error:"escriba sólo el número, como 297.58"}}a.s(["v",0,b,"g",0,function(a){let c=b(a);return c.ok?null===c.valor?"":String(c.valor):a}])}];
+
+//# sourceMappingURL=src_lib_formato_monto-texto_ts_15l0x3io8687k._.js.map

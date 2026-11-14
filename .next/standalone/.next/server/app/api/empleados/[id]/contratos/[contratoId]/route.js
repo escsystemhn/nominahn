@@ -1,0 +1,12 @@
+var R=require("../../../../../../chunks/[turbopack]_runtime.js")("server/app/api/empleados/[id]/contratos/[contratoId]/route.js")
+R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
+R.c("server/chunks/_1x8xtwiqpw1zx._.js")
+R.c("server/chunks/_043i7o-p2_6a5._.js")
+R.c("server/chunks/_0jx0ny96jm5dr._.js")
+R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
+R.c("server/chunks/_160atohuo54ez._.js")
+R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
+R.c("server/chunks/_0axmlmf4ws7f0._.js")
+R.c("server/chunks/1jng_app_api_empleados_[id]_contratos_[contratoId]_route_actions_1xyt8_jk2lsxf.js")
+R.m(86038)
+module.exports=R.m(86038).exports

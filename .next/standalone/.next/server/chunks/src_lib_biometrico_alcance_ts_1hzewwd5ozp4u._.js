@@ -1,0 +1,3 @@
+module.exports=[11821,u=>{"use strict";var s=u.i(35040);function n(u){return"SUCURSAL"===u.alcance?u.sucursalesIds??[]:[]}u.s(["A",0,function(u,r){return!!(0,s._)(u)||!!r.sucursalId&&n(u).includes(r.sucursalId)},"v",0,function(u){return(0,s._)(u)?{}:{sucursalId:{in:n(u)}}},"_",0,function(u){let r=(0,s.L)(u),e=n(u);return 0===e.length?r:{OR:[r,{empleadoId:null,dispositivo:{sucursalId:{in:e}}}]}}])}];
+
+//# sourceMappingURL=src_lib_biometrico_alcance_ts_1hzewwd5ozp4u._.js.map

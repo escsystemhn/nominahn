@@ -1,0 +1,3 @@
+module.exports=[59244,e=>{"use strict";var i=e.i(9937);async function a(e){let a=await e.configuracionSistema.findUnique({where:{clave:i.j}});return(0,i.L)(a?.valor??null)}async function n(e,a){let n=JSON.stringify(a);await e.configuracionSistema.upsert({where:{clave:i.j},update:{valor:n},create:{clave:i.j,valor:n,descripcion:"Planilla quincenal: IHSS, RAP e impuesto vecinal divididos en las dos quincenas o completos en la segunda."}})}e.s(["T",0,n,"g",0,a])}];
+
+//# sourceMappingURL=src_lib_payroll_distribucion-quincenal-bd_ts_14gx0bfdetwta._.js.map
