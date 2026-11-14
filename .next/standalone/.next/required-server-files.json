@@ -114,7 +114,7 @@
     },
     "outputFileTracingRoot": "/home/runner/work/nominahn/nominahn",
     "allowedDevOrigins": [
-      "10.0.140.89"
+      "10.1.0.235"
     ],
     "enablePrerenderSourceMaps": true,
     "cacheComponents": false,

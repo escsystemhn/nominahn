@@ -1,0 +1,343 @@
+@import "tailwindcss";
+
+/*
+ * Sistema visual de Gestión360 Nómina.
+ *
+ * Toda la paleta nace del cian del logo de ESC System (#20B1D2, tono ≈ 191°).
+ * La escala `blue` de Tailwind se REDEFINE aquí con esa familia para que las
+ * ~400 clases `bg-blue-700`, `text-blue-600`, `ring-blue-500`… ya escritas en
+ * los componentes cambien de golpe sin tocar cada archivo. `gray` se enfría con
+ * un matiz cian para que fondos y reglas pertenezcan a la misma familia.
+ *
+ * Contrastes comprobados: blue-600 4.8:1 sobre papel y 5.1:1 sobre blanco (enlaces),
+ * blue-700 6.2:1 (botones con texto blanco), gray-500 4.7:1 sobre papel (texto
+ * secundario), blue-900 15:1 (tinta). gray-400 ya no se usa para texto: 2.7:1.
+ */
+@theme {
+  /* Escala de marca (sustituye a `blue`) */
+  --color-blue-50: #eef8fb;
+  --color-blue-100: #dcf1f6;
+  --color-blue-200: #bde5ef;
+  --color-blue-300: #8ad3e6;
+  --color-blue-400: #4fc0da;
+  --color-blue-500: #20b1d2; /* cian del logo: foco, indicador activo */
+  --color-blue-600: #0b7893; /* enlaces y texto de acento */
+  --color-blue-700: #0a6a82; /* acción primaria */
+  --color-blue-800: #085569;
+  --color-blue-900: #0d2b38; /* tinta: barra lateral, titulares */
+  --color-blue-950: #07202b;
+
+  /* Neutros fríos (sustituye a `gray`) */
+  --color-gray-50: #f5f8f9;
+  --color-gray-100: #ebf0f2;
+  --color-gray-200: #dce3e7;
+  --color-gray-300: #c3ced4;
+  --color-gray-400: #90a0a8;
+  --color-gray-500: #5f717c;
+  --color-gray-600: #4a5b65;
+  --color-gray-700: #354550;
+  --color-gray-800: #22303a;
+  --color-gray-900: #142129;
+  --color-gray-950: #0b151b;
+
+  /* Alias semánticos para código nuevo */
+  --color-brand: #20b1d2;
+  --color-ink: #0d2b38;
+  --color-paper: #f5f8f9;
+  --color-line: #dce3e7;
+
+  --font-sans: var(--font-plex-sans), "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Plex a 700 pesa demasiado: `font-bold` resuelve a 600 en toda la app. */
+  --font-weight-bold: 600;
+
+  /* Radios más contenidos que los de serie (8/12/16): deja de parecer burbuja. */
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.625rem;
+
+  /* Sombras teñidas con la tinta, más discretas. */
+  --shadow-sm: 0 1px 2px 0 rgb(13 43 56 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(13 43 56 / 0.08), 0 1px 2px -1px rgb(13 43 56 / 0.06);
+  --shadow-md: 0 4px 10px -2px rgb(13 43 56 / 0.10), 0 2px 4px -2px rgb(13 43 56 / 0.06);
+  --shadow-lg: 0 10px 24px -6px rgb(13 43 56 / 0.16), 0 4px 8px -4px rgb(13 43 56 / 0.08);
+  --shadow-xl: 0 20px 40px -12px rgb(13 43 56 / 0.22);
+  --shadow-2xl: 0 24px 48px -12px rgb(13 43 56 / 0.28);
+}
+
+:root {
+  --background: var(--color-paper);
+  --foreground: var(--color-gray-900);
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Las cifras de una planilla deben alinearse columna a columna. */
+  table,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+
+  input,
+  select,
+  textarea {
+    color: var(--color-gray-900);
+    background-color: #ffffff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* Evita que el autorrelleno del navegador cambie los colores */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--color-gray-900) !important;
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/*
+ * Piezas compartidas. Se usan en las pantallas rediseñadas; el resto de la app
+ * sigue con utilidades sueltas y hereda la paleta por los tokens de arriba.
+ */
+@layer components {
+  .btn {
+    @apply inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-blue-700 text-white hover:bg-blue-800;
+  }
+  .btn-secondary {
+    @apply border border-gray-300 bg-white text-gray-800 hover:bg-gray-50;
+  }
+  .btn-ghost {
+    @apply text-gray-600 hover:bg-gray-100 hover:text-gray-900;
+  }
+  .btn-sm {
+    @apply h-8 px-3 text-xs;
+  }
+
+  .input {
+    @apply h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40;
+  }
+
+  /* La altura fija es de los campos de una línea: un área de texto respeta sus `rows`. */
+  textarea.input {
+    @apply h-auto py-2;
+  }
+
+  /* Lo mismo una lista (select con `size` o `multiple`): muestra las filas que pide. */
+  select.input[size],
+  select.input[multiple] {
+    @apply h-auto py-1;
+  }
+
+  .panel {
+    @apply rounded-xl border border-gray-200 bg-white;
+  }
+
+  /* Tabla de datos: cabecera sobre papel, filas separadas por regla fina. */
+  .table-base {
+    @apply w-full text-sm;
+  }
+  .table-base thead th {
+    @apply whitespace-nowrap border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-left text-xs font-medium text-gray-500;
+  }
+  .table-base tbody td {
+    @apply border-b border-gray-100 px-4 py-3 align-middle text-gray-700;
+  }
+  .table-base tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .table-base tbody tr:hover td {
+    @apply bg-gray-50/70;
+  }
+  .table-base .num {
+    @apply text-right;
+  }
+}
+
+/*
+ * Pantalla angosta. Va fuera de las capas a propósito: las utilidades de Tailwind
+ * (`grid-cols-2`, `text-sm`, `overflow-hidden`) viven en una capa y le ganarían a
+ * cualquier regla de `@layer components`, sin importar el orden.
+ */
+
+/*
+ * Una lista que en un celular se lee como tarjetas: cada fila es un bloque, la
+ * celda `data-titulo` la encabeza y las demás se rotulan con su `data-etiqueta`.
+ */
+@media (max-width: 639.98px) {
+  .tabla-tarjetas thead {
+    @apply sr-only;
+  }
+  .tabla-tarjetas,
+  .tabla-tarjetas tbody,
+  .tabla-tarjetas tr {
+    display: block;
+    width: 100%;
+  }
+  .tabla-tarjetas tbody tr {
+    display: flex;
+    flex-direction: column;
+    @apply border-b border-gray-200 px-4 py-3;
+  }
+  .tabla-tarjetas tbody tr:last-child {
+    @apply border-b-0;
+  }
+  .tabla-tarjetas tbody td {
+    @apply flex items-baseline justify-between gap-4 border-b-0 px-0 py-1 text-right;
+    white-space: normal;
+  }
+  .tabla-tarjetas tbody td[data-etiqueta]::before {
+    content: attr(data-etiqueta);
+    @apply shrink-0 text-left text-xs text-gray-500;
+  }
+  .tabla-tarjetas tbody td[data-titulo] {
+    order: -1;
+    @apply block pb-1 pt-0 text-left text-base;
+  }
+  .tabla-tarjetas tbody td[data-accion] {
+    order: 1;
+    @apply justify-start pt-2;
+  }
+  .tabla-tarjetas tbody td:empty {
+    display: none;
+  }
+  .tabla-tarjetas tbody tr:hover td {
+    background: transparent;
+  }
+
+  /* Un formulario a varias columnas no cabe: los campos van uno bajo otro. */
+  main form .grid-cols-2,
+  main form .grid-cols-3,
+  main form .grid-cols-4,
+  .fixed.inset-0 .grid-cols-2,
+  .fixed.inset-0 .grid-cols-3,
+  .fixed.inset-0 .grid-cols-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Una ventana más alta que la pantalla debe poder recorrerse. */
+  .fixed.inset-0 > div {
+    max-height: 100%;
+    overflow-y: auto;
+  }
+
+  /* Una lista con opciones largas no debe ensanchar la página. */
+  main select {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Las pestañas que no caben se recorren de lado: nunca ensanchan la página. */
+  main .flex.border-b:has(> button, > a) {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  main .flex.border-b > button,
+  main .flex.border-b > a {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/*
+ * Listas largas: la tabla se desplaza dentro de su recuadro, con el encabezado y los
+ * totales siempre a la vista. Con `sticky`, el borde colapsado de la celda no acompaña
+ * al desplazarse: por eso la línea es una sombra.
+ */
+@media (min-width: 640px) {
+  .tabla-fija {
+    max-height: calc(100dvh - 9rem);
+    overflow: auto;
+  }
+  .tabla-fija thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: inset 0 -1px 0 var(--color-gray-200);
+  }
+  .tabla-fija tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--color-gray-50);
+    box-shadow: inset 0 1px 0 var(--color-gray-300);
+  }
+}
+
+/*
+ * Por debajo del menú fijo, una tabla ancha se recorre dentro de su recuadro. Es
+ * `relative` porque un título `sr-only` de la tabla, que es absoluto, se escaparía
+ * del recuadro y ensancharía la página entera.
+ */
+@media (max-width: 1023.98px) {
+  main :has(> table) {
+    position: relative;
+    overflow-x: auto;
+  }
+}
+
+/*
+ * Con el dedo: blancos de 44 px, y 16 px en los campos para que el teléfono no
+ * acerque la pantalla cada vez que se toca uno.
+ */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 2.75rem;
+  }
+  .btn-sm {
+    min-height: 2.5rem;
+  }
+  .tabla-tarjetas td[data-accion] a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+  main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  main select,
+  main textarea,
+  .fixed.inset-0 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .fixed.inset-0 select,
+  .fixed.inset-0 textarea {
+    min-height: 2.75rem;
+    font-size: 16px;
+  }
+}

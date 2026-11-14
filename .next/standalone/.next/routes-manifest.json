@@ -150,6 +150,14 @@
       "namedRegex": "^/api/capacitaciones/(?<nxtPid>[^/]+?)/material(?:/)?$"
     },
     {
+      "page": "/api/capacitaciones/[id]/material/partes",
+      "regex": "^/api/capacitaciones/([^/]+?)/material/partes(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/capacitaciones/(?<nxtPid>[^/]+?)/material/partes(?:/)?$"
+    },
+    {
       "page": "/api/capacitaciones/[id]/participantes",
       "regex": "^/api/capacitaciones/([^/]+?)/participantes(?:/)?$",
       "routeKeys": {

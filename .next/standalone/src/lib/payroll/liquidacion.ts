@@ -1,0 +1,594 @@
+/**
+ * Liquidación final de prestaciones laborales (Honduras).
+ *
+ * CRITERIO: el de la calculadora oficial de la Secretaría de Trabajo y
+ * Seguridad Social (consulta.trabajo.gob.hn), que es el que aplica la
+ * inspectoría en un reclamo. Los conceptos y las causas de terminación son los
+ * que maneja ese formulario.
+ *
+ * MARCO LEGAL
+ *   · Preaviso — Art. 116 del Código del Trabajo.
+ *   · Auxilio de cesantía — Art. 120, reformado por el Decreto Legislativo
+ *     150-2008, que además añadió el Art. 120-A.
+ *   · Vacaciones — Art. 346.
+ *   · Décimo tercer y décimo cuarto mes — ver `./decimos.ts`.
+ *
+ * QUÉ SE PAGA SEGÚN LA CAUSA
+ *
+ *   Concepto            Despido injust.  Renuncia          Despido justif.  Muerte
+ *   ─────────────────── ───────────────  ────────────────  ───────────────  ──────────────
+ *   Preaviso            sí               no                no               no
+ *   Auxilio cesantía    100 %            35 % si >15 años  no               75 % si >6 meses
+ *   Vacaciones          sí               sí                sí               sí
+ *   13.º y 14.º prop.   sí               sí                sí               sí
+ *
+ * Vacaciones y décimos se pagan SIEMPRE: son salario ya devengado, no una
+ * indemnización, y por tanto no dependen de por qué terminó la relación.
+ *
+ * Es lógica pura (sin Prisma ni red) para poder probarse de forma aislada.
+ */
+
+import { money, redondear, maximo, minimo, sumar, CERO, type Money, type MoneyInput } from "./money";
+import { calcularVacacionesDevengadas, diaComercial, diasVacacionesPorAnio } from "./calculos-hn";
+import { CONCEPTO_ADELANTO_13, CONCEPTO_ADELANTO_14, CONCEPTO_NEGOCIACION } from "@/lib/prestaciones/anticipos";
+
+export type CausaTerminacion =
+  | "DESPIDO_INJUSTIFICADO"
+  | "RENUNCIA"
+  | "DESPIDO_JUSTIFICADO"
+  | "MUERTE";
+
+// ─── CONSTANTES LEGALES ───────────────────────────────────────────────────────
+
+/**
+ * Preaviso — Art. 116. Días de salario según el tiempo de servicio continuo.
+ * Ordenada de mayor a menor antigüedad: se toma el primer tramo que aplique.
+ */
+export const TABLA_PREAVISO: { mesesMin: number; dias: number }[] = [
+  { mesesMin: 24, dias: 60 }, // más de 2 años → 2 meses
+  { mesesMin: 12, dias: 30 }, // de 1 a 2 años → 1 mes
+  { mesesMin: 6, dias: 14 },  // de 6 meses a 1 año → 2 semanas
+  { mesesMin: 3, dias: 7 },   // de 3 a 6 meses → 1 semana
+  { mesesMin: 0, dias: 1 },   // menos de 3 meses → 24 horas
+];
+
+/** Auxilio de cesantía — Art. 120. Días de salario para servicios menores a un año. */
+export const CESANTIA_DIAS_3_A_6_MESES = 10;
+export const CESANTIA_DIAS_6_A_12_MESES = 20;
+/** A partir del año: un mes de salario por cada año de servicio. */
+export const CESANTIA_DIAS_POR_ANIO = 30;
+/** Menos de tres meses de servicio no generan auxilio de cesantía. */
+export const CESANTIA_MESES_MINIMOS = 3;
+
+/**
+ * Tope del auxilio de cesantía: 25 meses de salario (750 días).
+ *
+ * En empresas de hasta DIEZ trabajadores el tope baja a 15 meses (450 días) y
+ * además no aplica el 35 % por renuncia con más de 15 años — Art. 120-A,
+ * incorporado por el Decreto 150-2008. Es la razón por la que el formulario de
+ * la Secretaría de Trabajo pregunta «Más de 10 Empleados».
+ */
+export const TOPE_CESANTIA_DIAS = 750;
+export const TOPE_CESANTIA_DIAS_MICROEMPRESA = 450;
+export const MAX_EMPLEADOS_MICROEMPRESA = 10;
+
+/** Renuncia voluntaria: da derecho a parte del auxilio a partir de 15 años. */
+export const ANIOS_MINIMOS_CESANTIA_RENUNCIA = 15;
+export const PORCENTAJE_CESANTIA_RENUNCIA = 0.35;
+
+/** Muerte del trabajador: los beneficiarios reciben el 75 % desde los 6 meses. */
+export const MESES_MINIMOS_CESANTIA_MUERTE = 6;
+export const PORCENTAJE_CESANTIA_MUERTE = 0.75;
+
+/** El salario base es el promedio ordinario de los últimos seis meses. */
+export const MESES_PROMEDIO_SALARIO = 6;
+
+const MS_DIA = 24 * 60 * 60 * 1000;
+
+// ─── TIEMPO DE SERVICIO ───────────────────────────────────────────────────────
+
+export interface TiempoServicio {
+  /** Días naturales entre ingreso y salida, ambos inclusive. */
+  dias: number;
+  /** Aniversarios cumplidos. */
+  aniosCompletos: number;
+  /** Meses completos de servicio (para las tablas de preaviso y cesantía). */
+  mesesCompletos: number;
+  /** Años de servicio con decimales: años completos más la fracción en curso. */
+  aniosFraccionarios: number;
+}
+
+/**
+ * Tiempo de servicio entre dos fechas de calendario.
+ *
+ * Los meses y aniversarios se cuentan por CALENDARIO, no dividiendo días entre
+ * 30: quien entra el 31 de enero cumple un mes el 28 de febrero, y la tabla del
+ * Art. 116 habla de meses, no de bloques de treinta días.
+ */
+export function calcularTiempoServicio(fechaIngreso: Date, fechaSalida: Date): TiempoServicio {
+  if (fechaSalida < fechaIngreso) {
+    return { dias: 0, aniosCompletos: 0, mesesCompletos: 0, aniosFraccionarios: 0 };
+  }
+
+  // Inclusivo en ambos extremos: el día de ingreso y el de salida se trabajan.
+  const dias = Math.floor((fechaSalida.getTime() - fechaIngreso.getTime()) / MS_DIA) + 1;
+
+  let mesesCompletos =
+    (fechaSalida.getUTCFullYear() - fechaIngreso.getUTCFullYear()) * 12 +
+    (fechaSalida.getUTCMonth() - fechaIngreso.getUTCMonth());
+
+  if (fechaSalida.getUTCDate() < fechaIngreso.getUTCDate()) {
+    // El mes sólo se completa al llegar al mismo día del mes… salvo cuando el
+    // mes de salida no LLEGA a tener ese día: quien ingresa el 31 de enero
+    // cumple el mes el 28 de febrero, porque febrero no tiene 31. Sin esta
+    // excepción, los ingresos de fin de mes perdían un mes de antigüedad y con
+    // él un tramo entero de preaviso o de cesantía.
+    const diasDelMesDeSalida = new Date(
+      Date.UTC(fechaSalida.getUTCFullYear(), fechaSalida.getUTCMonth() + 1, 0)
+    ).getUTCDate();
+    const salidaEsUltimoDiaDelMes = fechaSalida.getUTCDate() === diasDelMesDeSalida;
+    const mesCortoParaElAniversario = fechaIngreso.getUTCDate() > diasDelMesDeSalida;
+
+    if (!(salidaEsUltimoDiaDelMes && mesCortoParaElAniversario)) mesesCompletos--;
+  }
+
+  mesesCompletos = Math.max(0, mesesCompletos);
+
+  const aniosCompletos = Math.floor(mesesCompletos / 12);
+
+  // Fracción del año en curso, medida en días desde el último aniversario.
+  const ultimoAniversario = new Date(fechaIngreso);
+  ultimoAniversario.setUTCFullYear(fechaIngreso.getUTCFullYear() + aniosCompletos);
+  const diasFraccion = Math.max(
+    0,
+    Math.floor((fechaSalida.getTime() - ultimoAniversario.getTime()) / MS_DIA)
+  );
+  const aniosFraccionarios = aniosCompletos + diasFraccion / 365;
+
+  return { dias, aniosCompletos, mesesCompletos, aniosFraccionarios };
+}
+
+// ─── PREAVISO ─────────────────────────────────────────────────────────────────
+
+/** Días de preaviso que corresponden según el Art. 116. */
+export function diasPreaviso(mesesServicio: number): number {
+  const tramo = TABLA_PREAVISO.find((t) => mesesServicio >= t.mesesMin);
+  return tramo ? tramo.dias : 0;
+}
+
+// ─── AUXILIO DE CESANTÍA ──────────────────────────────────────────────────────
+
+/**
+ * Días de auxilio de cesantía ANTES de aplicar el porcentaje de la causa.
+ *
+ * Bajo el año la ley fija cantidades cerradas (10 y 20 días); a partir del año
+ * es un mes por año, y la fracción se paga en proporción al tiempo trabajado.
+ */
+export function diasCesantia(t: TiempoServicio, esMicroempresa = false): number {
+  if (t.mesesCompletos < CESANTIA_MESES_MINIMOS) return 0;
+  if (t.mesesCompletos < 6) return CESANTIA_DIAS_3_A_6_MESES;
+  if (t.mesesCompletos < 12) return CESANTIA_DIAS_6_A_12_MESES;
+
+  const dias = CESANTIA_DIAS_POR_ANIO * t.aniosFraccionarios;
+  const tope = esMicroempresa ? TOPE_CESANTIA_DIAS_MICROEMPRESA : TOPE_CESANTIA_DIAS;
+  return Math.min(dias, tope);
+}
+
+/**
+ * Proporción del auxilio que corresponde según la causa de terminación.
+ *
+ * El despido justificado no genera auxilio. La renuncia sólo a partir de 15
+ * años y al 35 %, salvo en microempresa, donde el Art. 120-A lo excluye.
+ */
+export function porcentajeCesantia(
+  causa: CausaTerminacion,
+  t: TiempoServicio,
+  esMicroempresa = false
+): number {
+  switch (causa) {
+    case "DESPIDO_INJUSTIFICADO":
+      return 1;
+
+    case "RENUNCIA":
+      if (esMicroempresa) return 0;
+      return t.aniosCompletos >= ANIOS_MINIMOS_CESANTIA_RENUNCIA
+        ? PORCENTAJE_CESANTIA_RENUNCIA
+        : 0;
+
+    case "MUERTE":
+      return t.mesesCompletos >= MESES_MINIMOS_CESANTIA_MUERTE ? PORCENTAJE_CESANTIA_MUERTE : 0;
+
+    case "DESPIDO_JUSTIFICADO":
+      return 0;
+  }
+}
+
+/** ¿Corresponde pagar preaviso? Sólo el despido injustificado lo genera. */
+export function correspondePreaviso(causa: CausaTerminacion): boolean {
+  return causa === "DESPIDO_INJUSTIFICADO";
+}
+
+// ─── LIQUIDACIÓN COMPLETA ─────────────────────────────────────────────────────
+
+export interface EntradaLiquidacion {
+  fechaIngreso: Date;
+  fechaSalida: Date;
+  causa: CausaTerminacion;
+  /**
+   * Salario ordinario PROMEDIO de los últimos seis meses, incluidas comisiones,
+   * horas extra y bonificaciones habituales (Art. 361). Usar el último salario
+   * a secas sobrevalora la liquidación de quien acaba de recibir un aumento.
+   */
+  salarioPromedio: MoneyInput;
+  /** Empresa de hasta diez trabajadores: tope reducido y sin 35 % por renuncia. */
+  esMicroempresa?: boolean;
+  /** Días de vacaciones ya gozados; se restan del devengado. */
+  diasVacacionesGozados?: number;
+  /**
+   * El patrono dio el preaviso por escrito y el trabajador lo laboró. En ese
+   * caso no se paga: la ley permite omitirlo pagando su equivalente, no cobrarlo
+   * dos veces.
+   */
+  preavisoOtorgado?: boolean;
+  /** Décimos del período ya liquidados, para no pagarlos dos veces. */
+  decimoTerceroDevengado?: MoneyInput;
+  decimoCuartoDevengado?: MoneyInput;
+  /** Salario del último período pendiente de pago. */
+  salariosPendientes?: MoneyInput;
+  /** Otros conceptos adeudados (horas extra pendientes, reajustes). */
+  otrosAdeudos?: MoneyInput;
+  /** Anticipos, préstamos o adelantos a descontar del finiquito. */
+  deducciones?: MoneyInput;
+  /**
+   * Retenciones de ley que quedan pendientes al salir, cada una con su línea: el RAP
+   * del trabajador a mes vencido (`rapPendienteAlSalir`). Se suman a `deducciones`.
+   */
+  deduccionesLegales?: Array<{ clave: string; concepto: string; base: string; monto: MoneyInput }>;
+  /**
+   * Saldo del Fondo de Reserva Laboral del trabajador en el RAP, con sus
+   * rendimientos. Cuando la causa da cesantía, ese saldo lo entrega el RAP y el
+   * patrono sólo paga la diferencia (Decreto 47-2024, Art. 6).
+   */
+  saldoFondoReserva?: MoneyInput;
+  /**
+   * Negociación de prestaciones ya pagada aparte (AnticipoPrestacion): se rebaja de la
+   * cesantía, después del Fondo de Reserva, hasta dejarla en cero. Lo que exceda se
+   * informa y NO se cobra de los demás conceptos (decisión de Edbin, 2026-11-14).
+   */
+  negociacionPrestaciones?: MoneyInput;
+  /** Adelantos del 13.º y del 14.º en curso ya pagados aparte: se rebajan del proporcional. */
+  adelantoDecimoTercero?: MoneyInput;
+  adelantoDecimoCuarto?: MoneyInput;
+}
+
+/** Concepto con que se rebaja de la cesantía lo que entrega el Fondo de Reserva Laboral. */
+export const CONCEPTO_FONDO_RESERVA = "Fondo de Reserva Laboral, lo entrega el RAP";
+
+export interface ConceptoLiquidacion {
+  concepto: string;
+  /** Días de salario que sustentan el importe; `null` en conceptos sin base diaria. */
+  dias: number | null;
+  monto: Money;
+  /** Fundamento legal, para que el finiquito sea auditable. */
+  base: string;
+}
+
+export interface ResultadoLiquidacion {
+  tiempoServicio: TiempoServicio;
+  salarioDiario: Money;
+  /** Conceptos a favor del trabajador, en el orden en que se presentan. */
+  conceptos: ConceptoLiquidacion[];
+  totalPrestaciones: Money;
+  deducciones: Money;
+  /** De qué se componen las deducciones: préstamos y anticipos, y cada retención de ley. */
+  deduccionesDetalle: Array<{ clave?: string; concepto: string; base: string; monto: Money }>;
+  totalAPagar: Money;
+  /** Avisos sobre topes aplicados o derechos que no corresponden. */
+  observaciones: string[];
+  /** Lo que se rebajó de cada anticipo pagado aparte (nunca más que el concepto). */
+  rebajas: { negociacion: Money; adelanto13: Money; adelanto14: Money };
+}
+
+/**
+ * Liquidación final completa.
+ *
+ * El salario diario sale de dividir el promedio mensual entre 30, que es la
+ * convención de nómina en Honduras y la que usa la Secretaría de Trabajo. Los
+ * importes se calculan como salario mensual × días ÷ 30 y se redondean al final:
+ * redondear antes el salario diario daba 49,999.80 por 60 días de 25,000.
+ */
+export function calcularLiquidacion(entrada: EntradaLiquidacion): ResultadoLiquidacion {
+  const {
+    fechaIngreso,
+    fechaSalida,
+    causa,
+    salarioPromedio,
+    esMicroempresa = false,
+    diasVacacionesGozados = 0,
+    preavisoOtorgado = false,
+    decimoTerceroDevengado = 0,
+    decimoCuartoDevengado = 0,
+    salariosPendientes = 0,
+    otrosAdeudos = 0,
+    deducciones = 0,
+    deduccionesLegales = [],
+    saldoFondoReserva = 0,
+    negociacionPrestaciones = 0,
+    adelantoDecimoTercero = 0,
+    adelantoDecimoCuarto = 0,
+  } = entrada;
+
+  const t = calcularTiempoServicio(fechaIngreso, fechaSalida);
+  const salarioMensual = money(salarioPromedio);
+  const salarioDiario = redondear(salarioMensual.div(30));
+  const porDias = (dias: number) => salarioMensual.times(dias).div(30);
+
+  const conceptos: ConceptoLiquidacion[] = [];
+  const observaciones: string[] = [];
+  const negociado = maximo(money(negociacionPrestaciones), 0);
+  let rebajaNegociacion = CERO;
+
+  const agregar = (concepto: string, dias: number | null, monto: Money, base: string) => {
+    if (monto.isZero()) return;
+    conceptos.push({ concepto, dias, monto: redondear(monto), base });
+  };
+
+  // ── Preaviso ───────────────────────────────────────────────────────────────
+  if (correspondePreaviso(causa)) {
+    if (preavisoOtorgado) {
+      observaciones.push("Preaviso otorgado por escrito: no se paga su equivalente.");
+    } else {
+      const dias = diasPreaviso(t.mesesCompletos);
+      agregar("Preaviso", dias, porDias(dias), "Art. 116 C.T.");
+    }
+  } else if (causa === "RENUNCIA") {
+    observaciones.push(
+      "La renuncia no genera preaviso a cargo del patrono; es el trabajador quien debe darlo."
+    );
+  }
+
+  // ── Auxilio de cesantía ────────────────────────────────────────────────────
+  const diasBase = diasCesantia(t, esMicroempresa);
+  const porcentaje = porcentajeCesantia(causa, t, esMicroempresa);
+
+  if (diasBase > 0 && porcentaje > 0) {
+    const dias = diasBase * porcentaje;
+    const etiqueta =
+      porcentaje === 1
+        ? "Auxilio de cesantía"
+        : `Auxilio de cesantía (${(porcentaje * 100).toFixed(0)} %)`;
+    const cesantia = redondear(porDias(dias));
+    agregar(etiqueta, redondearDias(dias), cesantia, "Art. 120 C.T.");
+
+    // Fondo de Reserva Laboral (Decreto 47-2024, Art. 6): su saldo lo entrega el
+    // RAP y se descuenta de la cesantía; en renuncia (35 %) y muerte (75 %) el
+    // patrono completa sólo lo que falte hasta esos porcentajes.
+    const fondo = maximo(money(saldoFondoReserva), 0);
+    const rebajaFondo = fondo.greaterThan(0) ? minimo(fondo, cesantia) : CERO;
+    if (fondo.greaterThan(0)) {
+      const rebaja = rebajaFondo;
+      agregar(CONCEPTO_FONDO_RESERVA, null, rebaja.negated(), "Decreto 47-2024, Art. 6");
+      observaciones.push(
+        `De la cesantía se rebajan ${rebaja.toFixed(2)} del Fondo de Reserva Laboral: ese saldo lo entrega el RAP, el patrono paga la diferencia.` +
+          (fondo.greaterThan(cesantia)
+            ? ` El fondo supera la cesantía en ${fondo.minus(cesantia).toFixed(2)}: el RAP le entrega esa diferencia como prima de antigüedad.`
+            : "")
+      );
+    }
+
+    // Negociación de prestaciones ya pagada: se rebaja de lo que queda de cesantía.
+    if (negociado.greaterThan(0)) {
+      rebajaNegociacion = redondear(minimo(negociado, maximo(cesantia.minus(rebajaFondo), 0)));
+      agregar(CONCEPTO_NEGOCIACION, null, rebajaNegociacion.negated(), "Pagada por anticipado (Art. 120 C.T.)");
+      observaciones.push(
+        `De la cesantía se rebajan ${rebajaNegociacion.toFixed(2)} de la negociación de prestaciones ya pagada.` +
+          (negociado.greaterThan(rebajaNegociacion)
+            ? ` Lo pagado supera la cesantía en ${negociado.minus(rebajaNegociacion).toFixed(2)}: ese exceso no se descuenta de los demás conceptos.`
+            : "")
+      );
+    }
+
+    const tope = esMicroempresa ? TOPE_CESANTIA_DIAS_MICROEMPRESA : TOPE_CESANTIA_DIAS;
+    if (CESANTIA_DIAS_POR_ANIO * t.aniosFraccionarios > tope) {
+      observaciones.push(
+        `Auxilio de cesantía limitado al tope legal de ${tope / 30} meses` +
+          (esMicroempresa ? " (empresa de hasta 10 trabajadores, Art. 120-A C.T.)." : ".")
+      );
+    }
+  } else if (causa === "DESPIDO_JUSTIFICADO") {
+    observaciones.push("El despido con causa justificada no genera auxilio de cesantía.");
+  } else if (causa === "RENUNCIA" && porcentaje === 0) {
+    observaciones.push(
+      esMicroempresa
+        ? "En empresas de hasta 10 trabajadores la renuncia no genera auxilio de cesantía (Art. 120-A C.T.)."
+        : `La renuncia genera auxilio de cesantía sólo a partir de ${ANIOS_MINIMOS_CESANTIA_RENUNCIA} años de servicio.`
+    );
+  } else if (causa === "MUERTE" && porcentaje === 0) {
+    observaciones.push(
+      `Por muerte del trabajador el auxilio corresponde desde los ${MESES_MINIMOS_CESANTIA_MUERTE} meses de servicio.`
+    );
+  } else if (diasBase === 0 && t.mesesCompletos < CESANTIA_MESES_MINIMOS) {
+    observaciones.push(
+      `Menos de ${CESANTIA_MESES_MINIMOS} meses de servicio: no genera auxilio de cesantía.`
+    );
+  }
+
+  if (negociado.greaterThan(0) && !(diasBase > 0 && porcentaje > 0)) {
+    observaciones.push(
+      `Hay ${negociado.toFixed(2)} de negociación de prestaciones ya pagada, pero esta terminación no genera cesantía: no se rebaja de los demás conceptos.`
+    );
+  }
+
+  // ── Vacaciones no gozadas ──────────────────────────────────────────────────
+  // Salario ya devengado: se paga cualquiera que sea la causa de terminación.
+  const diasVacDevengados = calcularVacacionesDevengadas(fechaIngreso, fechaSalida);
+  const diasVacSaldo = Math.max(0, diasVacDevengados - diasVacacionesGozados);
+  agregar(
+    "Vacaciones no gozadas",
+    redondearDias(diasVacSaldo),
+    porDias(diasVacSaldo),
+    "Art. 346 C.T."
+  );
+
+  // Art. 350: prohibido acumular vacaciones, salvo una vez y hasta dos años. Un
+  // saldo mayor casi siempre es un historial sin cargar (vacaciones gozadas que
+  // nadie registró), no una deuda real: se avisa para confirmarlo antes de pagar.
+  const maximoAcumulable = maximoVacacionesAcumulables(t.aniosFraccionarios);
+  if (diasVacSaldo > maximoAcumulable + 0.005) {
+    observaciones.push(
+      `El saldo de vacaciones no gozadas (${redondearDias(diasVacSaldo)} días) pasa de dos períodos ` +
+        `(${redondearDias(maximoAcumulable)} días). El Art. 350 prohíbe acumular vacaciones salvo una vez y hasta dos años: ` +
+        "confirme los días gozados en el saldo de vacaciones antes de liquidar."
+    );
+  }
+
+  // ── Décimos proporcionales ─────────────────────────────────────────────────
+  // Los calcula `./decimos.ts`; aquí sólo entran como importe ya devengado.
+  agregar("Décimo tercer mes proporcional", null, money(decimoTerceroDevengado), "Decreto 112-82");
+  agregar("Décimo cuarto mes proporcional", null, money(decimoCuartoDevengado), "Decreto 135-94");
+
+  // Adelantos de esos décimos ya pagados aparte: se rebajan del proporcional, sin dejarlo
+  // en negativo; lo que exceda se informa.
+  const rebajarAdelanto = (adelanto: MoneyInput, devengado: MoneyInput, concepto: string, nombre: string): Money => {
+    const pagado = maximo(money(adelanto), 0);
+    if (!pagado.greaterThan(0)) return CERO;
+    const rebaja = redondear(minimo(pagado, maximo(money(devengado), 0)));
+    agregar(concepto, null, rebaja.negated(), "Pagado por anticipado");
+    if (pagado.greaterThan(rebaja)) {
+      observaciones.push(`El adelanto del ${nombre} (${pagado.toFixed(2)}) supera su proporcional en ${pagado.minus(rebaja).toFixed(2)}: ese exceso no se descuenta de los demás conceptos.`);
+    }
+    return rebaja;
+  };
+  const rebaja13 = rebajarAdelanto(adelantoDecimoTercero, decimoTerceroDevengado, CONCEPTO_ADELANTO_13, "décimo tercer mes");
+  const rebaja14 = rebajarAdelanto(adelantoDecimoCuarto, decimoCuartoDevengado, CONCEPTO_ADELANTO_14, "décimo cuarto mes");
+
+  // ── Adeudos pendientes ─────────────────────────────────────────────────────
+  agregar("Salarios pendientes", null, money(salariosPendientes), "Art. 367 C.T.");
+  agregar("Otros adeudos", null, money(otrosAdeudos), "—");
+
+  const totalPrestaciones = redondear(sumar(...conceptos.map((c) => c.monto)));
+  // Cada retención de ley va en su línea, junto a préstamos y anticipos.
+  const legales = deduccionesLegales
+    .map((d) => ({ clave: d.clave, concepto: d.concepto, base: d.base, monto: redondear(maximo(money(d.monto), 0)) }))
+    .filter((d) => !d.monto.isZero());
+  const deduccionesDetalle = [
+    ...(money(deducciones).isZero() ? [] : [{ concepto: "Anticipos y préstamos", base: "Art. 372 C.T.", monto: redondear(money(deducciones)) }]),
+    ...legales,
+  ];
+  const totalDeducciones = sumar(deducciones, ...legales.map((d) => d.monto));
+  // Las deducciones no pueden dejar el finiquito en negativo: un saldo de
+  // préstamo mayor que la liquidación se cobra aparte, no convierte el
+  // finiquito en una deuda del trabajador.
+  const deduccionesAplicadas = minimo(totalDeducciones, totalPrestaciones);
+
+  if (totalDeducciones.greaterThan(deduccionesAplicadas)) {
+    observaciones.push(
+      "Las deducciones superan el total de prestaciones: se acotaron al importe liquidado. " +
+        "El saldo restante debe gestionarse por separado."
+    );
+  }
+
+  return {
+    tiempoServicio: t,
+    salarioDiario,
+    conceptos,
+    totalPrestaciones,
+    deducciones: redondear(deduccionesAplicadas),
+    deduccionesDetalle,
+    totalAPagar: redondear(totalPrestaciones.minus(deduccionesAplicadas)),
+    observaciones,
+    rebajas: { negociacion: rebajaNegociacion, adelanto13: rebaja13, adelanto14: rebaja14 },
+  };
+}
+
+/** Una línea de planilla con las fechas de su planilla. */
+export interface PeriodoDevengado {
+  totalBruto: MoneyInput;
+  fechaInicio: Date;
+  fechaFin: Date;
+}
+
+export interface PromedioDevengado {
+  /** Promedio MENSUAL de lo devengado. Cero si no hubo planillas: el llamador cae al salario base. */
+  promedio: Money;
+  /** Meses que cubren las planillas usadas (una quincena es medio mes), hasta `MESES_PROMEDIO_SALARIO`. */
+  meses: number;
+  /** Líneas de planilla que entraron. */
+  periodos: number;
+}
+
+/**
+ * Salario promedio de los últimos seis meses (Art. 123 b C.T.: los salarios
+ * DEVENGADOS, comisiones y horas extra incluidas), como monto MENSUAL.
+ *
+ * Se promedia por tiempo cubierto y no por línea de planilla: seis quincenas
+ * son tres meses, no seis. Antes se dividía entre el número de líneas, y una
+ * persona con L30,000 al mes en planilla quincenal salía con L15,000 de promedio.
+ *
+ * El tiempo va en días COMERCIALES, como los paga el motor (`diasConDerechoASalario`):
+ * cada mes vale 30, una quincena 15 (también la del 16 al 31 y la de febrero), y
+ * quien sale el 10 cobró 10. Cada planilla cubre su período recortado a la fecha
+ * de ingreso y a la de salida. Se recorre de la más reciente hacia atrás hasta
+ * juntar seis meses; la que cruza ese límite entra en proporción. Dos planillas
+ * sobre los mismos días (una de comisiones, por ejemplo) suman dinero sin sumar
+ * tiempo. Con menos de seis meses de planillas, se divide entre el tiempo que cubren.
+ */
+export function salarioOrdinarioPromedio(
+  periodos: readonly PeriodoDevengado[],
+  limites: { fechaSalida: Date; fechaIngreso?: Date },
+  meses: number = MESES_PROMEDIO_SALARIO
+): PromedioDevengado {
+  const ordenados = [...periodos].sort((a, b) => b.fechaFin.getTime() - a.fechaFin.getTime() || b.fechaInicio.getTime() - a.fechaInicio.getTime());
+
+  // Cada día comercial cubierto, como (año·12 + mes)·31 + día (1 a 30).
+  const cubiertos = new Set<number>();
+  let total = CERO;
+  let cubierto = 0;
+  let usados = 0;
+  for (const p of ordenados) {
+    if (cubierto >= meses - 1e-9) break;
+    const inicio = limites.fechaIngreso && limites.fechaIngreso > p.fechaInicio ? limites.fechaIngreso : p.fechaInicio;
+    const fin = limites.fechaSalida < p.fechaFin ? limites.fechaSalida : p.fechaFin;
+    if (fin < inicio) continue; // fuera de la relación laboral
+    let aporte = 0;
+    const mesInicio = inicio.getUTCFullYear() * 12 + inicio.getUTCMonth();
+    const mesFin = fin.getUTCFullYear() * 12 + fin.getUTCMonth();
+    for (let mes = mesInicio; mes <= mesFin; mes++) {
+      const primero = mes === mesInicio ? diaComercial(inicio) : 1;
+      const ultimo = mes === mesFin ? diaComercial(fin) : 30;
+      for (let d = primero; d <= ultimo; d++) {
+        const clave = mes * 31 + d;
+        if (cubiertos.has(clave)) continue;
+        cubiertos.add(clave);
+        aporte += 1 / 30;
+      }
+    }
+    const falta = meses - cubierto;
+    // La que cruza el límite de los seis meses entra en proporción.
+    const parte = aporte > falta + 1e-9 ? falta / aporte : 1;
+    total = total.plus(money(p.totalBruto).times(parte));
+    cubierto += aporte * parte;
+    usados++;
+  }
+  if (cubierto < 1e-9) return { promedio: CERO, meses: 0, periodos: 0 };
+  return { promedio: redondear(total.div(cubierto)), meses: Math.round(cubierto * 100) / 100, periodos: usados };
+}
+
+/** Días a dos decimales: las fracciones de cesantía y vacaciones no son enteras. */
+function redondearDias(d: number): number {
+  return Math.round(d * 100) / 100;
+}
+
+/**
+ * Lo más que puede quedar pendiente sin violar el Art. 350: el derecho de los dos
+ * últimos años completos más lo proporcional del año en curso.
+ */
+export function maximoVacacionesAcumulables(aniosFraccionarios: number): number {
+  const completos = Math.floor(aniosFraccionarios);
+  const fraccion = aniosFraccionarios - completos;
+  return (
+    diasVacacionesPorAnio(completos) +
+    diasVacacionesPorAnio(completos - 1) +
+    diasVacacionesPorAnio(completos + 1) * fraccion
+  );
+}

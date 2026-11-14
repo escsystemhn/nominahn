@@ -55,6 +55,7 @@
   "/api/biometrico/probar/[id]/route": "app/api/biometrico/probar/[id]/route.js",
   "/api/biometrico/sync/[id]/route": "app/api/biometrico/sync/[id]/route.js",
   "/api/buscar/route": "app/api/buscar/route.js",
+  "/api/capacitaciones/[id]/material/partes/route": "app/api/capacitaciones/[id]/material/partes/route.js",
   "/api/capacitaciones/[id]/material/route": "app/api/capacitaciones/[id]/material/route.js",
   "/api/capacitaciones/[id]/participantes/route": "app/api/capacitaciones/[id]/participantes/route.js",
   "/api/capacitaciones/[id]/route": "app/api/capacitaciones/[id]/route.js",

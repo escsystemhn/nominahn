@@ -55,6 +55,7 @@
   "/api/biometrico/probar/[id]/route": "/api/biometrico/probar/[id]",
   "/api/biometrico/sync/[id]/route": "/api/biometrico/sync/[id]",
   "/api/buscar/route": "/api/buscar",
+  "/api/capacitaciones/[id]/material/partes/route": "/api/capacitaciones/[id]/material/partes",
   "/api/capacitaciones/[id]/material/route": "/api/capacitaciones/[id]/material",
   "/api/capacitaciones/[id]/participantes/route": "/api/capacitaciones/[id]/participantes",
   "/api/capacitaciones/[id]/route": "/api/capacitaciones/[id]",
