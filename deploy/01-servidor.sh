@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# NominaHN — preparación del servidor Ubuntu 24.04 LTS
+# Gestión360 Nómina — preparación del servidor Ubuntu 24.04 LTS
 #
 # Se ejecuta UNA VEZ, como root, sobre un droplet recién creado.
-# Deja el sistema endurecido y con Node 22, PostgreSQL 16 y Caddy instalados,
-# pero NO despliega la aplicación: de eso se encarga 02-app.sh.
+# Deja el sistema endurecido y con Node 22, PostgreSQL 18 y Caddy instalados,
+# pero NO despliega la aplicación: de eso se encargan 02-postgres.sh y 03-app.sh.
 #
 #   ssh root@IP 'bash -s' < 01-servidor.sh
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
 USUARIO="${USUARIO:-deploy}"
+# La misma versión que el instalador de Windows y el desarrollo: un respaldo hecho
+# con pg_dump 18 no lo lee un pg_restore 16, y así los datos pasan de un lado a otro.
+PG_VERSION="${PG_VERSION:-18}"
+# Carpeta local que Configuración → Respaldos propone como destino «Disco local».
+RESPALDOS_DIR="${RESPALDOS_DIR:-/var/backups/gestion360}"
 
 log() { printf '\n\033[1;32m▸ %s\033[0m\n' "$*"; }
 abortar() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -44,9 +49,32 @@ log "Actualizando el sistema"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get -y upgrade
-apt-get -y install ufw fail2ban unattended-upgrades postgresql postgresql-contrib \
+apt-get -y install ufw fail2ban unattended-upgrades \
                    debian-keyring debian-archive-keyring apt-transport-https \
                    curl gnupg ca-certificates rsync
+
+# ─── PostgreSQL desde el repositorio oficial (PGDG) ─────────────────────────
+# Ubuntu 24.04 trae la 16. Método manual de https://www.postgresql.org/download/linux/ubuntu/
+# (sin preguntas), comprobando la huella publicada de la llave antes de confiar en ella.
+if ! dpkg -s "postgresql-$PG_VERSION" >/dev/null 2>&1; then
+  log "Instalando PostgreSQL $PG_VERSION (repositorio oficial)"
+  LLAVE=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+  install -d /usr/share/postgresql-common/pgdg
+  curl -fsS -o "$LLAVE" https://www.postgresql.org/media/keys/ACCC4CF8.asc
+  gpg --show-keys --with-colons "$LLAVE" | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:' \
+    || abortar "La llave del repositorio de PostgreSQL no tiene la huella esperada: no se instala."
+  . /etc/os-release
+  cat > /etc/apt/sources.list.d/pgdg.sources <<CONF
+Types: deb
+URIs: https://apt.postgresql.org/pub/repos/apt
+Suites: ${VERSION_CODENAME}-pgdg
+Architectures: $(dpkg --print-architecture)
+Components: main
+Signed-By: $LLAVE
+CONF
+  apt-get update
+  apt-get -y install "postgresql-$PG_VERSION" "postgresql-client-$PG_VERSION"
+fi
 
 # ─── Node 22 LTS ────────────────────────────────────────────────────────────
 # next@16 declara engines.node >= 20.9. Se usa 22 LTS por soporte largo.
@@ -167,12 +195,18 @@ systemctl enable postgresql
 # por otros usuarios del sistema.
 install -d -m 750 -o "$USUARIO" -g "$USUARIO" /var/uploads
 
+# ─── Carpeta local de respaldos ─────────────────────────────────────────────
+# Destino «Disco local» de Configuración → Respaldos (RESPALDOS_DIR en .env.local).
+# Va en el mismo disco: el destino principal debe ser Spaces (ver README).
+install -d -m 750 -o "$USUARIO" -g "$USUARIO" "$RESPALDOS_DIR"
+
 log "Servidor listo."
 cat <<FIN
 
-  Siguiente paso, desde tu equipo Windows:
-    1. deploy/subir.ps1        → envía el código (sin secretos ni datos reales)
-    2. crear /home/$USUARIO/nominahn/.env.local
-    3. ssh $USUARIO@IP 'bash ~/nominahn/deploy/03-app.sh'
+  Siguiente paso:
+    1. ssh $USUARIO@IP 'sudo bash -s' < deploy/02-postgres.sh   → base y DATABASE_URL
+    2. desde Windows: .\\deploy\\subir.ps1 -Servidor $USUARIO@IP   (sin secretos ni datos reales)
+    3. crear /home/$USUARIO/nominahn/.env.local a partir de deploy/env.produccion.example
+    4. ssh -t $USUARIO@IP 'bash ~/nominahn/deploy/03-app.sh'
 
 FIN

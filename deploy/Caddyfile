@@ -1,8 +1,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# NominaHN — proxy inverso con TLS automático (Let's Encrypt).
+# Gestión360 Nómina — proxy inverso con TLS automático (Let's Encrypt).
 #
 #   sudo cp Caddyfile /etc/caddy/Caddyfile
-#   sudo sed -i 's/__DOMINIO__/demo.tudominio.hn/' /etc/caddy/Caddyfile
+#   sudo sed -i 's/__DOMINIO__/nomina.sudominio.hn/' /etc/caddy/Caddyfile
 #   sudo systemctl reload caddy
 #
 # NO se repiten aquí HSTS, X-Frame-Options, nosniff, Referrer-Policy ni
@@ -13,7 +13,7 @@
 __DOMINIO__ {
 	encode zstd gzip
 
-	# Una demo con datos de nómina no debe acabar en ningún buscador.
+	# Un sistema con datos de nómina no debe acabar en ningún buscador.
 	header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
 
 	# MAX_FILE_SIZE por defecto es 5 MB (src/lib/uploads.ts); se corta un poco
@@ -33,9 +33,10 @@ __DOMINIO__ {
 		}
 	}
 
-	# ─── Opcional: limitar quién puede ver la demo ───────────────────────────
-	# Si conoces la IP de salida del cliente, descomenta y sustituye. Es la
-	# medida que más reduce la superficie de ataque durante los 30 días.
+	# ─── Opcional: limitar desde dónde se entra ──────────────────────────────
+	# Si las sucursales tienen IP pública fija, descomenta y pon las suyas: es la
+	# medida que más reduce la superficie de ataque. Ojo: deja fuera el portal del
+	# empleado desde el teléfono y el trabajo desde casa.
 	#
 	# @ajenos not remote_ip 200.115.x.x/32 190.x.x.x/32
 	# respond @ajenos "No disponible" 403

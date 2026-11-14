@@ -21,7 +21,8 @@ $paquete = Join-Path $env:TEMP "nominahn.tgz"
 $excluir = @(
     "--exclude=./node_modules", "--exclude=./.next", "--exclude=./.env.local",
     "--exclude=./.env", "--exclude=./tsconfig.tsbuildinfo", "--exclude=./.git",
-    "--exclude=./var"
+    "--exclude=./var", "--exclude=./uploads", "--exclude=./coverage",
+    "--exclude=./test-results", "--exclude=./playwright-report"
 )
 
 Write-Host "Empaquetando $app ..." -ForegroundColor Cyan
@@ -38,4 +39,4 @@ if ($LASTEXITCODE -ne 0) { throw "Falló la extracción en el servidor." }
 
 Remove-Item $paquete -Force
 Write-Host "`nCódigo en ${Destino}." -ForegroundColor Green
-Write-Host "Ahora: ssh $Servidor 'bash $Destino/deploy/03-app.sh'"
+Write-Host "Ahora: ssh -t $Servidor 'bash $Destino/deploy/03-app.sh'   (ver deploy/README.md para la primera vez)"

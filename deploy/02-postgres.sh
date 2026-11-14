@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# NominaHN — base de datos
+# Gestión360 Nómina — base de datos
 #
 # Crea un rol NO superusuario y su base. Imprime la DATABASE_URL resultante
-# para pegarla en .env.local.  Como root:
+# para pegarla en .env.local. Después de 01-servidor.sh root ya no entra por SSH:
 #
-#   ssh root@IP 'bash -s' < 02-postgres.sh
+#   ssh deploy@IP 'sudo bash -s' < 02-postgres.sh
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 

@@ -1,56 +1,53 @@
-# Despliegue de NominaHN — demo de 30 días en DigitalOcean
+# Despliegue de Gestión360 Nómina en DigitalOcean
 
-Guía para dejar la aplicación corriendo en un droplet Ubuntu 24.04 LTS, con
-HTTPS, y poder retirarla sin dejar cargos abiertos.
+Guía para dejar la aplicación en producción en un droplet Ubuntu 24.04 LTS, con
+HTTPS, respaldos y tareas programadas. Sirve también para una demostración
+(`MODO=demo`, al final). Corresponde a la opción B de la propuesta a Power Chicken
+(`Propuesta Power Chicken.pdf`, en la raíz del proyecto).
 
-## Antes de empezar
+## 0. En el panel de DigitalOcean (antes de los scripts)
 
-| Decisión | Recomendación |
+La cuenta debe ser **del cliente**, con ESC System invitado como miembro del
+equipo: así los datos y la facturación son suyos desde el primer día.
+
+| Recurso | Configuración |
 |---|---|
-| Droplet | Basic Regular, **2 GB / 1 vCPU / 50 GB — $12/mes** |
-| Imagen | Ubuntu 24.04 LTS x64 |
-| Autenticación | **SSH key**, nunca contraseña |
-| Extras | Sin backups (+20 %), sin Managed Postgres ($15/mes), Monitoring sí (gratis) |
+| Droplet | Ubuntu 24.04 LTS x64 · **Basic Regular 4 GB / 2 vCPU / 80 GB** (US$24/mes) · región **NYC3** · autenticación con **SSH key**, nunca contraseña · **Backups diarios** (+30 %) · **Monitoring** (gratis) |
+| Spaces | Un bucket privado en NYC3 (US$5/mes) y una **Access Key** sólo para él. Es el destino de los respaldos cifrados. |
+| Alertas | Monitoring → alertas de CPU > 80 %, memoria > 85 % y disco > 80 %. Uptime → **un** chequeo (el primero es gratis) a `https://nomina.sudominio.hn/api/estado`. |
+| DNS | Un registro A del subdominio (`nomina.sudominio.hn`) a la IP del droplet, en el DNS del cliente. **Nunca el ápex de su dominio**: la cabecera HSTS lleva `includeSubDomains` con dos años de vigencia. |
 
-DigitalOcean factura por hora con tope mensual: 30 días = $12, o **$0 si usas el
-crédito de bienvenida**. Ojo — **apagar el droplet no detiene el cobro**; sólo
-destruirlo lo detiene.
+**Correo:** DigitalOcean **bloquea los puertos 25, 465 y 587** en todos los droplets.
+Crea una cuenta en un proveedor que acepte el **2525** (Brevo: `smtp-relay.brevo.com`,
+con una *SMTP key*; gratis hasta 300 correos al día), autentica ahí el dominio del
+remitente (registros SPF y DKIM en el DNS del cliente) y usa esos datos en el paso 4.
 
-Necesitas además un nombre de dominio apuntando a la IP del droplet. Por orden
-de preferencia: un subdominio del cliente (`demo.cliente.hn`), un subdominio
-gratuito de DuckDNS, o un dominio propio. **Nunca el ápex de un dominio real
-del cliente**: la cabecera HSTS de `next.config.ts` lleva `includeSubDomains`
-con dos años de vigencia.
-
----
-
-## Paso 1 — Preparar el servidor
+## 1. Preparar el servidor
 
 ```bash
 ssh root@IP 'bash -s' < deploy/01-servidor.sh
 ```
 
-Deja el sistema con zona horaria de Honduras, 4 GB de swap, Node 22, PostgreSQL
-16, Caddy, usuario `deploy` sin privilegios, SSH sólo por clave, UFW (22/80/443)
-y fail2ban.
+Deja zona horaria de Honduras, 4 GB de swap, Node 22, **PostgreSQL 18 del
+repositorio oficial** (la misma versión que el instalador de Windows y el
+desarrollo: así un respaldo de un lado se restaura en el otro), Caddy, usuario
+`deploy` sin privilegios, SSH sólo por clave, UFW (22/80/443), fail2ban y las
+carpetas `/var/uploads` (adjuntos) y `/var/backups/gestion360` (respaldos locales).
 
 > **Comprueba en otra terminal que entras con `ssh deploy@IP` antes de cerrar
 > la sesión de root.** Si algo saliera mal, la consola web de DigitalOcean es la
 > vía de rescate.
 
-## Paso 2 — Base de datos
+## 2. Base de datos
 
 ```bash
 ssh deploy@IP 'sudo bash -s' < deploy/02-postgres.sh
 ```
 
-> Desde el paso 1 el acceso de root por SSH queda cerrado: todo lo
-> administrativo se hace como `deploy` con `sudo`.
-
 Crea el rol `nomina_app` (sin privilegios de superusuario) y la base `nominahn`,
 y **imprime la `DATABASE_URL` una sola vez**. Cópiala.
 
-## Paso 3 — Subir el código
+## 3. Subir el código
 
 Desde PowerShell, en la raíz de `nominahn/`:
 
@@ -58,11 +55,11 @@ Desde PowerShell, en la raíz de `nominahn/`:
 .\deploy\subir.ps1 -Servidor deploy@IP
 ```
 
-Excluye `node_modules`, `.next` y `.env.local`, y no toca la raíz del proyecto,
-donde viven `BD/` y `Datos.txt`. **Ese volcado tiene salarios, RTN y cuentas
-bancarias reales: no debe salir de tu equipo.**
+Excluye `node_modules`, `.next`, `.env.local` y todo lo que vive en la raíz del
+proyecto, donde están `BD/` y `Datos.txt`. **Esos volcados tienen salarios, RTN y
+cuentas bancarias reales: no deben salir de tu equipo.**
 
-## Paso 4 — Configuración
+## 4. Configuración
 
 ```bash
 ssh deploy@IP
@@ -71,81 +68,101 @@ nano ~/nominahn/.env.local     # rellenar; secretos NUEVOS
 chmod 600 ~/nominahn/.env.local
 ```
 
-`src/lib/env.ts` valida todo al arrancar y **aborta en producción** si falta
-algo. `SMTP_*` no es opcional aunque no vayas a enviar correo.
+`src/lib/env.ts` valida todo al arrancar y **aborta en producción** si falta algo.
+Guarda `CIFRADO_KEY` fuera del servidor (en el gestor de contraseñas de ESC System):
+sin ella, una base restaurada no puede leer las contraseñas que guarda cifradas.
 
-## Paso 5 — Desplegar
+## 5. Desplegar
+
+Primera vez, en **producción** (base vacía):
 
 ```bash
-ssh deploy@IP 'bash ~/nominahn/deploy/03-app.sh'
+ssh -t deploy@IP 'EMPRESA="Power Chicken" ADMIN_CORREO=rrhh@empresa.hn ADMIN_NOMBRE="Nombre Apellido" bash ~/nominahn/deploy/03-app.sh'
 ```
 
-Instala dependencias, genera el cliente de Prisma, hace `db push` + los triggers
-de `prisma/sql/`, siembra datos de demostración, compila e instala el servicio.
+Pide la contraseña del administrador sin mostrarla (al menos 10 caracteres, con
+letras, números y un símbolo) y crea **sólo** la empresa, una sucursal, ese
+administrador y la cuenta de soporte `soporte@esc-systemhn.com`, con su contraseña
+temporal, que el sistema obliga a cambiar al entrar. **Ninguna cuenta de
+demostración.** Es el mismo arranque que el instalador de Windows.
 
-Para actualizar más adelante: `subir.ps1` y de nuevo `03-app.sh`, esta vez con
-`SEMBRAR=no bash ~/nominahn/deploy/03-app.sh` para no volver a sembrar.
+Después, en cada actualización (`subir.ps1` y luego):
 
-## Paso 6 — HTTPS
+```bash
+ssh -t deploy@IP 'bash ~/nominahn/deploy/03-app.sh'
+```
+
+El script, en orden:
+
+1. **Respalda la base** en `~/respaldos-despliegue/antes-<fecha>.dump` si ya tiene
+   datos (se conservan los cinco últimos).
+2. `npm ci` y el cliente de Prisma.
+3. Muestra los **cambios de esquema** y los aplica con `db push` + triggers. Si un
+   cambio borrara datos, `db push` se niega: se detiene ahí, con el respaldo hecho.
+4. Base vacía: datos iniciales. Con usuarios: sólo pone al día los perfiles de acceso.
+5. Compila, instala el servicio `nominahn` y lo reinicia.
+6. Programa las tareas en el crontab de `deploy` (respaldos, relojes, SAP y
+   evaluaciones, igual que el instalador de Windows) con `deploy/cron.sh`, que lee
+   `CRON_SECRET` de `.env.local` en cada vuelta.
+7. Comprueba que `/api/estado` responda.
+
+## 6. HTTPS
 
 ```bash
 sudo cp ~/nominahn/deploy/Caddyfile /etc/caddy/Caddyfile
-sudo sed -i 's/__DOMINIO__/demo.tudominio.hn/' /etc/caddy/Caddyfile
+sudo sed -i 's/__DOMINIO__/nomina.sudominio.hn/' /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
 Caddy pide el certificado a Let's Encrypt solo. El DNS debe estar propagado
 antes o la emisión falla.
 
-## Paso 7 — Verificar
+## 7. Antes de entregar (lista de verificación)
 
-```bash
-curl -I https://demo.tudominio.hn/login     # 200 + Strict-Transport-Security
-sudo systemctl status nominahn
-sudo journalctl -u nominahn -f
-```
-
----
-
-## Endurecimiento propio de la demo
-
-1. **Cambia las contraseñas de las cuentas de demostración.** Las seis de
-   `Datos.txt` comparten `Admin1234!`, que está publicada en este mismo archivo:
-   en un servidor accesible desde internet eso se adivina al primer intento.
-   Desactiva desde `/usuarios` las que no vayas a enseñar y restablece la clave
-   de las demás — el sistema genera una temporal por cuenta y obliga a cambiarla
-   al entrar.
-
-   El **administrador** no comparte esa contraseña: `npm run db:seed` le genera
-   una aleatoria que imprime UNA vez al crearlo. Si no la anotaste, restablécela
-   desde `/usuarios` con otra cuenta que tenga el permiso «Restablecer
-   contraseñas».
-2. **Datos sintéticos, no reales.** `npm run db:seed` crea "Empresa Ejemplo
-   S.A. de C.V." con empleados ficticios. Es lo que debe ver el cliente.
-3. **Restringe el acceso** si conoces la IP de salida del cliente: el bloque
-   `@ajenos` del `Caddyfile` lo deja en dos líneas.
-4. **Vigila lo público:** `/evaluar` y `/api/evaluar` lo son por diseño
-   (`src/proxy.ts`), y `/api/cron/evaluaciones`, `/api/cron/biometrico` y
-   `/api/cron/sap` sólo están protegidos por `CRON_SECRET`.
+- [ ] `curl -I https://nomina.sudominio.hn/login` → 200 con `Strict-Transport-Security`.
+- [ ] Entrar con **`soporte@esc-systemhn.com`** y cambiar su contraseña temporal **ya**:
+      mientras no se cambie, quien la conozca entra con acceso total.
+- [ ] Entrar con el administrador del cliente.
+- [ ] **Configuración → Correo saliente**: puerto 2525 y enviar una prueba (comprobar que
+      no llegue a no deseados).
+- [ ] **Configuración → Respaldos**: activar el cifrado (guardar la contraseña con el
+      cliente); destino **Nube (S3)** → proveedor *DigitalOcean Spaces*, región `nyc3`, el
+      bucket y la Access Key; destino *Disco local* (`/var/backups/gestion360`) como
+      segundo; automático diario; «Probar» cada destino y **«Respaldar ahora»**.
+- [ ] `journalctl -t gestion360-cron -n 20` muestra las llamadas cada 5 minutos con 200.
+- [ ] **Prueba de restauración** (ver abajo) en un droplet temporal, que después se destruye.
 
 ## Operación
 
 ```bash
 sudo systemctl restart nominahn          # reiniciar
-sudo journalctl -u nominahn -n 200       # últimos registros
-pg_dump -U nomina_app -h localhost nominahn > ~/respaldo.sql
+sudo journalctl -u nominahn -n 200       # registro de la aplicación
+journalctl -t gestion360-cron -f         # tareas programadas
+sudo apt update && sudo apt upgrade      # incluye PostgreSQL: las actualizaciones
+                                         # automáticas sólo cubren a Ubuntu
 ```
 
-Si la integración con SAP Business One está activa, un cron recoge los
-asientos que quedaron pendientes por un fallo de red (`crontab -e`):
+### Restaurar un respaldo de Configuración → Respaldos
 
-```cron
-*/5 * * * * curl -s -o /dev/null -X POST -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3009/api/cron/sap
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -in ARCHIVO.tar.gz.enc -out r.tar.gz
+mkdir r && tar -xzf r.tar.gz -C r        # manifiesto.json, base/, adjuntos/
+sudo systemctl stop nominahn
+pg_restore --clean --if-exists --no-owner -h localhost -U nomina_app -d nominahn r/base/g360-nomina.dump
+rsync -a r/adjuntos/ /var/uploads/
+sudo systemctl start nominahn
 ```
 
-## Día 30 — cerrar sin cargos
+Con el `.env.local` original: la misma `CIFRADO_KEY` (ver paso 4).
 
-1. `pg_dump` de lo que el cliente haya capturado y descargarlo por `scp`.
-2. **Destruir el droplet** en el panel (no basta con apagarlo).
-3. Revisar que no queden **snapshots** ni **Reserved IPs** sin asociar: ambos se
-   siguen cobrando por su cuenta.
+## Demostración
+
+`MODO=demo bash ~/nominahn/deploy/03-app.sh` siembra «Empresa Ejemplo S.A. de C.V.»
+con empleados ficticios y las cuentas de prueba, que comparten `Admin1234!`
+(publicada): en un servidor accesible desde internet, desactiva las que no vayas a
+enseñar y restablece la clave de las demás desde `/usuarios`. Para una demo basta
+el droplet de 2 GB (US$12/mes) sin backups.
+
+**Al terminar, cerrar sin cargos:** `pg_dump` de lo que se haya capturado, **destruir
+el droplet** (apagarlo no detiene el cobro) y revisar que no queden snapshots,
+Spaces ni Reserved IPs sin asignar, que se cobran aparte.
