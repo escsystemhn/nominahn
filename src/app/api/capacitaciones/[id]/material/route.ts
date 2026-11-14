@@ -2,9 +2,14 @@
  * Material de una capacitación.
  *
  *   GET  → la lista (quien administra capacitaciones, o quien está inscrito)
- *   POST → subir un archivo: el CUERPO es el archivo tal cual (no multipart), con
- *          `x-titulo` (codificado con encodeURIComponent) y, si se quiere, `x-tipo`.
- *          Se escribe a disco a medida que llega: un video de 500 MB no pasa por memoria.
+ *   POST → registrar un archivo, con `x-titulo` (codificado con encodeURIComponent) y, si se
+ *          quiere, `x-tipo`. Dos formas:
+ *          - con `x-subida` y `x-total`: cierra una subida por partes (…/material/partes), la que
+ *            usa el panel. Es la única que sirve para archivos de más de unos MB: ver
+ *            lib/capacitaciones/subida.ts;
+ *          - sin ellas, el CUERPO es el archivo tal cual (no multipart), escrito a disco a medida
+ *            que llega. Next deja pasar sólo 10 MB por el proxy: si llega menos de lo declarado,
+ *            se rechaza en vez de guardarlo cortado.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
@@ -15,6 +20,8 @@ import { prisma } from "@/lib/prisma";
 import { puede, requerirPermiso, requerirSesion } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { filtroCapacitaciones } from "@/lib/capacitaciones/alcance";
+import { revisarCierre, subidaValida } from "@/lib/capacitaciones/subida";
+import { borrarSubida, leerCabeza, leerEstado, rutasSubida } from "@/lib/capacitaciones/subida-disco";
 import { directorioMaterial, formatoPorFirma, maxBytesMaterial, tipoSugerido, type FormatoMaterial, type TipoMaterial } from "@/lib/capacitaciones/material";
 
 type Params = { params: Promise<{ id: string }> };
@@ -66,6 +73,34 @@ export async function POST(req: NextRequest, { params }: Params) {
   const titulo = decodeURIComponent(req.headers.get("x-titulo") ?? "").trim().slice(0, 200);
   if (!titulo) return NextResponse.json({ error: "Ponga un título al material." }, { status: 400 });
   const tipoPedido = (req.headers.get("x-tipo") ?? "").toUpperCase() as TipoMaterial;
+  const registrar = (formato: FormatoMaterial, archivo: string, total: number) => registrarMaterial(req, g.usuario, id, titulo, tipoPedido, formato, archivo, total);
+
+  // ─── Cierre de una subida por partes ──────────────────────────────────────
+  const subida = req.headers.get("x-subida");
+  if (subida !== null) {
+    if (!subidaValida(subida)) return NextResponse.json({ error: "Subida sin identificador válido." }, { status: 400 });
+    const cierre = revisarCierre(await leerEstado(subida), {
+      usuarioId: g.usuario.id ?? g.usuario.email ?? "",
+      capacitacionId: id,
+      total: Number(req.headers.get("x-total")),
+    });
+    if (!cierre.ok) {
+      if (cierre.status === 400) await borrarSubida(subida);
+      return NextResponse.json({ error: cierre.error }, { status: cierre.status });
+    }
+    const rutas = rutasSubida(subida);
+    const formato = formatoPorFirma(await leerCabeza(rutas.parte));
+    if (!formato) {
+      await borrarSubida(subida);
+      return NextResponse.json({ error: "El archivo no es de un formato aceptado." }, { status: 415 });
+    }
+    const archivo = `${randomUUID()}${formato.ext}`;
+    await rename(rutas.parte, path.join(rutas.dir, archivo));
+    await borrarSubida(subida);
+    return registrar(formato, archivo, Number(req.headers.get("x-total")));
+  }
+
+  // ─── El archivo en el cuerpo ──────────────────────────────────────────────
   const max = maxBytesMaterial();
   const declarado = Number(req.headers.get("content-length") ?? "0");
   if (declarado > max) return NextResponse.json({ error: `El archivo pasa del máximo de ${Math.round(max / 1024 / 1024)} MB.` }, { status: 413 });
@@ -118,9 +153,27 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
   if (!formato) formato = formatoPorFirma(cabeza);
   if (!formato || total === 0) return fallar(415, "El archivo está vacío o no es de un formato aceptado.");
+  // Next corta en 10 MB el cuerpo que pasa por el proxy: un archivo cortado no se guarda.
+  if (declarado > 0 && total !== declarado) {
+    return fallar(400, `El archivo llegó incompleto (${total.toLocaleString("es-HN")} de ${declarado.toLocaleString("es-HN")} bytes). Súbalo con «Subir material», que lo envía por partes.`);
+  }
 
   const archivo = `${base}${formato.ext}`;
   await rename(temporal, path.join(dir, archivo));
+  return registrar(formato, archivo, total);
+}
+
+/** Crea el registro del material ya guardado en disco y lo deja en la bitácora. */
+async function registrarMaterial(
+  req: NextRequest,
+  usuario: { id?: string | null; email?: string | null },
+  id: string,
+  titulo: string,
+  tipoPedido: TipoMaterial,
+  formato: FormatoMaterial,
+  archivo: string,
+  total: number
+) {
   const ultimo = await prisma.materialCapacitacion.aggregate({ where: { capacitacionId: id }, _max: { orden: true } });
   const material = await prisma.materialCapacitacion.create({
     data: {
@@ -131,7 +184,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       mime: formato.mime,
       tamano: total,
       orden: (ultimo._max.orden ?? -1) + 1,
-      subidoPor: g.usuario.id ?? null,
+      subidoPor: usuario.id ?? null,
     },
     select: { id: true, titulo: true, tipo: true, mime: true, tamano: true, orden: true },
   });
@@ -141,8 +194,8 @@ export async function POST(req: NextRequest, { params }: Params) {
     accion: "CREATE",
     tabla: "MaterialCapacitacion",
     registroId: material.id,
-    usuarioId: g.usuario.id,
-    usuarioEmail: g.usuario.email ?? undefined,
+    usuarioId: usuario.id ?? undefined,
+    usuarioEmail: usuario.email ?? undefined,
     valorNuevo: { capacitacionId: id, titulo, mime: formato.mime, tamano: total },
     ip,
     userAgent,

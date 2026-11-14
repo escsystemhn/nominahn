@@ -18,14 +18,9 @@ __DOMINIO__ {
 
 	# MAX_FILE_SIZE por defecto es 5 MB (src/lib/uploads.ts); se corta un poco
 	# por encima para que el rechazo lo dé la app con su mensaje, no el proxy.
-	# El material de capacitación (videos) llega hasta 500 MB (MAX_MATERIAL_SIZE),
-	# sólo por su ruta de subida.
-	@material path_regexp material ^/api/capacitaciones/[^/]+/material$
-	@resto not path_regexp ^/api/capacitaciones/[^/]+/material$
-	request_body @material {
-		max_size 510MB
-	}
-	request_body @resto {
+	# El material de capacitación (videos de hasta 500 MB) sube en partes de 4 MB
+	# (src/lib/capacitaciones/subida.ts), así que también cabe en este límite.
+	request_body {
 		max_size 6MB
 	}
 

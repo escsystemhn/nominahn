@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAvisos } from "@/components/ui/Avisos";
+import { TAMANO_PARTE, nuevaSubida } from "@/lib/capacitaciones/subida";
 
 interface Material {
   id: string;
@@ -21,25 +22,43 @@ interface Material {
 const TIPO: Record<Material["tipo"], string> = { MANUAL: "Manual", VIDEO: "Video", DOCUMENTO: "Documento" };
 const tamano = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
-/** Sube el archivo tal cual (no multipart), con su avance: un video grande tarda. */
-function subir(capacitacionId: string, archivo: File, titulo: string, tipo: string, avance: (p: number) => void): Promise<{ ok: boolean; error?: string }> {
+/** Una parte del archivo, con su avance. */
+function enviarParte(capacitacionId: string, subida: string, desde: number, parte: Blob, avance: (bytes: number) => void): Promise<{ ok: boolean; error?: string }> {
   return new Promise((resolver) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/capacitaciones/${capacitacionId}/material`);
-    xhr.setRequestHeader("Content-Type", archivo.type || "application/octet-stream");
-    xhr.setRequestHeader("x-titulo", encodeURIComponent(titulo));
-    if (tipo) xhr.setRequestHeader("x-tipo", tipo);
-    xhr.upload.onprogress = (e) => e.lengthComputable && avance(e.loaded / e.total);
+    xhr.open("POST", `/api/capacitaciones/${capacitacionId}/material/partes`);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("x-subida", subida);
+    xhr.setRequestHeader("x-desde", String(desde));
+    xhr.upload.onprogress = (e) => avance(e.loaded);
     xhr.onload = () => {
       let error: string | undefined;
       try {
         error = JSON.parse(xhr.responseText).error;
       } catch {}
-      resolver({ ok: xhr.status === 201, error });
+      resolver({ ok: xhr.status === 200, error: error ?? (xhr.status === 413 ? "El servidor rechazó el tamaño de la parte." : undefined) });
     };
     xhr.onerror = () => resolver({ ok: false, error: "Se cortó la conexión al subir." });
-    xhr.send(archivo);
+    xhr.send(parte);
   });
+}
+
+/**
+ * Sube el archivo por partes de 4 MB y después lo registra. De una sola vez, Next sólo dejaba
+ * pasar los primeros 10 MB (y el Caddy de la edición instalable, 6 MB): ver lib/capacitaciones/subida.ts.
+ */
+async function subir(capacitacionId: string, archivo: File, titulo: string, tipo: string, avance: (p: number) => void): Promise<{ ok: boolean; error?: string }> {
+  const subida = nuevaSubida();
+  for (let desde = 0; desde < archivo.size; desde += TAMANO_PARTE) {
+    const r = await enviarParte(capacitacionId, subida, desde, archivo.slice(desde, desde + TAMANO_PARTE), (b) => avance((desde + b) / archivo.size));
+    if (!r.ok) return r;
+  }
+  const r = await fetch(`/api/capacitaciones/${capacitacionId}/material`, {
+    method: "POST",
+    headers: { "x-subida": subida, "x-total": String(archivo.size), "x-titulo": encodeURIComponent(titulo), ...(tipo ? { "x-tipo": tipo } : {}) },
+  });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.status === 201, error: d.error };
 }
 
 export default function MaterialCapacitacionPanel({ capacitacionId, puedeGestionar }: { capacitacionId: string; puedeGestionar: boolean }) {
@@ -49,6 +68,7 @@ export default function MaterialCapacitacionPanel({ capacitacionId, puedeGestion
   const [titulo, setTitulo] = useState("");
   const [tipo, setTipo] = useState("");
   const [avance, setAvance] = useState<number | null>(null);
+  const [elegido, setElegido] = useState<{ nombre: string; tamano: number } | null>(null);
   const archivo = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,7 +85,18 @@ export default function MaterialCapacitacionPanel({ capacitacionId, puedeGestion
 
   async function enviar() {
     const f = archivo.current?.files?.[0];
-    if (!f || !titulo.trim()) return;
+    if (!f) {
+      avisar.error("Elija el archivo que quiere subir.");
+      return;
+    }
+    if (!titulo.trim()) {
+      avisar.error("Ponga un título al material.");
+      return;
+    }
+    if (f.size === 0) {
+      avisar.error("El archivo está vacío.");
+      return;
+    }
     setAvance(0);
     const r = await subir(capacitacionId, f, titulo.trim(), tipo, setAvance);
     setAvance(null);
@@ -76,6 +107,7 @@ export default function MaterialCapacitacionPanel({ capacitacionId, puedeGestion
     avisar.exito("Material agregado.");
     setTitulo("");
     setTipo("");
+    setElegido(null);
     if (archivo.current) archivo.current.value = "";
     setVersion((v) => v + 1);
   }
@@ -127,14 +159,31 @@ export default function MaterialCapacitacionPanel({ capacitacionId, puedeGestion
               <option value="VIDEO">Video</option>
             </select>
           </div>
-          <input ref={archivo} type="file" accept="application/pdf,video/mp4,video/webm,image/png,image/jpeg" className="block text-sm" aria-label="Archivo del material" />
+          <input
+            ref={archivo}
+            type="file"
+            accept="application/pdf,video/mp4,video/webm,image/png,image/jpeg"
+            aria-label="Archivo del material"
+            disabled={avance !== null}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              setElegido(f ? { nombre: f.name, tamano: f.size } : null);
+              // Sin título todavía: el nombre del archivo, sin la extensión.
+              if (f && !titulo.trim()) setTitulo(f.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 200));
+            }}
+            className="block w-full text-sm text-gray-600 file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-blue-700 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-800"
+          />
+          {elegido && <p className="text-xs text-gray-600">{elegido.nombre} · {tamano(elegido.tamano)}</p>}
           <p className="text-xs text-gray-500">PDF, video MP4 o WebM, o imagen PNG o JPG; hasta 500 MB. Un Word o PowerPoint, guárdelo antes como PDF. Los inscritos lo ven en Mi espacio, sin poder descargarlo.</p>
           {avance !== null ? (
-            <div className="h-2 w-full overflow-hidden rounded bg-gray-200" role="progressbar" aria-valuenow={Math.round(avance * 100)} aria-valuemin={0} aria-valuemax={100}>
-              <div className="h-2 bg-blue-600" style={{ width: `${Math.round(avance * 100)}%` }} />
+            <div className="space-y-1">
+              <div className="h-2 w-full overflow-hidden rounded bg-gray-200" role="progressbar" aria-valuenow={Math.round(avance * 100)} aria-valuemin={0} aria-valuemax={100}>
+                <div className="h-2 bg-blue-600" style={{ width: `${Math.round(avance * 100)}%` }} />
+              </div>
+              <p className="text-xs text-gray-600">Subiendo… {Math.round(avance * 100)} %. No cierre esta página.</p>
             </div>
           ) : (
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void enviar()} disabled={!titulo.trim()}>Subir material</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void enviar()} disabled={!titulo.trim() || !elegido}>Subir material</button>
           )}
         </div>
       )}
