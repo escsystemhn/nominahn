@@ -173,8 +173,9 @@ export async function GET(req: NextRequest) {
     // cargador compartido: el reporte al IHSS no puede decir otra cifra.
     const parametros = await cargarParametrosLegales();
 
+    // Una ficha que no cotiza al IHSS (la persona cotiza en otra nómina) no se reporta aquí.
     const empleados = await prisma.empleado.findMany({
-      where: whereEmp,
+      where: { AND: [whereEmp, { aplicaIhss: true }] },
       orderBy: { primerApellido: "asc" },
     });
     datos = empleados.map((e) => {
@@ -443,7 +444,9 @@ export async function GET(req: NextRequest) {
     });
 
     datos = empleados.map((e) => {
-      const rap = calcularRAP(e.salarioBase, parametros);
+      // Sin RAP en esta ficha (cotiza en otra nómina), sólo queda la Reserva Laboral.
+      const rapCalc = calcularRAP(e.salarioBase, parametros);
+      const rap = e.aplicaRap ? rapCalc : { ...rapCalc, base: CERO, empleado: CERO, empleador: CERO };
       const reserva = calcularReservaLaboral(e.salarioBase, parametros).empleador;
       return [
         nombreCompleto(e),

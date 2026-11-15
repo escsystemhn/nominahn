@@ -360,6 +360,8 @@ export interface ResultadoMontos {
   cambian: number;
   seQuitan: number;
   sinCambio: number;
+  /** Filas sin ningún monto: no se tocan (el archivo trae a todos los empleados). */
+  sinMontos: number;
 }
 
 export type ComprobadorAlcance = (e: { id: string; sucursalId: string; departamentoId: string }) => boolean;
@@ -374,7 +376,7 @@ const ESTADO_PLANILLA: Record<PlanillaDelPeriodo["estado"], string> = {
 export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: ComprobadorAlcance): ResultadoMontos {
   const r: ResultadoMontos = {
     operaciones: [], incidencias: [], previsualizacion: [], columnasDesconocidas: [],
-    totalFilas: 0, nuevos: 0, cambian: 0, seQuitan: 0, sinCambio: 0,
+    totalFilas: 0, nuevos: 0, cambian: 0, seQuitan: 0, sinCambio: 0, sinMontos: 0,
   };
   const csv = parsearCsv(texto);
   if (csv.cabeceras.length === 0) {
@@ -435,10 +437,16 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     r.totalFilas++;
     const codigo = (celdas[indices[COLUMNA_CODIGO.clave]] ?? "").trim();
     const error = (mensaje: string, columna?: string) => r.incidencias.push({ linea, columna, severidad: "ERROR", mensaje });
+    // El archivo trae a todos los empleados: sólo se importan las filas con algún monto.
+    // Una fila vacía no se toca, aunque sea de alguien inactivo o de otro código.
+    const conDatos = columnasTipo.some((t) => !v.vacia(celdas[indices[claveTipo(t.id)]]))
+      || (conBase && br !== null && !v.vacia(celdas[indices[CLAVE_BASE_RAP_COLUMNA]]));
+    if (!conDatos) {
+      if (codigo) r.sinMontos++;
+      continue;
+    }
     if (!codigo) {
-      const conDatos = columnasTipo.some((t) => !v.vacia(celdas[indices[claveTipo(t.id)]]))
-        || (conBase && br !== null && !v.vacia(celdas[indices[CLAVE_BASE_RAP_COLUMNA]]));
-      if (conDatos) error("Falta el código del empleado.", COLUMNA_CODIGO.etiqueta);
+      error("Falta el código del empleado.", COLUMNA_CODIGO.etiqueta);
       continue;
     }
     const emp = ctx.empleados.get(codigo.toLowerCase());
@@ -454,12 +462,11 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
 
     for (const t of columnasTipo) {
       const bruto = celdas[indices[claveTipo(t.id)]];
-      let nuevo = CERO;
-      if (!v.vacia(bruto)) {
-        const leido = v.decimal(bruto, { min: 0, max: MONTO_MAXIMO });
-        if (!leido.ok) { error(leido.error, etiquetaTipo(t)); continue; }
-        nuevo = leido.valor;
-      }
+      // Vacía: ese tipo no se toca. Para no cobrarlo este período se escribe 0.
+      if (v.vacia(bruto)) continue;
+      const leido = v.decimal(bruto, { min: 0, max: MONTO_MAXIMO });
+      if (!leido.ok) { error(leido.error, etiquetaTipo(t)); continue; }
+      const nuevo = leido.valor;
       const decision = decidirCelda(ctx.estados.get(`${emp.id}|${t.id}`), nuevo);
       if (decision.accion === "IGUAL") { r.sinCambio++; continue; }
       if (decision.accion === "ERROR") { error(decision.mensaje, etiquetaTipo(t)); continue; }
@@ -800,12 +807,13 @@ export function notasMatriz(periodo: PeriodoPlanilla, baseRap: ContextoBaseRap |
         `«${ETIQUETA_BASE_RAP}» NO es una deducción: es lo devengado en ${nombreMes(mesAnterior(baseRap.mes))} (salario ordinario y comisiones), sobre lo que se calculan el RAP del trabajador, el del patrono y la Reserva Laboral que se descuentan en ${nombreMes(baseRap.mes)}. Vale para todas las planillas de ese mes.`,
         baseRap.regla === "TRANSICION"
           ? `${nombreMes(baseRap.mes)} es el primer mes a mes vencido: sólo se descuenta RAP a quien tenga base escrita aquí.`
-          : `Viene con el salario de las planillas confirmadas de ${nombreMes(mesAnterior(baseRap.mes))}. Súmele las comisiones o corríjala; vacía, se usa la del sistema; 0, no se descuenta RAP ese mes.`,
+          : `Viene con el salario de las planillas confirmadas de ${nombreMes(mesAnterior(baseRap.mes))}. Súmele las comisiones o corríjala; vacía en una fila con montos, se usa la del sistema; 0, no se descuenta RAP ese mes.`,
       ]
     : [];
   return [
     `Deducciones ${frasePeriodo(periodo, "de")} (planilla ${periodo.tipo.toLowerCase()}, ${rangoPeriodo(periodo.desde, periodo.hasta)}).`,
-    "Cada celda es lo que se descuenta de ese tipo al empleado en el período. Celda vacía o 0: nada.",
+    "Vienen todos los empleados activos de la planilla. Cada celda es lo que se descuenta de ese tipo al empleado en el período.",
+    "Al importar sólo cuentan las filas con algún monto: una fila vacía no se toca. Una celda vacía tampoco cambia nada; para no cobrar un tipo en este período, escriba 0.",
     ...deLaBase,
     "Para cambiar montos, edítelos aquí y vuelva a importar el archivo en Deducciones → Importar → Montos del período, eligiendo el mismo período. Lo que no cambie no se toca, y reimportar corrige en lugar de duplicar.",
     "Si el empleado tiene una deducción de cada planilla, su monto ya está en la celda: escribir otro la reemplaza sólo en este período, sin cambiar la deducción.",

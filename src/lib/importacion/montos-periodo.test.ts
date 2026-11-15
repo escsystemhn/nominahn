@@ -125,7 +125,21 @@ describe("validar el archivo de montos del período", () => {
     const r = validarMontos([CAB, "010001,A,Adm,500.00,,1000.00", "010122,B,Adm,5274.39,,"].join("\n"), contexto(), todos);
     expect(r.operaciones).toHaveLength(0);
     expect(r.incidencias).toHaveLength(0);
-    expect(r.sinCambio).toBe(6);
+    expect(r.sinCambio).toBe(3); // las tres celdas con monto; las vacías no se tocan
+  });
+
+  it("una celda vacía no cambia nada, y una fila vacía no se toca aunque sea de un inactivo o de un código que no existe", () => {
+    const r = validarMontos([
+      CAB,
+      "010001,A,Adm,,,1000.00", // la cooperativa de cada planilla queda como está
+      "010122,B,Adm,,,", // fila vacía: su monto del período sigue
+      "010999,X,Adm,,,", // inactivo, sin montos: no es error
+      "099999,Z,Adm,,,", // no existe, sin montos: no es error
+    ].join("\n"), contexto(), todos);
+    expect(r.incidencias).toEqual([]);
+    expect(r.operaciones).toEqual([]);
+    expect(r.sinMontos).toBe(3);
+    expect(r.sinCambio).toBe(1);
   });
 
   it("igual, nuevo, cambia y se quita, como en la vista previa", () => {
@@ -144,8 +158,8 @@ describe("validar el archivo de montos del período", () => {
     expect(r.previsualizacion[0].cambios?.[0]).toMatch(/5,274\.39 → .*5,100\.00/);
   });
 
-  it("vaciar una de cada planilla se ve como «se quita» y avisa que es sólo este período", () => {
-    const r = validarMontos([CAB, "010001,A,Adm,,,1000.00"].join("\n"), contexto(), todos);
+  it("un 0 en una de cada planilla se ve como «se quita» y avisa que es sólo este período", () => {
+    const r = validarMontos([CAB, "010001,A,Adm,0,,1000.00"].join("\n"), contexto(), todos);
     expect(r.seQuitan).toBe(1);
     expect(r.previsualizacion[0]).toMatchObject({ accion: "QUITAR" });
     expect(r.previsualizacion[0].cambios?.join(" ")).toMatch(/no se cobra en este período; los L.*500\.00 de cada planilla vuelven en el siguiente/);
@@ -292,14 +306,20 @@ describe("columna «Base RAP (mes anterior)»", () => {
     expect(decidirBaseRap(null, money(30000), money(0))).toMatchObject({ accion: "PONER" });
   });
 
-  it("un archivo sólo con la base vale: crea, quita y deja igual, con el RAP en la vista previa", () => {
+  it("un archivo sólo con la base vale: crea la nueva, y una fila vacía no toca la base importada", () => {
     const r = validarMontos([CABB, "010001,A,Adm,35000", "010122,B,Adm,", "010130,C,Adm,"].join("\n"), contexto({ baseRap: baseRap() }), todos);
     expect(r.incidencias.filter((i) => i.severidad === "ERROR")).toEqual([]);
-    expect(r.operaciones.map((o) => `${o.clase}:${o.accion}:${o.despues}`)).toEqual(["BASE_RAP:PONER:35000.00", "BASE_RAP:QUITAR:30000.00"]);
-    expect([r.nuevos, r.seQuitan, r.sinCambio]).toEqual([1, 1, 1]);
+    expect(r.operaciones.map((o) => `${o.clase}:${o.accion}:${o.despues}`)).toEqual(["BASE_RAP:PONER:35000.00"]);
+    expect([r.nuevos, r.seQuitan, r.sinMontos]).toEqual([1, 0, 2]);
     // 35,000 − 11,903.13 = 23,096.87 → 346.45 de cada parte; Reserva 4 % = 1,400.
     expect(r.previsualizacion[0].cambios?.join(" ")).toMatch(/RAP L.*346\.45 del trabajador y L.*346\.45 del patrono, Reserva L.*1,400\.00/);
-    expect(r.previsualizacion[1].cambios?.join(" ")).toMatch(/vuelve a la de las planillas de octubre/);
+  });
+
+  it("en una fila con montos, la base vacía vuelve a la del sistema", () => {
+    const CABD = "Codigo Empleado,Empleado,Departamento,Cooperativa AUDI (COOP-AUDI),Base RAP (mes anterior)";
+    const r = validarMontos([CABD, "010122,B,Adm,5274.39,"].join("\n"), contexto({ baseRap: baseRap() }), todos);
+    expect(r.operaciones.map((o) => `${o.clase}:${o.accion}:${o.despues}`)).toEqual(["BASE_RAP:QUITAR:30000.00"]);
+    expect(r.previsualizacion[0].cambios?.join(" ")).toMatch(/vuelve a la de las planillas de octubre/);
   });
 
   it("no deja cambiar la base si ya hay una planilla del mes aprobada, ni ponérsela a un inactivo", () => {

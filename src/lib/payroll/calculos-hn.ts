@@ -899,6 +899,13 @@ export interface EntradaCalculoPlanilla {
    */
   ihssMontoFijoMensual?: MoneyInput | null;
   /**
+   * `false` = esta ficha no cotiza al IHSS / al RAP (la persona cotiza en otra ficha):
+   * ni lo del trabajador ni lo patronal, y no se resta de la base del ISR. INFOP y
+   * Reserva Laboral siguen. Sin el dato, cotiza.
+   */
+  aplicaIhss?: boolean;
+  aplicaRap?: boolean;
+  /**
    * Sólo en planilla quincenal: qué quincena es, los días con derecho a salario
    * de TODO el mes y si la persona también tiene días en la otra quincena del mes.
    * Lo usan los aportes que se deducen completos en una sola quincena
@@ -1032,8 +1039,12 @@ export function calcularPlanilla(
   const tramoVecinal = tramo(distribucion.vecinal);
   const ihss = tramoIhss?.mes ? calcularIHSS(salarioMensual.times(fraccionMes), parametrosMes, ihssFijoMes) : ihssPeriodo;
   const rap = tramoRap?.mes ? calcularRAP(salarioMensual.times(fraccionMes), parametrosMes) : rapPeriodo;
-  const factorIhss = tramoIhss ? tramoIhss.factor : CERO;
-  const factorRap = tramoRap ? tramoRap.factor : CERO;
+  // Una ficha que no cotiza (la persona cotiza en otra nómina) deja el aporte en cero:
+  // lo del trabajador, lo patronal y el desglose del IVM salen de este factor.
+  const cotizaIhss = entrada.aplicaIhss !== false;
+  const cotizaRap = entrada.aplicaRap !== false;
+  const factorIhss = cotizaIhss && tramoIhss ? tramoIhss.factor : CERO;
+  const factorRap = cotizaRap && tramoRap ? tramoRap.factor : CERO;
   const factorVecinal = tramoVecinal ? tramoVecinal.factor : CERO;
 
   // RAP y Reserva a mes vencido: la base es de un mes ya cerrado y va entera, sin
@@ -1051,8 +1062,9 @@ export function calcularPlanilla(
     const delMes = calcularRAP(vencido.base, parametros);
     const reservaMes = calcularReservaLaboral(vencido.base, parametros).empleador;
     aMesVencido = {
-      empleado: redondear(delMes.empleado.times(factorV)),
-      empleador: redondear(delMes.empleador.times(factorV)),
+      empleado: cotizaRap ? redondear(delMes.empleado.times(factorV)) : CERO,
+      empleador: cotizaRap ? redondear(delMes.empleador.times(factorV)) : CERO,
+      // La Reserva Laboral no depende de que esta ficha cotice al RAP.
       reserva: redondear(reservaMes.times(factorV)),
     };
   }
@@ -1080,7 +1092,11 @@ export function calcularPlanilla(
     : ingresosGravablesPeriodo.div(factorPlanilla);
   const baseImponibleMensual = salarioMensual.plus(ingresosGravablesMensual);
 
-  const baseISR = baseImponibleMensual.minus(ihssProyeccion.empleado).minus(rapProyeccion.empleado).minus(afpMensual);
+  // Sólo se resta del ISR lo que esta ficha de verdad le deduce.
+  const baseISR = baseImponibleMensual
+    .minus(cotizaIhss ? ihssProyeccion.empleado : CERO)
+    .minus(cotizaRap ? rapProyeccion.empleado : CERO)
+    .minus(afpMensual);
   const isrMensual = calcularISRMensual(baseISR, parametros);
 
   // Impuesto vecinal: su base son los ingresos totales SIN DEDUCCIONES (Art. 77

@@ -377,6 +377,9 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       aniosTrabajados: anios,
       // IHSS mensual pactado en la ficha; null = por porcentaje.
       ihssMontoFijoMensual: emp.ihssMontoFijo,
+      // Apagados en la ficha de quien ya cotiza en otra nómina.
+      aplicaIhss: emp.aplicaIhss,
+      aplicaRap: emp.aplicaRap,
       quincena,
       rapMesVencido,
     };
@@ -408,8 +411,9 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
         // Como la hoja: año de la planilla menos año de nacimiento.
         edad: hasta.getUTCFullYear() - emp.fechaNacimiento.getUTCFullYear(),
         ivmTope: parametros.ivmTope,
-        ivmEmpleado: parametros.ivmEmpleado,
-        rapMensual: calcularRAP(salario, parametros).empleado,
+        // Lo que esta ficha no le deduce tampoco se resta de su base.
+        ivmEmpleado: emp.aplicaIhss ? parametros.ivmEmpleado : 0,
+        rapMensual: emp.aplicaRap ? calcularRAP(salario, parametros).empleado : 0,
         tabla: parametros.tablaISRAnual,
         config: configIsr.personalizado,
       });

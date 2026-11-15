@@ -154,8 +154,8 @@ export default async function FichaEmpleadoPage({
             {[
               ["Identidad (DNI)", emp.identidad],
               ["RTN", emp.rtn],
-              ["Número de IHSS", emp.ihssNro],
-              ["Número de RAP", emp.rapNro],
+              ["Número de IHSS", emp.aplicaIhss ? emp.ihssNro : `${emp.ihssNro ?? "—"} · no se deduce en esta ficha`],
+              ["Número de RAP", emp.aplicaRap ? emp.rapNro : `${emp.rapNro ?? "—"} · no se deduce en esta ficha`],
               ["Fecha de nacimiento", emp.fechaNacimiento ? formatDate(emp.fechaNacimiento) : "—"],
               ["Género", emp.genero === "M" ? "Masculino" : "Femenino"],
               ["Estado civil", emp.estadoCivil],

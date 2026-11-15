@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
 
   const empleado = await prisma.empleado.findUnique({
     where: { id: empleadoId },
-    select: { id: true, sucursalId: true, departamentoId: true, salarioBase: true, fechaIngreso: true, estado: true },
+    select: { id: true, sucursalId: true, departamentoId: true, salarioBase: true, fechaIngreso: true, estado: true, aplicaRap: true },
   });
   // Fuera de su alcance responde igual que si no existiera (ver alcanzaEmpleado).
   if (!empleado || !alcanzaEmpleado(g.usuario, empleado)) return NextResponse.json({ error: "Empleado no encontrado" }, { status: 404 });
@@ -226,7 +226,8 @@ export async function POST(req: NextRequest) {
   // ─── RAP a mes vencido ─────────────────────────────────────────────────────
   // Lo del mes de salida (y lo del anterior que sus planillas no alcanzaron) ya no
   // tiene planilla siguiente: lo toma el finiquito (`rap-mes-vencido.ts`).
-  const rapPendiente = await rapPendienteAlSalir(prisma, empleado, fechaSalida, await cargarParametrosLegales());
+  // Una ficha que no cotiza al RAP (cotiza en otra nómina) no deja RAP pendiente.
+  const rapPendiente = empleado.aplicaRap ? await rapPendienteAlSalir(prisma, empleado, fechaSalida, await cargarParametrosLegales()) : null;
   const mesesRap = rapPendiente ? enumerar(rapPendiente.meses.map((m) => nombreMes(m.mes).replace(/ de \d{4}$/, ""))) : "";
 
   // ─── Anticipos pagados aparte ──────────────────────────────────────────────

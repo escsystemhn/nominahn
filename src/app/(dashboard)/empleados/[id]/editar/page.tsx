@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/ui/PageHeader";
 import EditarEmpleadoForm, { type EmpleadoEditable } from "@/components/employees/EditarEmpleadoForm";
-import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { puede, requerirPermisoPagina } from "@/lib/auth/guard";
 import { nombreCompleto } from "@/lib/utils";
 
 /**
@@ -107,6 +107,8 @@ export default async function EditarEmpleadoPage({
     emailPersonal: emp.emailPersonal ?? "",
     // Texto para el input; vacío si se calcula por porcentaje.
     ihssMontoFijo: emp.ihssMontoFijo != null ? Number(emp.ihssMontoFijo).toFixed(2) : "",
+    aplicaIhss: emp.aplicaIhss,
+    aplicaRap: emp.aplicaRap,
     extension: emp.extension ?? "",
   };
 
@@ -131,6 +133,7 @@ export default async function EditarEmpleadoPage({
         supervisores={supervisores}
         centrosCosto={centrosCosto}
         tieneContratoVigente={contratosVigentes > 0}
+        puedeCambiarAportes={puede(usuario, "configuracion.parametros")}
       />
       </div>
     </div>

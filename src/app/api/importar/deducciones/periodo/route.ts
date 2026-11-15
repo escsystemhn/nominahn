@@ -99,9 +99,12 @@ export async function POST(req: NextRequest) {
       { label: "Sin cambio", valor: r.sinCambio },
       { label: "Con errores", valor: totalErrores },
     ],
-    resumen: r.operaciones.length
-      ? `Se aplicarán sólo ${frasePeriodo(periodo, "a")}. Las deducciones de cada planilla no cambian: en este período, el monto nuevo las reemplaza.`
-      : totalErrores === 0 ? "El archivo coincide con lo que ya hay en el período: no hay nada que cambiar." : undefined,
+    resumen: [
+      r.operaciones.length
+        ? `Se aplicarán sólo ${frasePeriodo(periodo, "a")}. Las deducciones de cada planilla no cambian: en este período, el monto nuevo las reemplaza.`
+        : totalErrores === 0 ? "El archivo coincide con lo que ya hay en el período: no hay nada que cambiar." : "",
+      r.sinMontos ? `${r.sinMontos} ${r.sinMontos === 1 ? "fila sin montos no se toca" : "filas sin montos no se tocan"}.` : "",
+    ].filter(Boolean).join(" ") || undefined,
     tiposNuevos,
   };
   return NextResponse.json(informe);

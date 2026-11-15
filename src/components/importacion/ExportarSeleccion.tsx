@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * Elegir qué filas exportar (empleados, deducciones). Parte sin nada marcado:
- * exportar datos personales o salariales debe ser un acto deliberado, y sin marcar
- * nada el archivo sale sólo con los encabezados. La marca se conserva al buscar,
- * para poder armar la lista por partes.
+ * Elegir qué filas exportar (empleados, deducciones). Empleados parte sin nada marcado:
+ * exportar datos personales debe ser un acto deliberado, y sin marcar nada el archivo
+ * sale sólo con los encabezados. Deducciones parte con TODOS marcados: es el archivo que
+ * se llena y se vuelve a importar, y al importar sólo cuentan las filas con algún monto
+ * (decisión de Edbin, 2026-11-15). La marca se conserva al buscar.
  *
  * La API de cada recurso responde `GET ?lista=1` con `{ filas: [{ id, titulo, detalle }] }`
  * y `POST { ids, formato | delimitador }` con el archivo.
@@ -38,6 +39,8 @@ interface ConfigExportar {
   avisoPII: string;
   /** Se exporta para un período de planilla: se elige arriba de la lista. */
   conPeriodo?: boolean;
+  /** Arranca con todos marcados (desmarcar es la excepción). */
+  todosMarcados?: boolean;
 }
 
 const CONFIG: Partial<Record<RecursoImportacion, ConfigExportar>> = {
@@ -51,8 +54,9 @@ const CONFIG: Partial<Record<RecursoImportacion, ConfigExportar>> = {
     titulo: "Exportar deducciones por empleado", uno: "empleado", varios: "empleados", femenino: false,
     buscar: "Buscar por nombre, código, departamento o sucursal",
     vacio: "No hay empleados activos con este tipo de planilla en su alcance.",
-    avisoPII: "Una fila por empleado y una columna por tipo de deducción, con lo que se descuenta en el período. Se puede corregir y volver a importar. La descarga queda registrada en la auditoría.",
+    avisoPII: "Vienen todos los empleados activos, una columna por tipo de deducción, con lo que se descuenta en el período. Llénelo y vuelva a importarlo: sólo cuentan las filas con algún monto. La descarga queda registrada en la auditoría.",
     conPeriodo: true,
+    todosMarcados: true,
   },
 };
 
@@ -102,13 +106,15 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
         const d = await r.json().catch(() => ({}));
         if (!vivo) return;
         if (!r.ok) throw new Error(d.error ?? `No se pudo cargar la lista de ${c.varios}.`);
-        setFilas((d.filas as FilaExportable[]).map((f) => ({ ...f, clave: claveNombre(`${f.titulo} ${f.detalle}`) })));
+        const lista = d.filas as FilaExportable[];
+        setFilas(lista.map((f) => ({ ...f, clave: claveNombre(`${f.titulo} ${f.detalle}`) })));
+        if (c.todosMarcados) setMarcadas(new Set(lista.map((f) => f.id)));
       } catch (e) {
         if (vivo) { setFilas([]); setError(e instanceof Error ? e.message : `No se pudo cargar la lista de ${c.varios}.`); }
       }
     })();
     return () => { vivo = false; };
-  }, [consulta, recurso, c.varios]);
+  }, [consulta, recurso, c.varios, c.todosMarcados]);
 
   const visibles = useMemo(() => {
     const palabras = claveNombre(busqueda).split(" ").filter(Boolean);
