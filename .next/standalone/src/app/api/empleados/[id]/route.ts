@@ -71,6 +71,9 @@ const schemaEditar = z.object({
   emailPersonal: zCorreoOpcional,
   // IHSS mensual fijo; null = volver al cálculo por porcentaje.
   ihssMontoFijo: zMontoAnulable,
+  // ¿Cotiza al IHSS / RAP en esta ficha? Cambiarlo es del administrador (abajo).
+  aplicaIhss: z.boolean().optional(),
+  aplicaRap: z.boolean().optional(),
   // No es columna: sólo alimenta el motivo del historial de salario.
   motivo: z.string().trim().max(500).optional(),
 });
@@ -128,6 +131,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     where: { id },
     select: {
       id: true, salarioBase: true, estado: true, sucursalId: true, departamentoId: true, puestoId: true, ihssMontoFijo: true,
+      aplicaIhss: true, aplicaRap: true,
       fechaIngreso: true, fechaSalida: true, tipoContrato: true,
       contratos: { where: { activo: true }, select: { id: true }, take: 1 },
     },
@@ -141,6 +145,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!parsed.ok) return parsed.response;
   // `motivo` no es columna; el resto (`data`) ya está acotado por el allowlist.
   const { salarioBase, motivo, ...data } = parsed.data;
+
+  // Apagar o encender el IHSS / RAP de la ficha cambia lo que se le deduce (y lo
+  // patronal): sólo quien tiene el permiso de los parámetros de ley. Lo que llega
+  // igual a lo guardado no es un cambio (el formulario manda los dos siempre).
+  if (data.aplicaIhss === empleadoActual.aplicaIhss) delete data.aplicaIhss;
+  if (data.aplicaRap === empleadoActual.aplicaRap) delete data.aplicaRap;
+  if ((data.aplicaIhss !== undefined || data.aplicaRap !== undefined) && !puede(g.usuario, "configuracion.parametros")) {
+    return NextResponse.json({ error: "Sólo el administrador puede apagar el IHSS o el RAP de una ficha." }, { status: 403 });
+  }
 
   // DNI: 13 dígitos, guardado sin guiones; otro empleado con el mismo número en
   // cualquiera de las dos formas es el mismo DNI.
@@ -291,6 +304,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       departamentoId: empleadoActual.departamentoId,
       // Cambia lo que se le descuenta al trabajador: tiene que poder rastrearse.
       ihssMontoFijo: empleadoActual.ihssMontoFijo,
+      ...(data.aplicaIhss !== undefined ? { aplicaIhss: empleadoActual.aplicaIhss } : {}),
+      ...(data.aplicaRap !== undefined ? { aplicaRap: empleadoActual.aplicaRap } : {}),
     },
     valorNuevo: { ...data, motivo: motivo ?? undefined },
     ip,

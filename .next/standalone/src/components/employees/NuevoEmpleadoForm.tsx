@@ -43,6 +43,9 @@ const schema = z.object({
   // acepta la coma decimal («297,58»): ver `montoComoTexto`.
   ihssMontoFijo: z.string().transform(montoComoTexto)
     .pipe(z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 595.16.")])).optional(),
+  // ¿Cotiza al IHSS / RAP en esta ficha? Por omisión sí; sólo el administrador los apaga.
+  aplicaIhss: z.boolean().optional(),
+  aplicaRap: z.boolean().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -53,9 +56,11 @@ interface Props {
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   puestos: Array<{ id: string; nombre: string; departamentoId: string }>;
+  /** Apagar el IHSS o el RAP de la ficha: sólo con el permiso de los parámetros de ley. */
+  puedeCambiarAportes: boolean;
 }
 
-export default function NuevoEmpleadoForm({ sucursales, divisiones, departamentos, puestos }: Props) {
+export default function NuevoEmpleadoForm({ sucursales, divisiones, departamentos, puestos, puedeCambiarAportes }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<PestanaFicha>("personal");
@@ -71,7 +76,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
     setValue,
     setFocus,
     formState: { errors },
-  } = useForm<FormData>({ resolver: zodResolver(schema) });
+  } = useForm<FormData>({ resolver: zodResolver(schema), defaultValues: { aplicaIhss: true, aplicaRap: true } });
   const porPestana = erroresPorPestana(errors);
 
   // El primer error puede estar en la otra pestaña, que no está dibujada: se abre y luego se enfoca.
@@ -227,6 +232,24 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             >
               <input {...register("ihssMontoFijo")} type="text" inputMode="decimal" autoComplete="off" className={fieldClass} placeholder="Vacío = cálculo por porcentaje" />
             </Field>
+            <fieldset className="sm:col-span-2 rounded-lg border border-gray-200 p-3" data-aportes-ficha>
+              <legend className="px-1 text-sm font-medium text-gray-700">IHSS y RAP en esta ficha</legend>
+              <div className="flex flex-wrap gap-x-8 gap-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input type="checkbox" className="h-4 w-4" {...register("aplicaIhss")} disabled={!puedeCambiarAportes} />
+                  Deducir IHSS
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input type="checkbox" className="h-4 w-4" {...register("aplicaRap")} disabled={!puedeCambiarAportes} />
+                  Deducir RAP
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Apáguelo sólo si la persona ya cotiza en otra ficha (otra nómina), para no deducirle de más en el mes: esta ficha no
+                calcula ese aporte, ni lo del trabajador ni lo patronal. INFOP y Reserva Laboral no cambian.
+                {!puedeCambiarAportes && " Sólo el administrador puede cambiarlo."}
+              </p>
+            </fieldset>
             <Field label="Tipo de planilla *" error={errors.tipoPlanilla?.message}>
               <select {...register("tipoPlanilla")} className={fieldClass}>
                 <option value="MENSUAL">Mensual</option>

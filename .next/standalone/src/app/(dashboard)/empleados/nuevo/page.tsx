@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { filtroSucursales } from "@/lib/auth/alcance";
 import NuevoEmpleadoForm from "@/components/employees/NuevoEmpleadoForm";
 import PageHeader from "@/components/ui/PageHeader";
-import { requerirPermisoPagina } from "@/lib/auth/guard";
+import { puede, requerirPermisoPagina } from "@/lib/auth/guard";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 
 export default async function NuevoEmpleadoPage() {
@@ -27,6 +27,7 @@ export default async function NuevoEmpleadoPage() {
         divisiones={divisiones}
         departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
         puestos={puestos}
+        puedeCambiarAportes={puede(usuario, "configuracion.parametros")}
       />
       </div>
     </div>

@@ -635,6 +635,15 @@ model Empleado {
    * porcentaje). Vacío = cálculo normal. Ver `calcularIHSS`.
    */
   ihssMontoFijo      Decimal?       @db.Decimal(12, 2)
+  /**
+   * ¿Esta ficha cotiza al IHSS (EM e IVM) y al RAP? Se apaga sólo para quien ya
+   * cotiza en otra ficha (otra nómina), para no deducirle de más en el mes: la
+   * planilla no calcula ni lo del trabajador ni lo patronal de ese aporte, ni lo
+   * resta de la base del ISR. INFOP y Reserva Laboral no cambian. Sólo lo cambia
+   * quien tiene `configuracion.parametros` (decisión de Edbin, 2026-11-15).
+   */
+  aplicaIhss         Boolean        @default(true)
+  aplicaRap          Boolean        @default(true)
   userId             String?        @unique
   user               User?          @relation(fields: [userId], references: [id])
   createdAt          DateTime       @default(now())

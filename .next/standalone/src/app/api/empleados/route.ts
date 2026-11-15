@@ -42,6 +42,9 @@ const createSchema = z.object({
   emailCorporativo: zCorreoOpcional,
   // IHSS mensual fijo pactado; vacío = cálculo por porcentaje.
   ihssMontoFijo: zMontoAnulable,
+  // ¿Cotiza al IHSS / RAP en esta ficha? Por omisión sí; apagarlo es del administrador.
+  aplicaIhss: z.boolean().optional(),
+  aplicaRap: z.boolean().optional(),
 });
 
 /**
@@ -157,6 +160,11 @@ export async function POST(req: NextRequest) {
   // Como texto vacío, el segundo empleado sin identidad reventaba contra el primero.
   // Se guarda con sus 13 dígitos (sin guiones), igual que la importación: con y sin
   // guiones eran dos valores distintos para el índice único.
+  // Crear la ficha sin IHSS o sin RAP cambia lo que se le deduce: sólo el administrador.
+  if ((data.aplicaIhss === false || data.aplicaRap === false) && !puede(g.usuario, "configuracion.parametros")) {
+    return NextResponse.json({ error: "Sólo el administrador puede apagar el IHSS o el RAP de una ficha." }, { status: 403 });
+  }
+
   const dni = normalizarIdentidad(data.identidad);
   if (dni && !dni.ok) return NextResponse.json({ error: dni.error }, { status: 400 });
   const identidad = dni?.ok ? dni.valor : null;
@@ -210,6 +218,8 @@ export async function POST(req: NextRequest) {
       emailPersonal: data.emailPersonal ?? null,
       emailCorporativo: data.emailCorporativo ?? null,
       ihssMontoFijo: data.ihssMontoFijo ?? null,
+      aplicaIhss: data.aplicaIhss ?? true,
+      aplicaRap: data.aplicaRap ?? true,
     },
   }).catch((e: unknown) => {
     // Dos altas simultáneas pueden pasar las comprobaciones de arriba.

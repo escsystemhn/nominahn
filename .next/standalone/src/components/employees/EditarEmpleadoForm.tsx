@@ -51,6 +51,9 @@ const schema = z.object({
   // acepta la coma decimal («297,58»): ver `montoComoTexto`.
   ihssMontoFijo: z.string().transform(montoComoTexto)
     .pipe(z.union([z.literal(""), z.string().regex(/^\d+(\.\d{1,2})?$/, "Escriba un monto, como 595.16.")])).optional(),
+  // ¿Cotiza al IHSS / RAP en esta ficha? Sólo el administrador los cambia.
+  aplicaIhss: z.boolean().optional(),
+  aplicaRap: z.boolean().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -77,6 +80,8 @@ interface Props {
   centrosCosto: Array<{ id: string; codigo: string; nombre: string }>;
   /** Con uno vigente, el tipo cambia registrando un contrato nuevo, no aquí. */
   tieneContratoVigente: boolean;
+  /** Apagar el IHSS o el RAP de la ficha: sólo con el permiso de los parámetros de ley. */
+  puedeCambiarAportes: boolean;
 }
 
 const TIPOS_CONTRATO: Record<FormData["tipoContrato"], string> = {
@@ -118,6 +123,7 @@ export default function EditarEmpleadoForm({
   supervisores,
   centrosCosto,
   tieneContratoVigente,
+  puedeCambiarAportes,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -402,6 +408,24 @@ export default function EditarEmpleadoForm({
                 placeholder="Vacío = cálculo por porcentaje"
               />
             </Field>
+            <fieldset className="sm:col-span-2 rounded-lg border border-gray-200 p-3" data-aportes-ficha>
+              <legend className="px-1 text-sm font-medium text-gray-700">IHSS y RAP en esta ficha</legend>
+              <div className="flex flex-wrap gap-x-8 gap-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input type="checkbox" className="h-4 w-4" {...register("aplicaIhss")} disabled={!puedeCambiarAportes} />
+                  Deducir IHSS
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input type="checkbox" className="h-4 w-4" {...register("aplicaRap")} disabled={!puedeCambiarAportes} />
+                  Deducir RAP
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Apáguelo sólo si la persona ya cotiza en otra ficha (otra nómina), para no deducirle de más en el mes: esta ficha deja de
+                calcular ese aporte, lo del trabajador y lo patronal. INFOP y Reserva Laboral no cambian.
+                {!puedeCambiarAportes && " Sólo el administrador puede cambiarlo."}
+              </p>
+            </fieldset>
             <Field label="Tipo de planilla *" error={errors.tipoPlanilla?.message}>
               <select {...register("tipoPlanilla")} className={fieldClass}>
                 <option value="MENSUAL">Mensual</option>

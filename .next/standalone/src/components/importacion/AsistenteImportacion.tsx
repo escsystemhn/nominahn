@@ -216,7 +216,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
                     {
                       valor: "montos" as const,
                       etiqueta: "Montos del período",
-                      detalle: "Una fila por empleado y una columna por tipo de deducción, como el archivo que se exporta. Pone o corrige lo que se descuenta en una quincena o mes, sin tocar las deducciones de cada planilla.",
+                      detalle: "Una fila por empleado y una columna por tipo de deducción, como el archivo que se exporta. Pone o corrige lo que se descuenta en una quincena o mes, sin tocar las deducciones de cada planilla. Sólo cuentan las filas con algún monto; una celda vacía no cambia nada y un 0 deja de cobrar ese tipo en el período.",
                     },
                     {
                       valor: "filas" as const,
