@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -68,6 +69,9 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
   // La división no se guarda en el empleado (sale de su departamento): sólo
   // acota la lista de departamentos.
   const [divisionId, setDivisionId] = useState("");
+  // «Guardar y registrar otro»: tras guardar, el formulario queda listo para el siguiente
+  // (pedido de Edbin, 2026-11-16), con un aviso del que se acaba de registrar.
+  const [registrado, setRegistrado] = useState<{ id: string; codigo: string; nombre: string } | null>(null);
 
   const {
     register,
@@ -75,6 +79,8 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
     control,
     setValue,
     setFocus,
+    getValues,
+    reset,
     formState: { errors },
   } = useForm<FormData>({ resolver: zodResolver(schema), defaultValues: { aplicaIhss: true, aplicaRap: true } });
   const porPestana = erroresPorPestana(errors);
@@ -99,7 +105,9 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
   const nombreDivision = (id: string | null) => divisiones.find((v) => v.id === id)?.nombre;
   const puestosFiltrados = puestos.filter((p) => p.departamentoId === departamentoId);
 
-  async function onSubmit(data: FormData) {
+  async function onSubmit(data: FormData, evento?: React.BaseSyntheticEvent) {
+    // Qué botón se pulsó: «Guardar y registrar otro» o «Guardar empleado».
+    const seguirRegistrando = !!(evento?.nativeEvent as SubmitEvent | undefined)?.submitter?.hasAttribute("data-registrar-otro");
     setLoading(true);
     try {
       const res = await fetch("/api/empleados", {
@@ -114,6 +122,21 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
         const campos = emp?.detalles ? Object.entries(emp.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([emp?.error ?? "El servidor no pudo registrar el empleado. Intente de nuevo.", ...campos].join("\n"));
       }
+      if (seguirRegistrando) {
+        // Lo de la organización se conserva (suele ser igual para el siguiente); lo personal y el salario, no.
+        const v = getValues();
+        reset({
+          aplicaIhss: true, aplicaRap: true,
+          fechaIngreso: v.fechaIngreso, tipoContrato: v.tipoContrato, tipoPlanilla: v.tipoPlanilla, banco: v.banco,
+          sucursalId: v.sucursalId, departamentoId: v.departamentoId, puestoId: v.puestoId,
+        });
+        setRegistrado({ id: emp.id, codigo: emp.codigo, nombre: `${data.primerNombre} ${data.primerApellido}` });
+        setTab("personal");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        setTimeout(() => setFocus("primerNombre"), 0);
+        avisar.exito(`Empleado ${emp.codigo} registrado. Puede registrar el siguiente.`);
+        return;
+      }
       avisar.exito("Empleado registrado.");
       router.push(`/empleados/${emp.id}`);
     } catch (e) {
@@ -125,6 +148,15 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
 
   return (
     <form method="post" onSubmit={handleSubmit(onSubmit, alFallar)} className="space-y-5">
+      {registrado && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900" data-registrado>
+          <span>
+            Se registró a <b>{registrado.nombre}</b> con el código <b className="font-mono">{registrado.codigo}</b>. Siga con el siguiente:
+            se conservaron la sucursal, el departamento, el puesto, la planilla y la fecha de ingreso.
+          </span>
+          <Link href={`/empleados/${registrado.id}`} className="font-medium text-green-800 underline">Ver su ficha</Link>
+        </div>
+      )}
       <PestanasFicha tab={tab} onCambiar={setTab} errores={porPestana} />
       <ResumenErrores errores={porPestana} />
 
@@ -328,13 +360,23 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
             >
               Anterior
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary"
-            >
-              {loading ? "Guardando…" : "Guardar empleado"}
-            </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn btn-secondary"
+                data-registrar-otro
+              >
+                Guardar y registrar otro
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn btn-primary"
+              >
+                {loading ? "Guardando…" : "Guardar empleado"}
+              </button>
+            </div>
           </div>
         </div>
       )}

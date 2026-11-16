@@ -236,6 +236,8 @@ function useParametros() {
 const MOTIVOS: Record<string, string> = {
   inactividad: "Su sesión se cerró por inactividad. Ingrese de nuevo para seguir donde estaba.",
   sesion: "Su sesión terminó. Ingrese de nuevo para seguir donde estaba.",
+  // Después de cambiar la contraseña se vuelve a entrar con la nueva (pedido de Edbin, 2026-11-16).
+  clave: "Contraseña actualizada. Ingrese con la nueva.",
 };
 
 export default function LoginPage() {
@@ -243,6 +245,7 @@ export default function LoginPage() {
   const hidratado = useHidratado();
   const parametros = useParametros();
   const motivo = MOTIVOS[parametros.get("motivo") ?? ""];
+  const motivoBueno = parametros.get("motivo") === "clave";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [mostrar, setMostrar] = useState(false);
@@ -332,7 +335,7 @@ export default function LoginPage() {
             <h2 className="text-2xl font-semibold text-gray-900">Iniciar sesión</h2>
             <p className="mb-6 mt-1 text-sm text-gray-500">Use las credenciales asignadas por su administrador.</p>
             {motivo && (
-              <p role="status" className="-mt-2 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-motivo-login>
+              <p role="status" className={`-mt-2 mb-5 rounded-lg border px-3 py-2 text-sm ${motivoBueno ? "border-green-200 bg-green-50 text-green-900" : "border-amber-200 bg-amber-50 text-amber-900"}`} data-motivo-login>
                 {motivo}
               </p>
             )}

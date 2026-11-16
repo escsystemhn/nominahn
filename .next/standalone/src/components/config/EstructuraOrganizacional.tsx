@@ -23,7 +23,11 @@ import {
 import { formatCurrency } from "@/lib/utils";
 
 export interface SucursalEstructura { id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; telefono: string | null; descripcion: string | null; activa: boolean; logoVersion: number | null }
-export interface DivisionEstructura { id: string; nombre: string; codigo: string | null; rtn: string | null; activa: boolean; sucursalId: string; departamentos: number }
+export interface DivisionEstructura {
+  id: string; nombre: string; codigo: string | null; rtn: string | null; activa: boolean; sucursalId: string; departamentos: number;
+  /** Con planillas no cambia de grupo (sucursal). */
+  conPlanillas: boolean;
+}
 export interface DepartamentoEstructura { id: string; nombre: string; codigo: string | null; activo: boolean; sucursalId: string; divisionId: string | null; empleados: number }
 export interface PuestoEstructura {
   id: string; nombre: string; descripcion: string | null; salarioMinimo: number; salarioMaximo: number; activo: boolean;
@@ -121,6 +125,24 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
       accion: "Desactivar",
     }))) return;
     const error = await enviar(`/api/configuracion/sucursales/${s.id}`, "PATCH", { activa: !s.activa });
+    setAviso(error);
+    if (!error) router.refresh();
+  }
+
+  async function borrarSucursal(s: SucursalEstructura) {
+    if (!(await confirmar({
+      titulo: `¿Eliminar ${jerarquiaHabilitada ? "el grupo" : "la sucursal"} «${s.nombre}»?`,
+      detalle: "No tiene empleados ni estructura. Su cobertura de horarios, su horario de atención y su logo se eliminan con ella.",
+      accion: "Eliminar", peligro: true,
+    }))) return;
+    const error = await enviar(`/api/configuracion/sucursales/${s.id}`, "DELETE");
+    setAviso(error);
+    if (!error) router.refresh();
+  }
+
+  async function borrarDepartamento(d: DepartamentoEstructura) {
+    if (!(await confirmar({ titulo: `¿Eliminar el departamento «${d.nombre}»?`, detalle: "No tiene empleados ni puestos.", accion: "Eliminar", peligro: true }))) return;
+    const error = await enviar(`/api/configuracion/departamentos/${d.id}`, "DELETE");
     setAviso(error);
     if (!error) router.refresh();
   }
@@ -245,6 +267,9 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "logo", sucursal: s })}>{s.logoVersion ? "Cambiar logo" : "Agregar logo"}</button>
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "sucursal", sucursal: s })}>Editar</button>
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => alternarSucursal(s)}>{s.activa ? "Desactivar" : "Activar"}</button>
+                        {!divisiones.some((v) => v.sucursalId === s.id) && !departamentos.some((d) => d.sucursalId === s.id) && (
+                          <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => borrarSucursal(s)}>Eliminar</button>
+                        )}
                       </>
                     )}
                   </td>
@@ -348,6 +373,9 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
                                     {d.activo && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "puesto", puesto: null, departamentoId: d.id })}>Agregar puesto</button>}
                                     {d.activo && destinosDeCopia(d, sucursales, divisionesHabilitadas ? divisiones : []).length > 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setExito(null); setEdicion({ tipo: "copiar", departamento: d }); }}>Copiar</button>}
                                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdicion({ tipo: "departamento", departamento: d })}>Editar</button>
+                                    {d.empleados === 0 && propios.length === 0 && (
+                                      <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => borrarDepartamento(d)}>Eliminar</button>
+                                    )}
                                   </>
                                 )}
                               </td>
@@ -412,7 +440,7 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
         />
       )}
       {edicion?.tipo === "division" && (
-        <FormDivision division={edicion.division} sucursales={sucursales} conJerarquia={jerarquiaHabilitada} onCerrar={() => setEdicion(null)} onListo={() => { setEdicion(null); router.refresh(); }} />
+        <FormDivision division={edicion.division} sucursales={sucursales} departamentos={departamentos} conJerarquia={jerarquiaHabilitada} onCerrar={() => setEdicion(null)} onListo={() => { setEdicion(null); router.refresh(); }} />
       )}
       {edicion?.tipo === "departamento" && (
         <FormDepartamento
@@ -496,8 +524,8 @@ function FormSucursal({ sucursal, empresaId, conJerarquia, onCerrar, onListo }: 
   );
 }
 
-function FormDivision({ division, sucursales, conJerarquia, onCerrar, onListo }: {
-  division: DivisionEstructura | null; sucursales: SucursalEstructura[]; conJerarquia: boolean; onCerrar: () => void; onListo: () => void;
+function FormDivision({ division, sucursales, departamentos, conJerarquia, onCerrar, onListo }: {
+  division: DivisionEstructura | null; sucursales: SucursalEstructura[]; departamentos: DepartamentoEstructura[]; conJerarquia: boolean; onCerrar: () => void; onListo: () => void;
 }) {
   const niveles = etiquetasNiveles(conJerarquia);
   const opcionesSucursal = sucursales.filter((s) => s.activa || s.id === division?.sucursalId);
@@ -506,14 +534,20 @@ function FormDivision({ division, sucursales, conJerarquia, onCerrar, onListo }:
   const digitosRtn = f.rtn.replace(/\D/g, "").length;
   const rtnValido = /^[\d\s-]*$/.test(f.rtn) && (digitosRtn === 0 || digitosRtn === 14);
   const rtn = conJerarquia ? { rtn: f.rtn || null } : {};
+  // Sin planillas puede pasar a otro grupo: se lleva sus departamentos y a su gente.
+  const puedeMover = !!division && !division.conPlanillas;
+  const mueve = !!division && f.sucursalId !== division.sucursalId;
+  const propios = division ? departamentos.filter((d) => d.divisionId === division.id) : [];
+  const gente = propios.reduce((n, d) => n + d.empleados, 0);
+  const grupo = conJerarquia ? "grupo" : "sucursal";
   return (
     <Modal titulo={division ? `Editar ${niveles.division.toLowerCase()} ${division.nombre}` : niveles.nuevaDivision} error={error} cargando={cargando}
       puedeGuardar={!!f.nombre.trim() && !!f.sucursalId && rtnValido} onCerrar={onCerrar}
       onGuardar={() => division
-        ? guardar(`/api/configuracion/divisiones/${division.id}`, "PATCH", { nombre: f.nombre, codigo: f.codigo || null, ...rtn })
+        ? guardar(`/api/configuracion/divisiones/${division.id}`, "PATCH", { nombre: f.nombre, codigo: f.codigo || null, ...rtn, ...(mueve ? { sucursalId: f.sucursalId } : {}) })
         : guardar("/api/configuracion/divisiones", "POST", { nombre: f.nombre, codigo: f.codigo, sucursalId: f.sucursalId, ...rtn })}>
       <Campo etiqueta={niveles.sucursal}>
-        <select className="input" value={f.sucursalId} disabled={!!division} onChange={(e) => setF({ ...f, sucursalId: e.target.value })}>
+        <select className="input" value={f.sucursalId} disabled={!!division && !puedeMover} onChange={(e) => setF({ ...f, sucursalId: e.target.value })}>
           {opcionesSucursal.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
       </Campo>
@@ -521,7 +555,17 @@ function FormDivision({ division, sucursales, conJerarquia, onCerrar, onListo }:
       <Campo etiqueta="Código (opcional)"><input className="input" value={f.codigo} onChange={(e) => setF({ ...f, codigo: e.target.value })} /></Campo>
       {conJerarquia && <Campo etiqueta="RTN (opcional)"><input className="input" inputMode="numeric" value={f.rtn} onChange={(e) => setF({ ...f, rtn: e.target.value })} /></Campo>}
       {!rtnValido && <p className="text-sm text-red-700" role="alert">El RTN debe tener 14 dígitos. Puede usar guiones o espacios.</p>}
-      {division && <p className="text-xs text-gray-500">{`${conJerarquia ? "El grupo de una empresa" : "La sucursal de una división"} no cambia: sus departamentos y planillas cuelgan de ${conJerarquia ? "él" : "ella"}.`}</p>}
+      {division && !puedeMover && (
+        <p className="text-xs text-gray-500">{`Ya tiene planillas: su ${grupo} no cambia, porque las planillas emitidas cuelgan de ${conJerarquia ? "él" : "ella"}.`}</p>
+      )}
+      {puedeMover && !mueve && (
+        <p className="text-xs text-gray-500">{`Todavía no tiene planillas: puede pasarla a otro ${grupo}. Sus departamentos y empleados se mueven con ella.`}</p>
+      )}
+      {mueve && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status" data-mueve-division>
+          {`Se mueven con ella ${propios.length === 1 ? "1 departamento" : `${propios.length} departamentos`} y ${gente === 1 ? "1 empleado" : `${gente} empleados`} al ${grupo} elegido.`}
+        </p>
+      )}
     </Modal>
   );
 }

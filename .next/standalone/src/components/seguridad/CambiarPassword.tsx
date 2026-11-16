@@ -14,6 +14,7 @@
  */
 
 import { useState } from "react";
+import { signOut } from "next-auth/react";
 
 interface Props {
   /** Correo y nombre: la contraseña no puede contenerlos. */
@@ -66,10 +67,16 @@ export default function CambiarPassword({ contexto = [], obligatorio }: Props) {
         });
         return;
       }
-      setMensaje({ tono: "ok", texto: "Contraseña actualizada." });
+      // Se cierra la sesión y se vuelve a entrar con la contraseña nueva (pedido de Edbin,
+      // 2026-11-16): así se comprueba que se la sabe y no queda abierta con la anterior.
+      setMensaje({ tono: "ok", texto: "Contraseña actualizada. Lo llevamos al inicio de sesión…" });
       setActual("");
       setNueva("");
       setRepetida("");
+      await signOut({ redirect: false }).catch(() => undefined);
+      // Recarga completa, sin dejar esta pantalla en el historial (como el cierre por inactividad).
+      window.location.replace("/login?motivo=clave");
+      return;
     } catch {
       setMensaje({ tono: "error", texto: "No se pudo conectar con el servidor." });
     } finally {

@@ -10,6 +10,8 @@ import EstadoVacio from "@/components/ui/EstadoVacio";
 import EstadoBadge, { etiquetaEstado, estadoDePlanilla } from "@/components/ui/EstadoBadge";
 import SaludFamilia from "@/components/employees/SaludFamilia";
 import ContratosEmpleado from "@/components/employees/ContratosEmpleado";
+import FlechasEmpleado from "@/components/employees/FlechasEmpleado";
+import { leerLista, textoLista, vecinosEmpleado } from "@/lib/empleados/lista";
 
 
 const TIPO_PERMISO: Record<string, string> = {
@@ -28,7 +30,7 @@ export default async function FichaEmpleadoPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; lista?: string }>;
 }) {
   // El expediente muestra salario, identidad, RTN, cuenta bancaria e historial
   // salarial. Sólo lo ven los roles que administran nómina o auditan.
@@ -40,8 +42,16 @@ export default async function FichaEmpleadoPage({
   const puedeDocumentos = puede(usuario, "documentos.emitir");
 
   const { id } = await params;
-  const { tab: tabParam } = await searchParams;
+  const { tab: tabParam, lista: listaParam } = await searchParams;
   const tab = tabParam ?? "personal";
+  // Las flechas ‹ › recorren la lista con los filtros con que se veía; conservan la pestaña.
+  const filtros = leerLista(listaParam);
+  const lista = textoLista(filtros);
+  const vecinos = await vecinosEmpleado(prisma, usuario, id, filtros, true);
+  const aFicha = (otro: string) => {
+    const q = new URLSearchParams({ ...(tab !== "personal" ? { tab } : {}), ...(lista ? { lista } : {}) }).toString();
+    return `/empleados/${otro}${q ? `?${q}` : ""}`;
+  };
 
   const emp = await prisma.empleado.findUnique({
     where: { id },
@@ -94,13 +104,21 @@ export default async function FichaEmpleadoPage({
         }
         actions={
           <>
+            {vecinos && vecinos.total > 1 && (
+              <FlechasEmpleado
+                anterior={vecinos.anterior && { href: aFicha(vecinos.anterior.id), nombre: vecinos.anterior.nombre }}
+                siguiente={vecinos.siguiente && { href: aFicha(vecinos.siguiente.id), nombre: vecinos.siguiente.nombre }}
+                posicion={vecinos.posicion}
+                total={vecinos.total}
+              />
+            )}
             {puedeDocumentos && (
               <Link href={`/documentos?empleadoId=${id}`} className="btn btn-ghost">
                 Emitir documento
               </Link>
             )}
             {puedeEditar && (
-              <Link href={`/empleados/${id}/editar`} className="btn btn-secondary">
+              <Link href={`/empleados/${id}/editar${lista ? `?lista=${encodeURIComponent(lista)}` : ""}`} className="btn btn-secondary">
                 Editar
               </Link>
             )}

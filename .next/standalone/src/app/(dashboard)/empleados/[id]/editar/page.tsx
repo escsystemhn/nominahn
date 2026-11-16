@@ -6,6 +6,7 @@ import Link from "next/link";
 import PageHeader from "@/components/ui/PageHeader";
 import EditarEmpleadoForm, { type EmpleadoEditable } from "@/components/employees/EditarEmpleadoForm";
 import { puede, requerirPermisoPagina } from "@/lib/auth/guard";
+import { leerLista, textoLista, vecinosEmpleado } from "@/lib/empleados/lista";
 import { nombreCompleto } from "@/lib/utils";
 
 /**
@@ -20,8 +21,10 @@ function aValorInput(fecha: Date | null): string {
 
 export default async function EditarEmpleadoPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ lista?: string }>;
 }) {
   // Editar el expediente toca salario, identidad y cuenta bancaria: mismo
   // conjunto de roles que exige `PUT /api/empleados/[id]`, para que la pantalla
@@ -29,6 +32,11 @@ export default async function EditarEmpleadoPage({
   const usuario = await requerirPermisoPagina("empleados.editar");
 
   const { id } = await params;
+  // Las flechas ‹ › pasan a editar al anterior o al siguiente de la lista, con sus filtros.
+  const filtros = leerLista((await searchParams).lista);
+  const lista = textoLista(filtros);
+  const conLista = lista ? `?lista=${encodeURIComponent(lista)}` : "";
+  const vecinos = await vecinosEmpleado(prisma, usuario, id, filtros, puede(usuario, "empleados.pii"));
 
   const conDivisiones = await divisionesHabilitadas(prisma);
   const [emp, sucursales, divisiones, departamentos, puestos, centrosCosto, contratosVigentes] = await Promise.all([
@@ -118,7 +126,7 @@ export default async function EditarEmpleadoPage({
         title="Editar empleado"
         description={<>{nombreCompleto(emp)}, código <strong>{emp.codigo}</strong></>}
         actions={
-          <Link href={`/empleados/${id}`} className="btn btn-secondary">
+          <Link href={`/empleados/${id}${conLista}`} className="btn btn-secondary">
             Volver al expediente
           </Link>
         }
@@ -134,6 +142,13 @@ export default async function EditarEmpleadoPage({
         centrosCosto={centrosCosto}
         tieneContratoVigente={contratosVigentes > 0}
         puedeCambiarAportes={puede(usuario, "configuracion.parametros")}
+        volverA={`/empleados/${id}${conLista}`}
+        navegacion={vecinos && vecinos.total > 1 ? {
+          anterior: vecinos.anterior && { href: `/empleados/${vecinos.anterior.id}/editar${conLista}`, nombre: vecinos.anterior.nombre },
+          siguiente: vecinos.siguiente && { href: `/empleados/${vecinos.siguiente.id}/editar${conLista}`, nombre: vecinos.siguiente.nombre },
+          posicion: vecinos.posicion,
+          total: vecinos.total,
+        } : null}
       />
       </div>
     </div>
