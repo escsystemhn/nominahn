@@ -1,5 +1,4 @@
-import { Prisma } from "@prisma/client";
-import { alcanceEsTotal, conAlcance, filtroSucursales } from "@/lib/auth/alcance";
+import { alcanceEsTotal, filtroSucursales } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import BarraDatos from "@/components/importacion/BarraDatos";
@@ -12,28 +11,10 @@ import FilaEnlace from "@/components/ui/FilaEnlace";
 import FormFiltros from "@/components/ui/FormFiltros";
 import Paginacion from "@/components/ui/Paginacion";
 import ThOrden from "@/components/ui/ThOrden";
-import { leerOrden, type Orden } from "@/lib/http/orden";
-import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
+import type { Orden } from "@/lib/http/orden";
+import { filtroLista, ordenDeConsulta, ordenLista, textoLista, type ColumnaLista } from "@/lib/empleados/lista";
 
 export const metadata = { title: "Empleados" };
-
-const COLUMNAS = ["codigo", "empleado", "sucursal", "departamento", "puesto", "salario", "ingreso", "estado"] as const;
-type Columna = (typeof COLUMNAS)[number];
-
-function ordenDeConsulta({ campo, dir }: Orden<Columna>): Prisma.EmpleadoOrderByWithRelationInput[] {
-  const principal: Record<Columna, Prisma.EmpleadoOrderByWithRelationInput[]> = {
-    codigo: [{ codigo: dir }],
-    empleado: [{ primerApellido: dir }, { primerNombre: dir }],
-    sucursal: [{ sucursal: { nombre: dir } }],
-    departamento: [{ departamento: { nombre: dir } }],
-    puesto: [{ puesto: { nombre: dir } }],
-    salario: [{ salarioBase: dir }],
-    ingreso: [{ fechaIngreso: dir }],
-    estado: [{ estado: dir }],
-  };
-  // El `id` desempata: sin él, dos filas iguales pueden saltar de una página a otra.
-  return [...principal[campo], { id: "asc" }];
-}
 
 export default async function EmpleadosPage({
   searchParams,
@@ -53,14 +34,13 @@ export default async function EmpleadosPage({
   const search = sp.search ?? "";
   const sucursalId = sp.sucursalId;
   // Sin permiso para ver salarios, tampoco se puede deducir quién gana más ordenando.
-  const orden = leerOrden(sp, vePII ? COLUMNAS : COLUMNAS.filter((c) => c !== "salario"), { campo: "empleado", dir: "asc" });
-
+  const orden = ordenLista(sp, vePII);
   // `conAlcance` combina con AND: quien sólo alcanza una sucursal no ve a nadie de otra,
-  // aunque la pida en la dirección.
-  const where = conAlcance(
-    { AND: [await filtroBusquedaEmpleados(prisma, search, { conIdentidad: vePII }), sucursalId ? { sucursalId } : {}] },
-    usuario
-  );
+  // aunque la pida en la dirección (ver lib/empleados/lista.ts).
+  const where = await filtroLista(prisma, usuario, sp, vePII);
+  // La ficha recibe los filtros de la lista: sus flechas ‹ › la recorren en este mismo orden.
+  const lista = textoLista(sp);
+  const aFicha = (id: string) => `/empleados/${id}${lista ? `?lista=${encodeURIComponent(lista)}` : ""}`;
   const sinSucursales = usuario.alcance === "SUCURSAL" && !usuario.sucursalesIds?.length;
 
   const [total, empleados, sucursales] = await Promise.all([
@@ -87,7 +67,7 @@ export default async function EmpleadosPage({
     return `?${q.toString()}`;
   };
   const enlacePagina = (n: number) => consulta({ page: String(n) });
-  const th = { actual: orden, enlace: (o: Orden<Columna>) => consulta({ orden: o.campo, dir: o.dir, page: undefined }) };
+  const th = { actual: orden, enlace: (o: Orden<ColumnaLista>) => consulta({ orden: o.campo, dir: o.dir, page: undefined }) };
 
   const hayFiltro = Boolean(search || sucursalId);
 
@@ -189,10 +169,10 @@ export default async function EmpleadosPage({
                 </tr>
               ) : (
                 empleados.map((emp) => (
-                  <FilaEnlace key={emp.id} href={`/empleados/${emp.id}`}>
+                  <FilaEnlace key={emp.id} href={aFicha(emp.id)}>
                     <td data-etiqueta="Código" className="whitespace-nowrap font-mono text-xs text-gray-500">{emp.codigo}</td>
                     <td data-titulo>
-                      <Link href={`/empleados/${emp.id}`} className="font-medium text-gray-900 hover:text-blue-700">
+                      <Link href={aFicha(emp.id)} className="font-medium text-gray-900 hover:text-blue-700">
                         {nombreCompleto(emp)}
                       </Link>
                       {vePII && <div className="tnum text-xs text-gray-500">{emp.identidad}</div>}
@@ -210,7 +190,7 @@ export default async function EmpleadosPage({
                       <EstadoBadge valor={emp.estado} />
                     </td>
                     <td data-accion className="whitespace-nowrap text-right">
-                      <Link href={`/empleados/${emp.id}`} className="text-sm font-medium text-blue-600 hover:underline">
+                      <Link href={aFicha(emp.id)} className="text-sm font-medium text-blue-600 hover:underline">
                         Ver ficha
                       </Link>
                     </td>

@@ -15,6 +15,7 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zIdOpcional } from "@/lib/http/validar";
 import { divisionesHabilitadas, validarDivisionDeDepartamento } from "@/lib/organizacion/estructura-bd";
+import { motivoParaNoEliminarDepartamento } from "@/lib/organizacion/eliminar";
 
 const schema = z.object({
   nombre: z.string().trim().min(1).max(150).optional(),
@@ -67,4 +68,40 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     ip, userAgent,
   });
   return NextResponse.json(dept);
+}
+
+/** Borrar un departamento que no está amarrado: sin empleados, puestos, vacantes ni planillas. */
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const g = await requerirPermiso("configuracion.editar");
+  if (!g.ok) return g.response;
+
+  const { id } = await params;
+  const d = await prisma.departamento.findUnique({
+    where: { id },
+    select: {
+      nombre: true, sucursalId: true, divisionId: true,
+      _count: { select: { empleados: true, puestos: true, vacantes: true, planillas: true, detallesPlanilla: true } },
+    },
+  });
+  if (!d) return NextResponse.json({ error: "El departamento no existe." }, { status: 404 });
+
+  const c = d._count;
+  const motivo = motivoParaNoEliminarDepartamento({
+    empleados: c.empleados, puestos: c.puestos, vacantes: c.vacantes, planillas: c.planillas, lineasPlanilla: c.detallesPlanilla,
+  });
+  if (motivo) return NextResponse.json({ error: motivo }, { status: 409 });
+
+  const { count } = await prisma.departamento.deleteMany({
+    where: { id, empleados: { none: {} }, puestos: { none: {} }, vacantes: { none: {} }, planillas: { none: {} }, detallesPlanilla: { none: {} } },
+  });
+  if (count === 0) {
+    return NextResponse.json({ error: "No se puede eliminar: acaba de empezar a usarse. Desactívelo para retirarlo de las listas." }, { status: 409 });
+  }
+
+  const { ip, userAgent } = getClientInfo(req);
+  await audit({
+    accion: "DELETE", tabla: "Departamento", registroId: id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
+    valorAnterior: { nombre: d.nombre, sucursalId: d.sucursalId, divisionId: d.divisionId }, ip, userAgent,
+  });
+  return NextResponse.json({ ok: true });
 }

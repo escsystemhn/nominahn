@@ -27,7 +27,7 @@ export default async function ConfiguracionPage() {
     prisma.empresa.findFirst({ orderBy: ORDEN_EMPRESA_PRINCIPAL }),
     prisma.sucursal.findMany({ orderBy: { nombre: "asc" }, include: { logo: { select: { updatedAt: true } } } }),
     prisma.division.findMany({
-      select: { id: true, nombre: true, codigo: true, rtn: true, activa: true, sucursalId: true, _count: { select: { departamentos: true } } },
+      select: { id: true, nombre: true, codigo: true, rtn: true, activa: true, sucursalId: true, _count: { select: { departamentos: true, planillas: true, detallesPlanilla: true } } },
       orderBy: [{ sucursal: { nombre: "asc" } }, { nombre: "asc" }],
     }),
     prisma.departamento.findMany({
@@ -60,7 +60,7 @@ export default async function ConfiguracionPage() {
     <ConfiguracionClient
       empresa={empresa}
       sucursales={sucursales.map(({ logo, ...s }) => ({ ...s, logoVersion: logo?.updatedAt.getTime() ?? null }))}
-      divisiones={divisiones.map(({ _count, ...v }) => ({ ...v, departamentos: _count.departamentos }))}
+      divisiones={divisiones.map(({ _count, ...v }) => ({ ...v, departamentos: _count.departamentos, conPlanillas: _count.planillas + _count.detallesPlanilla > 0 }))}
       departamentos={departamentos.map(({ _count, ...d }) => ({ ...d, empleados: _count.empleados }))}
       puestos={puestos.map(({ _count, salarioMinimo: minimo, salarioMaximo: maximo, ...p }) => ({
         ...p,

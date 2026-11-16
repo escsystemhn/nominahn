@@ -9,6 +9,7 @@ import { z } from "zod";
 import { useAvisos } from "@/components/ui/Avisos";
 import { Field, PestanasFicha, ResumenErrores, erroresPorPestana, fieldClass, primerError, type PestanaFicha } from "./CamposFicha";
 import { montoComoTexto } from "@/lib/formato/monto-texto";
+import FlechasEmpleado, { type DestinoFlecha } from "./FlechasEmpleado";
 
 const OBLIGATORIO = "Este dato es obligatorio.";
 const ELEGIR = "Elija una opción.";
@@ -82,6 +83,10 @@ interface Props {
   tieneContratoVigente: boolean;
   /** Apagar el IHSS o el RAP de la ficha: sólo con el permiso de los parámetros de ley. */
   puedeCambiarAportes: boolean;
+  /** El expediente, con los filtros de la lista: a donde se vuelve al guardar o cancelar. */
+  volverA: string;
+  /** Flechas ‹ › al anterior y al siguiente de la lista; null si no hay lista que recorrer. */
+  navegacion: { anterior: DestinoFlecha | null; siguiente: DestinoFlecha | null; posicion: number; total: number } | null;
 }
 
 const TIPOS_CONTRATO: Record<FormData["tipoContrato"], string> = {
@@ -124,6 +129,8 @@ export default function EditarEmpleadoForm({
   centrosCosto,
   tieneContratoVigente,
   puedeCambiarAportes,
+  volverA,
+  navegacion,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -207,7 +214,7 @@ export default function EditarEmpleadoForm({
     }
 
     if (Object.keys(cambios).length === 0) {
-      router.push(`/empleados/${id}`);
+      router.push(volverA);
       return;
     }
 
@@ -231,7 +238,7 @@ export default function EditarEmpleadoForm({
         return;
       }
       avisar.exito("Cambios guardados.");
-      router.push(`/empleados/${id}`);
+      router.push(volverA);
       router.refresh();
     } catch {
       setErrorApi("No se pudo conectar con el servidor. Intente nuevamente.");
@@ -242,7 +249,10 @@ export default function EditarEmpleadoForm({
 
   return (
     <form method="post" onSubmit={handleSubmit(onSubmit, alFallar)} className="space-y-5">
-      <PestanasFicha tab={tab} onCambiar={setTab} errores={porPestana} />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <PestanasFicha tab={tab} onCambiar={setTab} errores={porPestana} />
+        {navegacion && <FlechasEmpleado {...navegacion} hayCambios={Object.keys(dirtyFields).length > 0} />}
+      </div>
       <ResumenErrores errores={porPestana} />
 
       {errorApi && (
@@ -540,7 +550,7 @@ export default function EditarEmpleadoForm({
             </button>
             <div className="flex gap-2">
               <Link
-                href={`/empleados/${id}`}
+                href={volverA}
                 className="px-5 py-2 border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50"
               >
                 Cancelar
