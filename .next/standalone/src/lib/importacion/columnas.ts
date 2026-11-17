@@ -112,7 +112,7 @@ export const COLUMNAS_EMPLEADO: readonly ColumnaCsv[] = [
     etiqueta: "División",
     descripcion:
       "Nombre de la división dentro de esa sucursal. Opcional: sólo hace falta si la sucursal tiene departamentos con el mismo nombre en varias divisiones.",
-    ejemplo: "PAGSA MAYOREO",
+    ejemplo: "Mayoreo",
   },
   {
     clave: "departamento",

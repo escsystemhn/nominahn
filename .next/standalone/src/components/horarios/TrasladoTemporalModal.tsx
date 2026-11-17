@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Campo } from "@/components/ui/ModalForm";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 interface Candidato {
   id: string;
@@ -20,11 +21,12 @@ interface Props {
   desde: string;
   hasta: string;
   sucursales: { id: string; nombre: string }[];
+  niveles: NivelesEstructura;
   onListo: (aviso: string | null) => void;
   onCerrar: () => void;
 }
 
-export default function TrasladoTemporalModal({ planId, desde, hasta, sucursales, onListo, onCerrar }: Props) {
+export default function TrasladoTemporalModal({ planId, desde, hasta, sucursales, niveles, onListo, onCerrar }: Props) {
   const [candidatos, setCandidatos] = useState<Candidato[] | null>(null);
   const [buscar, setBuscar] = useState("");
   const [form, setForm] = useState({ empleadoId: "", sucursalDestinoId: sucursales[0]?.id ?? "", desde, hasta, motivo: "" });
@@ -69,15 +71,15 @@ export default function TrasladoTemporalModal({ planId, desde, hasta, sucursales
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Personal de otra sucursal">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Personal de fuera del plan">
       <div className="panel max-h-full w-full max-w-lg space-y-4 overflow-y-auto p-5 shadow-xl">
-        <h3 className="text-base font-semibold text-gray-900">Traer personal de otra sucursal</h3>
+        <h3 className="text-base font-semibold text-gray-900">Traer personal de fuera del plan</h3>
         <p className="text-sm text-gray-600">
-          Registra un <b>traslado temporal</b>: esos días la persona aparece en este plan como personal de la sucursal de destino
-          y en su propia sucursal queda «trasladada». Su sucursal y su planilla no cambian.
+          Registra un <b>traslado temporal</b>: esos días la persona aparece en este plan como personal del destino elegido
+          y en su {niveles.sucursal.toLowerCase()} de origen queda «trasladada». Su {niveles.sucursal.toLowerCase()} y su planilla no cambian.
         </p>
         <Campo etiqueta="Buscar">
-          <input className="input" placeholder="Nombre, código, sucursal o puesto" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
+          <input className="input" placeholder={`Nombre, código, ${niveles.sucursal.toLowerCase()} o puesto`} value={buscar} onChange={(e) => setBuscar(e.target.value)} />
         </Campo>
         <Campo etiqueta="Empleado">
           <select className="input" value={form.empleadoId} onChange={(e) => setForm({ ...form, empleadoId: e.target.value })} size={Math.min(8, Math.max(3, visibles.length))}>
@@ -87,7 +89,7 @@ export default function TrasladoTemporalModal({ planId, desde, hasta, sucursales
             ))}
           </select>
         </Campo>
-        <Campo etiqueta="A la sucursal">
+        <Campo etiqueta={`${niveles.sucursal} de destino`}>
           <select className="input" value={form.sucursalDestinoId} onChange={(e) => setForm({ ...form, sucursalDestinoId: e.target.value })}>
             {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
           </select>

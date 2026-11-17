@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { motivoParaNoEliminarDepartamento, motivoParaNoEliminarSucursal, motivoParaNoMoverDivision } from "./eliminar";
+import { contarBorradores } from "./movimientos-division";
 
 const libreS = { empleados: 0, divisiones: 0, departamentos: 0, planillas: 0, lineasPlanilla: 0, traslados: 0 };
 const libreD = { empleados: 0, puestos: 0, vacantes: 0, planillas: 0, lineasPlanilla: 0 };
@@ -33,5 +34,12 @@ describe("mover una empresa de grupo", () => {
   });
   it("con cobertura de horarios de sus puestos en el grupo actual, no", () => {
     expect(motivoParaNoMoverDivision({ planillas: 0, lineasPlanilla: 0, coberturasPuestos: 2 })).toMatch(/cobertura de horarios/);
+  });
+});
+
+describe("contarBorradores", () => {
+  it("cuenta cada borrador una vez, sea por su alcance o por sus líneas", () => {
+    expect(contarBorradores([], [])).toBe(0);
+    expect(contarBorradores([{ id: "a" }], [{ planillaId: "a" }, { planillaId: "b" }])).toBe(2);
   });
 });

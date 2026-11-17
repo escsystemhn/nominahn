@@ -16,6 +16,7 @@ import FranjaCifras from "@/components/ui/FranjaCifras";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatCurrency } from "@/lib/utils";
 import type { Tablero } from "@/lib/dashboard/indicadores-bd";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 const SERIE_1 = "#2a78d6"; // azul
 const SERIE_2 = "#eb6834"; // naranja
@@ -26,6 +27,7 @@ interface Props {
   sucursales: { id: string; nombre: string }[];
   departamentos: { id: string; nombre: string; sucursalId: string }[];
   inicial: { desde: string; hasta: string };
+  niveles: NivelesEstructura;
 }
 
 const pct = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("es-HN", { maximumFractionDigits: 1 })} %`);
@@ -59,7 +61,7 @@ function Grafico({ titulo, alto = 240, children }: { titulo: string; alto?: numb
   );
 }
 
-export default function TableroClient({ sucursales, departamentos, inicial }: Props) {
+export default function TableroClient({ sucursales, departamentos, inicial, niveles }: Props) {
   const [filtro, setFiltro] = useState({ ...inicial, sucursalId: "", departamentoId: "" });
   const [datos, setDatos] = useState<Tablero | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,9 +117,9 @@ export default function TableroClient({ sucursales, departamentos, inicial }: Pr
           <input type="date" className="input mt-1 w-40!" value={filtro.hasta} min={filtro.desde} onChange={(e) => e.target.value && setFiltro({ ...filtro, hasta: e.target.value })} />
         </label>
         <label className="text-sm">
-          <span className="block font-medium text-gray-800">Sucursal</span>
+          <span className="block font-medium text-gray-800">{niveles.sucursal}</span>
           <select className="input mt-1 w-56!" value={filtro.sucursalId} onChange={(e) => setFiltro({ ...filtro, sucursalId: e.target.value, departamentoId: "" })}>
-            <option value="">Todas</option>
+            <option value="">{niveles.todasSucursales}</option>
             {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
           </select>
         </label>
@@ -149,7 +151,7 @@ export default function TableroClient({ sucursales, departamentos, inicial }: Pr
             />
             <div className="grid gap-4 lg:grid-cols-2">
               {/* Barras horizontales: los nombres de sucursal son largos y no caben bajo el eje. */}
-              <Grafico titulo="Activos por sucursal" alto={Math.max(200, datos.fuerza.porSucursal.length * 30 + 20)}>
+              <Grafico titulo={`Activos por ${niveles.sucursal.toLowerCase()}`} alto={Math.max(200, datos.fuerza.porSucursal.length * 30 + 20)}>
                 <BarChart data={datos.fuerza.porSucursal} layout="vertical" margin={{ top: 0, right: 16, left: 8, bottom: 0 }}>
                   <CartesianGrid horizontal={false} stroke={REJILLA} />
                   <XAxis type="number" allowDecimals={false} {...ejes} />
@@ -298,7 +300,7 @@ export default function TableroClient({ sucursales, departamentos, inicial }: Pr
                           </ResponsiveContainer>
                         </div>
                         <table className="table-base text-xs">
-                          <thead><tr><th>Sucursal</th><th className="num">Empleados</th><th className="num">Proyectado</th><th className="num">Adelantos</th><th className="num">Neto</th></tr></thead>
+                          <thead><tr><th>{niveles.sucursal}</th><th className="num">Empleados</th><th className="num">Proyectado</th><th className="num">Adelantos</th><th className="num">Neto</th></tr></thead>
                           <tbody>
                             {d.porSucursal.map((s) => (
                               <tr key={s.nombre}><td>{s.nombre}</td><td className="num">{s.empleados}</td><td className="num">{formatCurrency(s.proyectado)}</td><td className="num">{formatCurrency(s.adelantos)}</td><td className="num">{formatCurrency(s.neto)}</td></tr>

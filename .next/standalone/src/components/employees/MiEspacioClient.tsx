@@ -13,9 +13,13 @@ import MisPrestamos from "@/components/portal/MisPrestamos";
 import MisConstancias from "@/components/portal/MisConstancias";
 import MisCapacitaciones from "@/components/portal/MisCapacitaciones";
 import SaludFamilia from "@/components/employees/SaludFamilia";
+import FotoAvatar from "@/components/employees/FotoAvatar";
 
 interface Props {
   nombre: string;
+  /** Para mostrar su foto; la cambia Recursos Humanos, no el empleado. */
+  empleadoId?: string;
+  fotoVersion?: number | null;
   puesto: string;
   diasDevengados: number;
   diasDisponibles: number;
@@ -100,7 +104,7 @@ async function obtenerEspacio(puedeAprobar: boolean, soloAprobaciones: boolean):
   };
 }
 
-export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDisponibles, diasTomados, puedeAprobar, soloAprobaciones = false }: Props) {
+export default function MiEspacioClient({ nombre, empleadoId, fotoVersion = null, puesto, diasDevengados, diasDisponibles, diasTomados, puedeAprobar, soloAprobaciones = false }: Props) {
   const { avisar } = useAvisos();
   // ?tab=capacitaciones: el visor de material vuelve a la pestaña de donde salió.
   const pedida = useSearchParams().get("tab");
@@ -217,7 +221,10 @@ export default function MiEspacioClient({ nombre, puesto, diasDevengados, diasDi
         <PageHeader title="Aprobaciones" description="Permisos y vacaciones que esperan respuesta." />
       ) : (
       <>
-      <PageHeader title="Mi espacio" description={`${nombre}${puesto ? `, ${puesto}` : ""}`}>
+      <PageHeader
+        title={empleadoId ? <span className="flex items-center gap-3"><FotoAvatar empleadoId={empleadoId} version={fotoVersion} nombre={nombre} tamano="md" />Mi espacio</span> : "Mi espacio"}
+        description={`${nombre}${puesto ? `, ${puesto}` : ""}`}
+      >
         <div className="-mb-5 flex gap-1 overflow-x-auto">
           {tabs.map(([key, label]) => (
             <button

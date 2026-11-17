@@ -3,6 +3,8 @@ import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { conAlcance, filtroSucursales } from "@/lib/auth/alcance";
 import { nombreCompleto } from "@/lib/utils";
 import PrestacionesClient from "@/components/payroll/PrestacionesClient";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 export const metadata = { title: "Prestaciones" };
 
@@ -10,7 +12,7 @@ export default async function PrestacionesPage({ searchParams }: { searchParams:
   const usuario = await requerirPermisoPagina("prestaciones.ver");
   const { tab } = await searchParams;
 
-  const [empleados, sucursales] = await Promise.all([
+  const [empleados, sucursales, jerarquia] = await Promise.all([
     prisma.empleado.findMany({
       where: conAlcance({ estado: { in: ["ACTIVO", "VACACIONES", "PERMISO", "SUSPENDIDO"] } }, usuario),
       select: {
@@ -20,6 +22,7 @@ export default async function PrestacionesPage({ searchParams }: { searchParams:
       orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
     }),
     prisma.sucursal.findMany({ where: { AND: [{ activa: true }, filtroSucursales(usuario)] }, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
+    jerarquiaNominaHabilitada(prisma),
   ]);
 
   return (
@@ -34,6 +37,7 @@ export default async function PrestacionesPage({ searchParams }: { searchParams:
         salarioBase: Number(e.salarioBase),
       }))}
       sucursales={sucursales}
+      niveles={etiquetasNiveles(jerarquia)}
     />
   );
 }

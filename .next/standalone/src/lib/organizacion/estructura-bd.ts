@@ -21,7 +21,7 @@ export const CLAVE_DIVISIONES = "ORGANIZACION_DIVISIONES";
 const DESCRIPCION_DIVISIONES = "Usa el nivel División entre la sucursal y el departamento (Sucursal → División → Departamento)";
 
 export const CLAVE_JERARQUIA_NOMINA = "ORGANIZACION_JERARQUIA_NOMINA";
-const DESCRIPCION_JERARQUIA_NOMINA = "Muestra la nómina como Frecuencia → Grupo → Empresa → Departamento → Empleados";
+const DESCRIPCION_JERARQUIA_NOMINA = "Muestra la nómina como Frecuencia → Grupo → Sucursal → Departamento → Empleados";
 
 async function leerOpcion(db: Db, clave: string): Promise<boolean> {
   const fila = await db.configuracionSistema.findUnique({ where: { clave }, select: { valor: true } });

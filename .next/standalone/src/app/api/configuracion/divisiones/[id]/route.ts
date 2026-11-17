@@ -1,10 +1,11 @@
 /**
  * Edición y baja de una división.
  *
- * Una división (la «empresa» de la jerarquía de nómina) cambia de sucursal (su «grupo») sólo
- * si no tiene movimientos: ni planillas ni líneas de planilla, que cuelgan de la sucursal en
- * que se emitieron (pedido de Edbin, 2026-11-16). Se mueve con sus departamentos y los
- * empleados de ellos, en una sola transacción. Una división en uso no se borra (dejaría
+ * Una división (la «sucursal» de la jerarquía de nómina) cambia de sucursal (su «grupo») sólo
+ * si no tiene movimientos: ni planillas ni líneas de planilla ya calculadas o cerradas, que
+ * cuelgan de la sucursal en que se emitieron (pedido de Edbin, 2026-11-16). Los borradores
+ * no cuentan: los que la incluyen se descartan (2026-11-16). Se mueve con sus departamentos
+ * y los empleados de ellos, en una sola transacción. Una división en uso no se borra (dejaría
  * planillas pagadas apuntando a nada): se DESACTIVA, lo que la retira de los desplegables
  * sin tocar el histórico.
  */
@@ -18,6 +19,7 @@ import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { motivoParaNoMoverDivision } from "@/lib/organizacion/eliminar";
 import { zRtnEmpresaOpcional } from "@/lib/organizacion/estructura-bd";
+import { borradoresDeDivision, lineasConMovimiento, planillasConMovimiento } from "@/lib/organizacion/movimientos-division";
 
 const schema = z.object({
   nombre: z.string().trim().min(1).max(150).optional(),
@@ -52,16 +54,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!destino || destino.empresaId !== sucursalActual.empresaId) return NextResponse.json({ error: "El grupo elegido no existe." }, { status: 404 });
     if (!destino.activa) return NextResponse.json({ error: "El grupo elegido está inactivo." }, { status: 409 });
     const [planillas, lineasPlanilla, coberturasPuestos] = await Promise.all([
-      prisma.planilla.count({ where: { divisionId: id } }),
-      prisma.planillaDetalle.count({ where: { divisionId: id } }),
+      prisma.planilla.count({ where: planillasConMovimiento(id) }),
+      prisma.planillaDetalle.count({ where: lineasConMovimiento(id) }),
       prisma.coberturaSucursal.count({ where: { sucursalId: actual.sucursalId, puesto: { departamento: { divisionId: id } } } }),
     ]);
     const motivo = motivoParaNoMoverDivision({ planillas, lineasPlanilla, coberturasPuestos });
     if (motivo) return NextResponse.json({ error: motivo }, { status: 409 });
+    const conSap = await prisma.planilla.count({ where: { AND: [borradoresDeDivision(id), { enviosSap: { some: {} } }] } });
+    if (conSap) {
+      return NextResponse.json({ error: "No se puede cambiar de grupo: un borrador que la incluye tiene envíos a SAP. Anúlelo primero." }, { status: 409 });
+    }
   }
 
   try {
     const { division, movidos } = await prisma.$transaction(async (tx) => {
+      // Los borradores que la incluyen se descartan antes de moverla, igual que «Descartar borrador».
+      const borradores = nuevaSucursal
+        ? await tx.planilla.findMany({ where: borradoresDeDivision(id), select: { id: true, tipo: true, fechaInicio: true, fechaFin: true } })
+        : [];
+      if (borradores.length) {
+        const ids = borradores.map((b) => b.id);
+        await tx.planillaDetalle.deleteMany({ where: { planillaId: { in: ids } } });
+        await tx.planilla.deleteMany({ where: { id: { in: ids }, estado: "BORRADOR" } });
+      }
       const division = await tx.division.update({
         where: { id },
         data: {
@@ -78,9 +93,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // cambia nada del pasado porque no hay planillas.
       const departamentos = await tx.departamento.updateMany({ where: { divisionId: id }, data: { sucursalId: nuevaSucursal } });
       const empleados = await tx.empleado.updateMany({ where: { departamento: { divisionId: id } }, data: { sucursalId: nuevaSucursal } });
-      // Por si alguien sumó una planilla mientras tanto: se deshace todo.
-      if (await tx.planilla.count({ where: { divisionId: id } })) throw new Error("CON_PLANILLAS");
-      return { division, movidos: { departamentos: departamentos.count, empleados: empleados.count } };
+      // Por si alguien calculó una planilla mientras tanto: se deshace todo.
+      const [planillas, lineas] = await Promise.all([
+        tx.planilla.count({ where: { divisionId: id } }),
+        tx.planillaDetalle.count({ where: { divisionId: id } }),
+      ]);
+      if (planillas + lineas) throw new Error("CON_PLANILLAS");
+      return {
+        division,
+        movidos: {
+          departamentos: departamentos.count, empleados: empleados.count, borradoresDescartados: borradores.length,
+          ...(borradores.length ? { borradores: borradores.map((b) => ({ id: b.id, tipo: b.tipo, fechaInicio: b.fechaInicio, fechaFin: b.fechaFin })) } : {}),
+        },
+      };
     });
     const { ip, userAgent } = getClientInfo(req);
     await audit({
@@ -95,7 +120,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ ...division, movidos });
   } catch (e) {
     if (e instanceof Error && e.message === "CON_PLANILLAS") {
-      return NextResponse.json({ error: "No se puede cambiar de grupo: acaba de generarse una planilla de esta empresa." }, { status: 409 });
+      return NextResponse.json({ error: "No se puede cambiar de grupo: acaba de generarse una planilla que la incluye." }, { status: 409 });
     }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return NextResponse.json({ error: `Ya existe una división llamada «${c.nombre ?? antes.nombre}» en ${nuevaSucursal ? "el grupo elegido" : "esa sucursal"}.` }, { status: 409 });

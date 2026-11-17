@@ -22,11 +22,17 @@ import {
 } from "@/lib/organizacion/destinos-departamento";
 import { formatCurrency } from "@/lib/utils";
 
-export interface SucursalEstructura { id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; telefono: string | null; descripcion: string | null; activa: boolean; logoVersion: number | null }
+export interface SucursalEstructura {
+  id: string; empresaId: string; nombre: string; codigo: string; direccion: string | null; telefono: string | null; descripcion: string | null; activa: boolean; logoVersion: number | null;
+  /** RTN del grupo (jerarquía de nómina), que heredan sus sucursales sin RTN propio. */
+  rtn: string | null;
+}
 export interface DivisionEstructura {
   id: string; nombre: string; codigo: string | null; rtn: string | null; activa: boolean; sucursalId: string; departamentos: number;
-  /** Con planillas no cambia de grupo (sucursal). */
+  /** Con planillas calculadas o cerradas no cambia de grupo (sucursal). */
   conPlanillas: boolean;
+  /** Planillas en borrador que la incluyen: se descartan si cambia de grupo. */
+  borradores: number;
 }
 export interface DepartamentoEstructura { id: string; nombre: string; codigo: string | null; activo: boolean; sucursalId: string; divisionId: string | null; empleados: number }
 export interface PuestoEstructura {
@@ -222,9 +228,9 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
           <div className="max-w-2xl">
             <h2 className="text-base font-semibold text-gray-900">Jerarquía de nómina</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Agrega al menú Nómina una vista en árbol: Frecuencia → Grupo → Empresa → Departamento → Empleados, con cambio
-              rápido entre quincenal y mensual. Cada sucursal funciona como grupo de nómina y cada división como empresa, con
-              su RTN. Al activarla se activa también el nivel División.
+              Organiza la nómina en Frecuencia → Grupo → Sucursal → Departamento → Empleados. Cada grupo reúne sus
+              sucursales y lleva el RTN, que heredan las sucursales sin uno propio. Al activarla se activa también el nivel
+              División.
             </p>
           </div>
           <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800">
@@ -247,7 +253,7 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
         </div>
         <div className="panel overflow-x-auto">
           <table className="table-base">
-            <thead><tr><th>Logo</th><th>Nombre</th><th>Código</th><th>Dirección</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
+            <thead><tr><th>Logo</th><th>Nombre</th><th>Código</th>{jerarquiaHabilitada && <th>RTN</th>}<th>Dirección</th><th>Estado</th><th><span className="sr-only">Acciones</span></th></tr></thead>
             <tbody>
               {sucursales.map((s) => (
                 <tr key={s.id}>
@@ -259,6 +265,7 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
                   </td>
                   <td className="font-medium text-gray-900">{s.nombre}</td>
                   <td className="font-mono text-xs">{s.codigo}</td>
+                  {jerarquiaHabilitada && <td className="font-mono text-xs">{s.rtn ?? "—"}</td>}
                   <td>{s.direccion ?? "—"}</td>
                   <td><EstadoBadge valor={s.activa ? "ACTIVA" : "INACTIVA"} /></td>
                   <td className="whitespace-nowrap text-right">
@@ -508,16 +515,25 @@ function useGuardar(onListo: () => void) {
 }
 
 function FormSucursal({ sucursal, empresaId, conJerarquia, onCerrar, onListo }: { sucursal: SucursalEstructura | null; empresaId: string | null; conJerarquia: boolean; onCerrar: () => void; onListo: () => void }) {
-  const [f, setF] = useState({ nombre: sucursal?.nombre ?? "", codigo: sucursal?.codigo ?? "", direccion: sucursal?.direccion ?? "", telefono: sucursal?.telefono ?? "", descripcion: sucursal?.descripcion ?? "" });
+  const [f, setF] = useState({ nombre: sucursal?.nombre ?? "", codigo: sucursal?.codigo ?? "", direccion: sucursal?.direccion ?? "", telefono: sucursal?.telefono ?? "", descripcion: sucursal?.descripcion ?? "", rtn: sucursal?.rtn ?? "" });
   const { cargando, error, guardar } = useGuardar(onListo);
+  const digitosRtn = f.rtn.replace(/\D/g, "").length;
+  const rtnValido = /^[\d\s-]*$/.test(f.rtn) && (digitosRtn === 0 || digitosRtn === 14);
+  const extra = conJerarquia ? { descripcion: f.descripcion || null, rtn: f.rtn || null } : {};
   return (
-    <Modal titulo={sucursal ? `Editar ${sucursal.nombre}` : etiquetasNiveles(conJerarquia).nuevaSucursal} error={error} cargando={cargando} puedeGuardar={!!f.nombre.trim() && !!f.codigo.trim()} onCerrar={onCerrar}
+    <Modal titulo={sucursal ? `Editar ${sucursal.nombre}` : etiquetasNiveles(conJerarquia).nuevaSucursal} error={error} cargando={cargando} puedeGuardar={!!f.nombre.trim() && !!f.codigo.trim() && rtnValido} onCerrar={onCerrar}
       onGuardar={() => sucursal
-        ? guardar(`/api/configuracion/sucursales/${sucursal.id}`, "PATCH", { nombre: f.nombre, codigo: f.codigo, direccion: f.direccion || null, telefono: f.telefono || null, ...(conJerarquia ? { descripcion: f.descripcion || null } : {}) })
-        : guardar("/api/configuracion/sucursales", "POST", { ...f, empresaId })}>
+        ? guardar(`/api/configuracion/sucursales/${sucursal.id}`, "PATCH", { nombre: f.nombre, codigo: f.codigo, direccion: f.direccion || null, telefono: f.telefono || null, ...extra })
+        : guardar("/api/configuracion/sucursales", "POST", { nombre: f.nombre, codigo: f.codigo, direccion: f.direccion, telefono: f.telefono, empresaId, ...(conJerarquia ? { descripcion: f.descripcion, rtn: f.rtn } : {}) })}>
       <Campo etiqueta="Nombre"><input className="input" value={f.nombre} placeholder={conJerarquia ? "Nómina Confidencial" : undefined} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
       <Campo etiqueta="Código"><input className="input" value={f.codigo} placeholder="SPS-002" onChange={(e) => setF({ ...f, codigo: e.target.value })} /></Campo>
       {conJerarquia && <Campo etiqueta="Descripción (opcional)"><input className="input" value={f.descripcion} maxLength={300} onChange={(e) => setF({ ...f, descripcion: e.target.value })} /></Campo>}
+      {conJerarquia && (
+        <Campo etiqueta="RTN del grupo (opcional)">
+          <input className="input" inputMode="numeric" value={f.rtn} placeholder="Lo heredan sus sucursales" onChange={(e) => setF({ ...f, rtn: e.target.value })} />
+        </Campo>
+      )}
+      {conJerarquia && !rtnValido && <p className="text-sm text-red-700" role="alert">El RTN debe tener 14 dígitos. Puede usar guiones o espacios.</p>}
       <Campo etiqueta="Dirección"><input className="input" value={f.direccion} onChange={(e) => setF({ ...f, direccion: e.target.value })} /></Campo>
       <Campo etiqueta="Teléfono"><input className="input" value={f.telefono} onChange={(e) => setF({ ...f, telefono: e.target.value })} /></Campo>
     </Modal>
@@ -534,7 +550,7 @@ function FormDivision({ division, sucursales, departamentos, conJerarquia, onCer
   const digitosRtn = f.rtn.replace(/\D/g, "").length;
   const rtnValido = /^[\d\s-]*$/.test(f.rtn) && (digitosRtn === 0 || digitosRtn === 14);
   const rtn = conJerarquia ? { rtn: f.rtn || null } : {};
-  // Sin planillas puede pasar a otro grupo: se lleva sus departamentos y a su gente.
+  // Sin planillas calculadas o cerradas puede pasar a otro grupo: se lleva sus departamentos y a su gente.
   const puedeMover = !!division && !division.conPlanillas;
   const mueve = !!division && f.sucursalId !== division.sucursalId;
   const propios = division ? departamentos.filter((d) => d.divisionId === division.id) : [];
@@ -551,19 +567,24 @@ function FormDivision({ division, sucursales, departamentos, conJerarquia, onCer
           {opcionesSucursal.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
       </Campo>
-      <Campo etiqueta="Nombre"><input className="input" value={f.nombre} placeholder={conJerarquia ? "PAGSA" : "PAGSA MAYOREO"} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
+      <Campo etiqueta="Nombre"><input className="input" value={f.nombre} placeholder={conJerarquia ? "Sucursal Centro" : "Mayoreo"} onChange={(e) => setF({ ...f, nombre: e.target.value })} /></Campo>
       <Campo etiqueta="Código (opcional)"><input className="input" value={f.codigo} onChange={(e) => setF({ ...f, codigo: e.target.value })} /></Campo>
-      {conJerarquia && <Campo etiqueta="RTN (opcional)"><input className="input" inputMode="numeric" value={f.rtn} onChange={(e) => setF({ ...f, rtn: e.target.value })} /></Campo>}
+      {conJerarquia && (
+        <Campo etiqueta="RTN propio (opcional)">
+          <input className="input" inputMode="numeric" value={f.rtn} placeholder="Vacío: usa el del grupo" onChange={(e) => setF({ ...f, rtn: e.target.value })} />
+        </Campo>
+      )}
       {!rtnValido && <p className="text-sm text-red-700" role="alert">El RTN debe tener 14 dígitos. Puede usar guiones o espacios.</p>}
       {division && !puedeMover && (
-        <p className="text-xs text-gray-500">{`Ya tiene planillas: su ${grupo} no cambia, porque las planillas emitidas cuelgan de ${conJerarquia ? "él" : "ella"}.`}</p>
+        <p className="text-xs text-gray-500">{`Ya tiene planillas calculadas o cerradas: su ${grupo} no cambia, porque esas planillas cuelgan de ${conJerarquia ? "él" : "ella"}.`}</p>
       )}
       {puedeMover && !mueve && (
-        <p className="text-xs text-gray-500">{`Todavía no tiene planillas: puede pasarla a otro ${grupo}. Sus departamentos y empleados se mueven con ella.`}</p>
+        <p className="text-xs text-gray-500">{`No tiene planillas calculadas ni cerradas: puede pasarla a otro ${grupo}. Sus departamentos y empleados se mueven con ella.`}</p>
       )}
       {mueve && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status" data-mueve-division>
           {`Se mueven con ella ${propios.length === 1 ? "1 departamento" : `${propios.length} departamentos`} y ${gente === 1 ? "1 empleado" : `${gente} empleados`} al ${grupo} elegido.`}
+          {division.borradores > 0 && ` Se descarta${division.borradores === 1 ? " 1 planilla en borrador que la incluye" : `n ${division.borradores} planillas en borrador que la incluyen`}; genérela${division.borradores === 1 ? "" : "s"} de nuevo después.`}
         </p>
       )}
     </Modal>

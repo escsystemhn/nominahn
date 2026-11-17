@@ -22,6 +22,7 @@ import { formatDateTime } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 type Alcance = "TODO" | "SUCURSAL" | "DEPARTAMENTO" | "PROPIO";
 
@@ -48,6 +49,7 @@ interface Props {
   puedeGestionar: boolean;
   puedeResetear: boolean;
   puedeVerPerfiles: boolean;
+  niveles: NivelesEstructura;
 }
 
 const ROLES = [
@@ -64,12 +66,12 @@ const ETIQUETA_ROL: Record<string, string> = {
   EMPLEADO: "Empleado",
 };
 
-const ETIQUETA_ALCANCE: Record<Alcance, string> = {
-  TODO: "Toda la empresa",
-  SUCURSAL: "Sus sucursales",
+const etiquetasAlcance = (niveles: NivelesEstructura): Record<Alcance, string> => ({
+  TODO: niveles.todaLaEmpresa,
+  SUCURSAL: `Sus ${niveles.sucursales.toLowerCase()}`,
   DEPARTAMENTO: "Su departamento",
   PROPIO: "Sólo su expediente",
-};
+});
 
 const FORM_VACIO = {
   email: "",
@@ -89,7 +91,9 @@ export default function UsuariosClient({
   puedeGestionar,
   puedeResetear,
   puedeVerPerfiles,
+  niveles,
 }: Props) {
+  const etiquetaAlcance = etiquetasAlcance(niveles);
   const router = useRouter();
   const { confirmar } = useAvisos();
   const [cargando, setCargando] = useState(false);
@@ -298,12 +302,12 @@ export default function UsuariosClient({
                         )}
                       </td>
                       <td data-etiqueta="Alcance" className="text-xs text-gray-600">
-                        {ETIQUETA_ALCANCE[u.perfil?.alcance ?? "TODO"]}
+                        {etiquetaAlcance[u.perfil?.alcance ?? "TODO"]}
                         {u.perfil?.alcance === "SUCURSAL" && (
                           <span className="block text-gray-500">
                             {u.sucursalesIds.length === 0
-                              ? "sin sucursales asignadas"
-                              : `${u.sucursalesIds.length} sucursal(es)`}
+                              ? `sin ${niveles.sucursales.toLowerCase()}`
+                              : `${u.sucursalesIds.length} ${(u.sucursalesIds.length === 1 ? niveles.sucursal : niveles.sucursales).toLowerCase()}`}
                           </span>
                         )}
                       </td>
@@ -417,7 +421,7 @@ export default function UsuariosClient({
                 <option value="">Sin perfil — usar el rol</option>
                 {perfiles.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.nombre}, {ETIQUETA_ALCANCE[p.alcance]}
+                    {p.nombre}, {etiquetaAlcance[p.alcance]}
                   </option>
                 ))}
               </select>
@@ -440,8 +444,8 @@ export default function UsuariosClient({
 
             {pideSucursales && (
               <Campo
-                etiqueta="Sucursales que puede ver"
-                ayuda="El perfil elegido limita el acceso a las sucursales asignadas. Sin ninguna, no verá personal."
+                etiqueta={`${niveles.sucursales} que puede ver`}
+                ayuda={`El perfil elegido sólo deja ver el personal de cada ${niveles.sucursal.toLowerCase()} que marque aquí. Si no marca nada, no verá personal.`}
               >
                 <div className="space-y-1 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
                   {sucursales.map((s) => (

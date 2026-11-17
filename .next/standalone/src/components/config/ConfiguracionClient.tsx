@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * Configuración del sistema. Las secciones van en un menú lateral agrupado —Organización,
+ * Parametrizaciones, Integraciones y Sistema— en vez de 11 pestañas en una fila que ya no
+ * cabían (pedido de Edbin, 2026-11-16). Cada sección tiene su dirección (`?seccion=asistencia`),
+ * para enlazarla; en pantallas angostas el menú es un selector.
+ */
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAvisos } from "@/components/ui/Avisos";
@@ -9,11 +16,14 @@ import { formatCurrency } from "@/lib/utils";
 import CorreoSalienteConfig from "./CorreoSalienteConfig";
 import SapConexionConfig from "./SapConexionConfig";
 import ParametrosLeyConfig from "./ParametrosLeyConfig";
+import PoliticaAsistenciaConfig from "./PoliticaAsistenciaConfig";
 import FormatosBancoConfig from "./FormatosBancoConfig";
 import EstructuraOrganizacional, { type DepartamentoEstructura, type DivisionEstructura, type PuestoEstructura } from "./EstructuraOrganizacional";
 import EmpresaConfig from "./EmpresaConfig";
 import SeguridadConfig from "./SeguridadConfig";
 import RespaldosConfig from "./RespaldosConfig";
+import IconoSeccion from "./IconoSeccion";
+import { useMenuCompacto } from "./menu-compacto";
 
 // Formas mínimas que este componente realmente consume. Se declaran a mano en
 // vez de reusar los modelos de Prisma porque al cruzar la frontera cliente/
@@ -37,6 +47,7 @@ interface SucursalConfig {
   descripcion: string | null;
   activa: boolean;
   logoVersion: number | null;
+  rtn: string | null;
 }
 
 interface SalarioMinimoConfig {
@@ -75,17 +86,55 @@ interface Props {
   minutosInactividad: number;
   /** `configuracion.respaldos`: un respaldo es la base entera. */
   puedeRespaldos: boolean;
+  /** `?seccion=` de la dirección; si no existe o no se puede ver, la primera permitida. */
+  seccionInicial?: string;
 }
+
+type Seccion = "empresa" | "estructura" | "parametros" | "salarios" | "asistencia" | "correo" | "sap" | "banco" | "seguridad" | "respaldos" | "valores";
 
 export default function ConfiguracionClient({
   empresa, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, jerarquiaHabilitada, salarioMinimo, configs,
   puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco, puedeSeguridad, minutosInactividad, puedeRespaldos,
+  seccionInicial,
 }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
-  const [tab, setTab] = useState<"empresa" | "sucursales" | "salarios" | "sistema" | "parametros" | "correo" | "sap" | "banco" | "seguridad" | "respaldos">(
-    puedeVer ? "empresa" : puedeParametros ? "parametros" : puedeCorreo ? "correo" : puedeSap ? "sap" : puedeSeguridad ? "seguridad" : "respaldos"
+  // Grupos y secciones del menú; cada una aparece sólo con su permiso, y un grupo vacío no se muestra.
+  const todos: { titulo: string; secciones: { key: Seccion; label: string; ve: boolean }[] }[] = [
+    { titulo: "Organización", secciones: [
+      { key: "empresa", label: "Empresa", ve: puedeVer },
+      { key: "estructura", label: "Estructura organizacional", ve: puedeVer },
+    ] },
+    // Las reglas que cambian lo que se paga y se descuenta.
+    { titulo: "Parametrizaciones", secciones: [
+      { key: "parametros", label: "Parámetros de ley", ve: puedeParametros },
+      { key: "salarios", label: "Salarios", ve: puedeVer },
+      { key: "asistencia", label: "Asistencia", ve: puedeParametros },
+    ] },
+    { titulo: "Integraciones", secciones: [
+      // Quien controla el servidor de correo puede escribir a los empleados a nombre de la empresa.
+      { key: "correo", label: "Correo saliente", ve: puedeCorreo },
+      { key: "sap", label: "SAP Business One", ve: puedeSap },
+      { key: "banco", label: "Formatos de banco", ve: puedeBanco },
+    ] },
+    { titulo: "Sistema", secciones: [
+      // Política de sesión de todas las cuentas: quien administra los usuarios.
+      { key: "seguridad", label: "Seguridad", ve: puedeSeguridad },
+      { key: "respaldos", label: "Respaldos", ve: puedeRespaldos },
+      { key: "valores", label: "Valores internos", ve: puedeVer },
+    ] },
+  ];
+  const grupos = todos.map((g) => ({ ...g, secciones: g.secciones.filter((s) => s.ve) })).filter((g) => g.secciones.length > 0);
+  const visibles = grupos.flatMap((g) => g.secciones.map((s) => s.key));
+  const [compacto, setCompacto] = useMenuCompacto();
+  const [tab, setTabEstado] = useState<Seccion>(
+    visibles.includes(seccionInicial as Seccion) ? (seccionInicial as Seccion) : visibles[0] ?? "empresa"
   );
+  // Cambia de sección sin recargar la página y deja la dirección lista para enlazarla.
+  const setTab = (s: Seccion) => {
+    setTabEstado(s);
+    window.history.replaceState(null, "", `?seccion=${s}`);
+  };
   const [loading, setLoading] = useState(false);
   const [modalAumentoColectivo, setModalAumentoColectivo] = useState(false);
 
@@ -122,47 +171,101 @@ export default function ConfiguracionClient({
     }
   }
 
-  const tabs = [
-    ...(puedeVer
-      ? ([
-          { key: "empresa", label: "Empresa" },
-          { key: "sucursales", label: "Estructura organizacional" },
-          { key: "salarios", label: "Salarios" },
-          { key: "sistema", label: "Configuración general" },
-        ] as const)
-      : []),
-    // Sólo administradores: cambian lo que se descuenta a todos los empleados.
-    ...(puedeParametros ? ([{ key: "parametros", label: "Parámetros de ley" }] as const) : []),
-    // Sólo administradores: quien controla el servidor de correo puede
-    // escribir a los empleados a nombre de la empresa.
-    ...(puedeCorreo ? ([{ key: "correo", label: "Correo saliente" }] as const) : []),
-    // Sólo administradores: credenciales de SAP y qué se contabiliza allí.
-    ...(puedeSap ? ([{ key: "sap", label: "SAP - Conexión" }] as const) : []),
-    ...(puedeBanco ? ([{ key: "banco", label: "Formatos de banco" }] as const) : []),
-    // Política de sesión de todas las cuentas: quien administra los usuarios.
-    ...(puedeSeguridad ? ([{ key: "seguridad", label: "Seguridad" }] as const) : []),
-    ...(puedeRespaldos ? ([{ key: "respaldos", label: "Respaldos" }] as const) : []),
-  ];
-
   return (
     <div className="space-y-6">
-      <PageHeader title="Configuración del sistema" description="Empresa, sucursales, salarios y parámetros de ley." />
+      <PageHeader title="Configuración del sistema" description="Organización, parametrizaciones, integraciones y sistema." />
 
-      <div className="flex gap-1 overflow-x-auto border-b border-gray-200">
-        {tabs.map((t) => (
+      <div className={`grid gap-6 ${compacto ? "lg:grid-cols-[3.25rem_minmax(0,1fr)]" : "lg:grid-cols-[15.5rem_minmax(0,1fr)]"}`}>
+        {/* Angosto: un selector con los mismos grupos. */}
+        <label className="block lg:hidden">
+          <span className="sr-only">Sección de la configuración</span>
+          <select className="input" value={tab} onChange={(e) => setTab(e.target.value as Seccion)} data-config-selector>
+            {grupos.map((g) => (
+              <optgroup key={g.titulo} label={g.titulo}>
+                {g.secciones.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+
+        <nav aria-label="Secciones de la configuración" className="hidden self-start lg:sticky lg:top-4 lg:block" data-config-menu data-compacto={compacto ? "si" : "no"}>
+          {/* Con nombres o sólo con íconos: en pantallas angostas el menú con nombres apretaba el
+              contenido (pedido de Edbin, 2026-11-17). La elección queda en esta computadora. */}
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`whitespace-nowrap px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
-              tab === t.key ? "border-blue-600 text-blue-700" : "border-transparent text-gray-500 hover:text-gray-700"
+            type="button"
+            onClick={() => setCompacto(!compacto)}
+            aria-pressed={compacto}
+            title={compacto ? "Mostrar los nombres" : "Mostrar sólo íconos"}
+            className={`mb-3 flex items-center gap-2 rounded-md text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 ${
+              compacto ? "mx-auto h-9 w-9 justify-center" : "w-full px-2 py-1.5"
             }`}
+            data-config-compacto
           >
-            {t.label}
+            <IconoSeccion nombre={compacto ? "expandir" : "contraer"} className="h-4 w-4" />
+            {compacto ? <span className="sr-only">Mostrar los nombres</span> : "Sólo íconos"}
           </button>
-        ))}
-      </div>
+
+          {/* Los grupos, en el turquesa de acento con la barrita del cian del logo; sus secciones,
+              debajo con sangría y una línea guía, para que se lean como jerarquía. Compacto, el
+              grupo queda como una barrita de color y cada ícono dice su nombre al pasar o enfocar. */}
+          {grupos.map((g) => (
+            <div key={g.titulo} className={compacto ? "mb-3 last:mb-0" : "mb-5 last:mb-0"}>
+              {compacto ? (
+                <p className="mx-auto mb-1.5 h-1 w-6 rounded-full bg-blue-500" title={g.titulo} data-config-grupo>
+                  <span className="sr-only">{g.titulo}</span>
+                </p>
+              ) : (
+                <p className="mb-1.5 flex items-center gap-2 px-1 text-xs font-bold uppercase tracking-wider text-blue-700" data-config-grupo>
+                  <span className="h-3.5 w-1 rounded-full bg-blue-500" aria-hidden="true" />
+                  {g.titulo}
+                </p>
+              )}
+              <ul className={compacto ? "space-y-1" : "ml-2.5 space-y-0.5 border-l border-gray-200 pl-2"}>
+                {g.secciones.map((s) => {
+                  const activa = tab === s.key;
+                  return (
+                    <li key={s.key}>
+                      <button
+                        type="button"
+                        onClick={() => setTab(s.key)}
+                        aria-current={activa ? "page" : undefined}
+                        aria-label={compacto ? s.label : undefined}
+                        className={
+                          compacto
+                            ? `group relative mx-auto flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
+                                activa ? "bg-blue-50 text-blue-700 shadow-[inset_3px_0_0_0_var(--color-blue-500)]" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                              }`
+                            : `relative flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
+                                activa
+                                  ? "bg-blue-50 font-semibold text-blue-800 before:absolute before:inset-y-1 before:left-[-10.5px] before:w-0.75 before:rounded-full before:bg-blue-500"
+                                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                              }`
+                        }
+                      >
+                        <IconoSeccion nombre={s.key} className={compacto ? "h-5 w-5" : `h-4 w-4 ${activa ? "text-blue-600" : "text-gray-400"}`} />
+                        {compacto ? (
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-gray-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                          >
+                            {s.label}
+                          </span>
+                        ) : (
+                          s.label
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </nav>
+
+        <div className="min-w-0 space-y-6">
 
       {tab === "parametros" && puedeParametros && <ParametrosLeyConfig />}
+      {tab === "asistencia" && puedeParametros && <PoliticaAsistenciaConfig />}
       {tab === "correo" && puedeCorreo && <CorreoSalienteConfig />}
       {tab === "sap" && puedeSap && <SapConexionConfig />}
       {tab === "banco" && puedeBanco && <FormatosBancoConfig />}
@@ -171,7 +274,7 @@ export default function ConfiguracionClient({
       {tab === "empresa" && <EmpresaConfig empresa={empresa} puedeEditar={puedeEditarEmpresa} />}
 
       {/* Estructura organizacional: sucursales, divisiones (opcionales), departamentos y puestos */}
-      {tab === "sucursales" && (
+      {tab === "estructura" && (
         <EstructuraOrganizacional
           empresaId={empresa?.id ?? null}
           empresaNombre={empresa?.nombre ?? null}
@@ -217,8 +320,12 @@ export default function ConfiguracionClient({
       {tab === "seguridad" && puedeSeguridad && <SeguridadConfig minutosInactividad={minutosInactividad} />}
       {tab === "respaldos" && puedeRespaldos && <RespaldosConfig />}
 
-      {tab === "sistema" && (
+      {tab === "valores" && (
         <div className="panel overflow-hidden">
+          <p className="border-b border-gray-100 px-5 py-3 text-sm text-gray-600">
+            Valores que el sistema guarda por su cuenta, como las opciones de la estructura o la política de sesión. Sólo se consultan aquí: cada uno se
+            cambia en su sección.
+          </p>
           <div className="overflow-x-auto">
             <table className="table-base">
               <thead><tr><th>Configuración</th><th>Valor</th><th>Descripción</th></tr></thead>
@@ -237,6 +344,8 @@ export default function ConfiguracionClient({
           </div>
         </div>
       )}
+        </div>
+      </div>
 
       {/* Modal aumento colectivo */}
       {modalAumentoColectivo && (

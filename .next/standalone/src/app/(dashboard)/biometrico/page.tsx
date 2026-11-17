@@ -3,11 +3,13 @@ import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { conAlcance, filtroPorEmpleado, filtroSucursales } from "@/lib/auth/alcance";
 import { filtroEventos, filtroDispositivos } from "@/lib/biometrico/alcance";
 import BiometricoClient from "@/components/biometrico/BiometricoClient";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 export default async function BiometricoPage() {
   const usuario = await requerirPermisoPagina("asistencia.biometrico");
 
-  const [dispositivos, sucursales, cuarentena, empleados, asignados] = await Promise.all([
+  const [dispositivos, sucursales, cuarentena, empleados, asignados, jerarquia] = await Promise.all([
     prisma.dispositivoBiometrico.findMany({
       where: filtroDispositivos(usuario),
       // Explícito y no la fila entera: incluye `passwordCifrado`, y una
@@ -46,6 +48,7 @@ export default async function BiometricoPage() {
       },
       orderBy: { pin: "asc" },
     }),
+    jerarquiaNominaHabilitada(prisma),
   ]);
 
   return (
@@ -74,6 +77,7 @@ export default async function BiometricoPage() {
         dispositivoId: a.dispositivoId,
         empleado: `${a.empleado.codigo} — ${a.empleado.primerNombre} ${a.empleado.primerApellido}`,
       }))}
+      niveles={etiquetasNiveles(jerarquia)}
     />
   );
 }

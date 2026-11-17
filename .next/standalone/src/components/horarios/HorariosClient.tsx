@@ -17,6 +17,7 @@ import EstadoVacio from "@/components/ui/EstadoVacio";
 import { ETIQUETA_ROTACION, ETIQUETA_VISPERA } from "@/lib/horarios/reglas";
 import { sumarDias, lunesDe, periodoTexto, NOMBRE_DIA } from "@/lib/horarios/fechas";
 import type { ModoVispera, PoliticaRotacion } from "@/lib/horarios/tipos";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 type Sucursal = { id: string; nombre: string };
 type Pestana = "planes" | "cobertura" | "personal" | "reglas";
@@ -62,14 +63,14 @@ const textoError = async (r: Response) => {
   return [d.error ?? "No se pudo guardar", ...campos].join(" ");
 };
 
-export default function HorariosClient({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales: Sucursal[] }) {
+export default function HorariosClient({ puedeEditar, sucursales, niveles }: { puedeEditar: boolean; sucursales: Sucursal[]; niveles: NivelesEstructura }) {
   const [pestana, setPestana] = useState<Pestana>("planes");
-  const pestanas: [Pestana, string][] = [["planes", "Planes"], ["cobertura", "Cobertura por sucursal"], ["personal", "Disponibilidad del personal"], ["reglas", "Reglas"]];
+  const pestanas: [Pestana, string][] = [["planes", "Planes"], ["cobertura", `Cobertura por ${niveles.sucursal.toLowerCase()}`], ["personal", "Disponibilidad del personal"], ["reglas", "Reglas"]];
   return (
     <div className="space-y-6">
       <PageHeader
         title="Horarios rotativos"
-        description="Genera el horario de varias sucursales cumpliendo el Código del Trabajo: jornadas, descansos, víspera del descanso, horas extra y cobertura mínima por puesto."
+        description={`Genera a la vez el horario de cada ${niveles.sucursal.toLowerCase()} del plan cumpliendo el Código del Trabajo: jornadas, descansos, víspera del descanso, horas extra y cobertura mínima por puesto.`}
       >
         <div role="tablist" className="flex flex-wrap gap-1 border-b border-gray-200">
           {pestanas.map(([k, l]) => (
@@ -80,9 +81,9 @@ export default function HorariosClient({ puedeEditar, sucursales }: { puedeEdita
           ))}
         </div>
       </PageHeader>
-      {pestana === "planes" && <Planes puedeEditar={puedeEditar} sucursales={sucursales} />}
-      {pestana === "cobertura" && <Cobertura puedeEditar={puedeEditar} sucursales={sucursales} />}
-      {pestana === "personal" && <Personal puedeEditar={puedeEditar} sucursales={sucursales} />}
+      {pestana === "planes" && <Planes puedeEditar={puedeEditar} sucursales={sucursales} niveles={niveles} />}
+      {pestana === "cobertura" && <Cobertura puedeEditar={puedeEditar} sucursales={sucursales} niveles={niveles} />}
+      {pestana === "personal" && <Personal puedeEditar={puedeEditar} sucursales={sucursales} niveles={niveles} />}
       {pestana === "reglas" && <Reglas puedeEditar={puedeEditar} />}
     </div>
   );
@@ -95,7 +96,7 @@ interface PlanLista {
   resumen: { errores?: number; avisos?: number; faltantes?: number } | null; publicadoAt: string | null;
 }
 
-function Planes({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales: Sucursal[] }) {
+function Planes({ puedeEditar, sucursales, niveles }: { puedeEditar: boolean; sucursales: Sucursal[]; niveles: NivelesEstructura }) {
   const router = useRouter();
   const [planes, setPlanes] = useState<PlanLista[] | null>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -162,12 +163,12 @@ function Planes({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales:
               <input type="date" className="input mt-1" value={form.hasta} onChange={(e) => setForm({ ...form, hasta: e.target.value })} />
             </label>
             <label className="text-sm"><span className="font-medium text-gray-800">Nombre (opcional)</span>
-              <input className="input mt-1" value={form.nombre} placeholder="Se arma con las sucursales y fechas" onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+              <input className="input mt-1" value={form.nombre} placeholder={`Se arma con ${niveles.sucursales.toLowerCase()} y fechas`} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
             </label>
           </div>
           <fieldset>
-            <legend className="text-sm font-medium text-gray-800">Sucursales</legend>
-            <p className="text-xs text-gray-500">Las que se planifican juntas pueden prestarse personal (si la persona acepta traslados).</p>
+            <legend className="text-sm font-medium text-gray-800">{niveles.sucursales}</legend>
+            <p className="text-xs text-gray-500">{`En un mismo plan se puede prestar personal entre ${niveles.sucursales.toLowerCase()} (si la persona acepta traslados).`}</p>
             <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
               {sucursales.map((s) => (
                 <label key={s.id} className="flex items-center gap-2 text-sm">
@@ -189,14 +190,14 @@ function Planes({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales:
         <div className="overflow-x-auto">
           <table className="table-base tabla-tarjetas">
             <thead>
-              <tr><th>Plan</th><th>Período</th><th>Sucursales</th><th>Estado</th><th className="num">Errores legales</th><th className="num">Avisos</th><th className="num">Huecos</th></tr>
+              <tr><th>Plan</th><th>Período</th><th>{niveles.sucursales}</th><th>Estado</th><th className="num">Errores legales</th><th className="num">Avisos</th><th className="num">Huecos</th></tr>
             </thead>
             <tbody>
               {planes === null && <tr><td colSpan={7} className="text-gray-500">Cargando…</td></tr>}
               {planes?.length === 0 && (
                 <tr>
                   <td colSpan={7}>
-                    <EstadoVacio titulo="Todavía no hay planes." detalle="Defina la cobertura de cada sucursal y genere el primero." />
+                    <EstadoVacio titulo="Todavía no hay planes." detalle={`Defina la cobertura de cada ${niveles.sucursal.toLowerCase()} y genere el primero.`} />
                   </td>
                 </tr>
               )}
@@ -204,7 +205,7 @@ function Planes({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales:
                 <tr key={p.id}>
                   <td data-titulo><Link href={`/horarios/${p.id}`} className="font-medium text-blue-800 hover:underline">{p.nombre}</Link></td>
                   <td data-etiqueta="Período" className="whitespace-nowrap">{periodoTexto(p.desde, p.hasta)}</td>
-                  <td data-etiqueta="Sucursales">{p.sucursales.join(", ")}</td>
+                  <td data-etiqueta={niveles.sucursales}>{p.sucursales.join(", ")}</td>
                   <td data-etiqueta="Estado"><EstadoBadge valor={p.estado} /></td>
                   <td data-etiqueta="Errores legales" className={`num ${p.resumen?.errores ? "font-semibold text-red-700" : ""}`}>{p.resumen?.errores ?? "—"}</td>
                   <td data-etiqueta="Avisos" className="num">{p.resumen?.avisos ?? "—"}</td>
@@ -224,7 +225,7 @@ function Planes({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales:
 interface Franja { puestoId: string; dias: number[]; desde: string; hasta: string; minimo: number; etiqueta: string }
 interface HorarioDia { dia: number; apertura: string; cierre: string; cerrado: boolean }
 
-function Cobertura({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales: Sucursal[] }) {
+function Cobertura({ puedeEditar, sucursales, niveles }: { puedeEditar: boolean; sucursales: Sucursal[]; niveles: NivelesEstructura }) {
   const [sucursalId, setSucursalId] = useState(sucursales[0]?.id ?? "");
   const [puestos, setPuestos] = useState<{ id: string; nombre: string; departamento: string }[]>([]);
   const [franjas, setFranjas] = useState<Franja[]>([]);
@@ -272,11 +273,12 @@ function Cobertura({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursal
   }
 
   const nombrePuesto = (id: string) => puestos.find((p) => p.id === id)?.nombre ?? "";
+  const nombreSucursal = sucursales.find((s) => s.id === sucursalId)?.nombre ?? "";
   const deshabilitado = !puedeEditar;
 
   return (
     <div className="space-y-6">
-      <label className="block max-w-sm text-sm"><span className="font-medium text-gray-800">Sucursal</span>
+      <label className="block max-w-sm text-sm"><span className="font-medium text-gray-800">{niveles.sucursal}</span>
         <select className="input mt-1" value={sucursalId} onChange={(e) => setSucursalId(e.target.value)}>
           {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
@@ -285,7 +287,7 @@ function Cobertura({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursal
 
       <section className="panel p-5">
         <h2 className="text-base font-semibold text-gray-900">Horario de atención al público</h2>
-        <p className="mt-1 text-sm text-gray-500">El plan avisa si en algún momento de este horario la sucursal queda sin nadie.</p>
+        <p className="mt-1 text-sm text-gray-500">El plan avisa si en algún momento de este horario no queda nadie.</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {horario.map((h, i) => (
             <div key={h.dia} className="rounded-lg border border-gray-200 p-3 text-sm">
@@ -318,7 +320,7 @@ function Cobertura({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursal
           <table className="table-base">
             <thead><tr><th>Puesto</th><th>Días</th><th>Desde</th><th>Hasta</th><th>Mínimo</th><th>Etiqueta</th><th><span className="sr-only">Acciones</span></th></tr></thead>
             <tbody>
-              {franjas.length === 0 && <tr><td colSpan={7}><EstadoVacio titulo="Esta sucursal no tiene franjas de cobertura." detalle="Sin ellas el generador no programa a nadie de esta sucursal. Use Agregar franja." /></td></tr>}
+              {franjas.length === 0 && <tr><td colSpan={7}><EstadoVacio titulo={nombreSucursal ? `${nombreSucursal} no tiene franjas de cobertura.` : "No hay franjas de cobertura."} detalle="Sin ellas el generador no programa a nadie allí. Use Agregar franja." /></td></tr>}
               {franjas.map((f, i) => (
                 <tr key={i}>
                   <td>
@@ -365,7 +367,7 @@ interface EmpPref {
 const listaDias = (s: string) => s.split(",").map(Number).filter(Boolean);
 const textoDias = (d: number[]) => d.map((n) => NOMBRE_DIA[n].slice(0, 3)).join(", ");
 
-function Personal({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursales: Sucursal[] }) {
+function Personal({ puedeEditar, sucursales, niveles }: { puedeEditar: boolean; sucursales: Sucursal[]; niveles: NivelesEstructura }) {
   const [sucursalId, setSucursalId] = useState(sucursales[0]?.id ?? "");
   const [empleados, setEmpleados] = useState<EmpPref[] | null>(null);
   const [edicion, setEdicion] = useState<{ id: string; nombre: string; d: Pref } | null>(null);
@@ -423,10 +425,11 @@ function Personal({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursale
   }
 
   const set = (v: Partial<Pref>) => edicion && setEdicion({ ...edicion, d: { ...edicion.d, ...v } });
+  const nombreSucursal = sucursales.find((s) => s.id === sucursalId)?.nombre ?? "";
 
   return (
     <div className="space-y-4">
-      <label className="block max-w-sm text-sm"><span className="font-medium text-gray-800">Sucursal</span>
+      <label className="block max-w-sm text-sm"><span className="font-medium text-gray-800">{niveles.sucursal}</span>
         <select className="input mt-1" value={sucursalId} onChange={(e) => setSucursalId(e.target.value)}>
           {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
@@ -438,7 +441,7 @@ function Personal({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursale
           <h2 className="text-base font-semibold text-gray-900">Disponibilidad de {edicion.nombre}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 text-sm">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={edicion.d.permiteTraslado} onChange={(e) => set({ permiteTraslado: e.target.checked })} /> Acepta trasladarse a otra sucursal</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={edicion.d.permiteTraslado} onChange={(e) => set({ permiteTraslado: e.target.checked })} /> {`Acepta trasladarse fuera de su ${niveles.sucursal.toLowerCase()}`}</label>
               {edicion.d.permiteTraslado && (
                 <div className="ml-6 flex flex-wrap gap-x-4 gap-y-1">
                   {sucursales.filter((s) => s.id !== sucursalId).map((s) => (
@@ -448,7 +451,7 @@ function Personal({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursale
                       {s.nombre}
                     </label>
                   ))}
-                  <span className="text-xs text-gray-500">Sin marcar ninguna: a cualquiera.</span>
+                  <span className="text-xs text-gray-500">Sin marcar: a cualquiera.</span>
                 </div>
               )}
               <label className="flex items-center gap-2"><input type="checkbox" checked={edicion.d.soloDiurna} onChange={(e) => set({ soloDiurna: e.target.checked })} /> Sólo jornada diurna (nada después de las 7:00 p. m.)</label>
@@ -492,7 +495,10 @@ function Personal({ puedeEditar, sucursales }: { puedeEditar: boolean; sucursale
               {empleados?.length === 0 && (
                 <tr>
                   <td colSpan={4}>
-                    <EstadoVacio titulo="Esta sucursal no tiene personal registrado." detalle="Elija otra sucursal o registre empleados en ella." />
+                    <EstadoVacio
+                      titulo={nombreSucursal ? `${nombreSucursal} no tiene personal registrado.` : "No hay personal registrado."}
+                      detalle={`Cambie de ${niveles.sucursal.toLowerCase()} o registre empleados allí.`}
+                    />
                   </td>
                 </tr>
               )}

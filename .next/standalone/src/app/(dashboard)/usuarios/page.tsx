@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import UsuariosClient from "@/components/seguridad/UsuariosClient";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 /**
  * Cuentas de acceso al sistema.
@@ -11,7 +13,7 @@ import UsuariosClient from "@/components/seguridad/UsuariosClient";
 export default async function UsuariosPage() {
   const usuario = await requerirPermisoPagina(["seguridad.usuarios_ver", "seguridad.usuarios_gestionar"]);
 
-  const [usuarios, perfiles, sucursales, empleadosSinCuenta] = await Promise.all([
+  const [usuarios, perfiles, sucursales, empleadosSinCuenta, jerarquia] = await Promise.all([
     prisma.user.findMany({
       select: {
         id: true,
@@ -46,6 +48,7 @@ export default async function UsuariosPage() {
       orderBy: { primerApellido: "asc" },
       take: 500,
     }),
+    jerarquiaNominaHabilitada(prisma),
   ]);
 
   return (
@@ -62,6 +65,7 @@ export default async function UsuariosPage() {
       puedeGestionar={puede(usuario, "seguridad.usuarios_gestionar")}
       puedeResetear={puede(usuario, "seguridad.usuarios_password")}
       puedeVerPerfiles={puede(usuario, "seguridad.perfiles")}
+      niveles={etiquetasNiveles(jerarquia)}
     />
   );
 }

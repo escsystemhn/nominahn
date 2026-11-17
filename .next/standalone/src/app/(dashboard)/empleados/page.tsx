@@ -5,6 +5,7 @@ import BarraDatos from "@/components/importacion/BarraDatos";
 import Link from "next/link";
 import { formatCurrency, formatDate, nombreCompleto } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
+import FotoAvatar from "@/components/employees/FotoAvatar";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import FilaEnlace from "@/components/ui/FilaEnlace";
@@ -13,6 +14,8 @@ import Paginacion from "@/components/ui/Paginacion";
 import ThOrden from "@/components/ui/ThOrden";
 import type { Orden } from "@/lib/http/orden";
 import { filtroLista, ordenDeConsulta, ordenLista, textoLista, type ColumnaLista } from "@/lib/empleados/lista";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 
 export const metadata = { title: "Empleados" };
 
@@ -43,7 +46,7 @@ export default async function EmpleadosPage({
   const aFicha = (id: string) => `/empleados/${id}${lista ? `?lista=${encodeURIComponent(lista)}` : ""}`;
   const sinSucursales = usuario.alcance === "SUCURSAL" && !usuario.sucursalesIds?.length;
 
-  const [total, empleados, sucursales] = await Promise.all([
+  const [total, empleados, sucursales, conJerarquia] = await Promise.all([
     prisma.empleado.count({ where }),
     prisma.empleado.findMany({
       where,
@@ -51,13 +54,16 @@ export default async function EmpleadosPage({
         sucursal: { select: { nombre: true } },
         departamento: { select: { nombre: true } },
         puesto: { select: { nombre: true } },
+        foto: { select: { updatedAt: true } },
       },
       orderBy: ordenDeConsulta(orden),
       skip: (page - 1) * limit,
       take: limit,
     }),
     prisma.sucursal.findMany({ where: filtroSucursales(usuario), select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
+    jerarquiaNominaHabilitada(prisma),
   ]);
+  const niveles = etiquetasNiveles(conJerarquia);
 
   const totalPaginas = Math.ceil(total / limit);
   // Los enlaces conservan filtros y orden: antes se perdía la sucursal al cambiar de página.
@@ -113,10 +119,10 @@ export default async function EmpleadosPage({
             <select
               name="sucursalId"
               defaultValue={sucursalId}
-              aria-label="Sucursal"
+              aria-label={niveles.sucursal}
               className="input w-auto"
             >
-              <option value="">Todas las sucursales</option>
+              <option value="">{niveles.todasSucursales}</option>
               {sucursales.map((s) => (
                 <option key={s.id} value={s.id}>{s.nombre}</option>
               ))}
@@ -132,7 +138,7 @@ export default async function EmpleadosPage({
               <tr>
                 <ThOrden campo="codigo" {...th}>Código</ThOrden>
                 <ThOrden campo="empleado" {...th}>Empleado</ThOrden>
-                <ThOrden campo="sucursal" {...th}>Sucursal</ThOrden>
+                <ThOrden campo="sucursal" {...th}>{niveles.sucursal}</ThOrden>
                 <ThOrden campo="departamento" {...th}>Departamento</ThOrden>
                 <ThOrden campo="puesto" {...th}>Puesto</ThOrden>
                 {vePII && <ThOrden campo="salario" dirInicial="desc" className="num" {...th}>Salario base</ThOrden>}
@@ -172,12 +178,17 @@ export default async function EmpleadosPage({
                   <FilaEnlace key={emp.id} href={aFicha(emp.id)}>
                     <td data-etiqueta="Código" className="whitespace-nowrap font-mono text-xs text-gray-500">{emp.codigo}</td>
                     <td data-titulo>
-                      <Link href={aFicha(emp.id)} className="font-medium text-gray-900 hover:text-blue-700">
-                        {nombreCompleto(emp)}
-                      </Link>
-                      {vePII && <div className="tnum text-xs text-gray-500">{emp.identidad}</div>}
+                      <div className="flex items-center gap-2.5">
+                        <FotoAvatar empleadoId={emp.id} version={emp.foto?.updatedAt ?? null} nombre={nombreCompleto(emp)} tamano="sm" />
+                        <div className="min-w-0">
+                          <Link href={aFicha(emp.id)} className="font-medium text-gray-900 hover:text-blue-700">
+                            {nombreCompleto(emp)}
+                          </Link>
+                          {vePII && <div className="tnum text-xs text-gray-500">{emp.identidad}</div>}
+                        </div>
+                      </div>
                     </td>
-                    <td data-etiqueta="Sucursal" className="whitespace-nowrap">{emp.sucursal.nombre}</td>
+                    <td data-etiqueta={niveles.sucursal} className="whitespace-nowrap">{emp.sucursal.nombre}</td>
                     <td data-etiqueta="Departamento">{emp.departamento.nombre}</td>
                     <td data-etiqueta="Puesto">{emp.puesto?.nombre ?? <span className="text-gray-500">Sin puesto</span>}</td>
                     {vePII && (

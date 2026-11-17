@@ -1,5 +1,5 @@
 /**
- * Jerarquía de nómina: Frecuencia → Grupo → Empresa → Departamento → Empleados.
+ * Jerarquía de nómina: Frecuencia → Grupo → Sucursal → Departamento → Empleados.
  *
  * No hay tablas nuevas: es otra forma de leer la estructura que ya existe. El
  * grupo es la `Sucursal` («Nómina Confidencial»), la empresa es la `Division`

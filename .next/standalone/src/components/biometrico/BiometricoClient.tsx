@@ -12,6 +12,7 @@ import CuarentenaPines, {
   type PinAsignado,
 } from "./CuarentenaPines";
 import MarcacionesDetalle from "./MarcacionesDetalle";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 type Marca = "ZKTECO" | "HIKVISION";
 
@@ -41,6 +42,7 @@ interface Props {
   cuarentena: PinEnCuarentena[];
   empleados: OpcionEmpleado[];
   asignados: PinAsignado[];
+  niveles: NivelesEstructura;
 }
 
 const formInicial = {
@@ -59,6 +61,7 @@ export default function BiometricoClient({
   cuarentena,
   empleados,
   asignados,
+  niveles,
 }: Props) {
   const router = useRouter();
   const { confirmar, avisar } = useAvisos();
@@ -195,7 +198,7 @@ export default function BiometricoClient({
   }
 
   function nombreSucursal(id: string | null) {
-    if (!id) return "Todas";
+    if (!id) return niveles.todasSucursales;
     return sucursales.find((s) => s.id === id)?.nombre ?? "—";
   }
 
@@ -286,7 +289,7 @@ export default function BiometricoClient({
               <th>Dispositivo</th>
               <th>Marca</th>
               <th>Dirección</th>
-              <th>Sucursal</th>
+              <th>{niveles.sucursal}</th>
               <th>Última sincronización</th>
               <th>Estado</th>
               <th>Acciones</th>
@@ -315,7 +318,7 @@ export default function BiometricoClient({
                   <td data-etiqueta="Dirección" className="font-mono text-xs text-blue-700">
                     {d.ip}:{d.puerto}
                   </td>
-                  <td data-etiqueta="Sucursal" className="text-gray-600">{nombreSucursal(d.sucursalId)}</td>
+                  <td data-etiqueta={niveles.sucursal} className="text-gray-600">{nombreSucursal(d.sucursalId)}</td>
                   <td data-etiqueta="Última sincronización" className="text-xs text-gray-500">{formatSync(d.ultimaSync)}</td>
                   <td data-etiqueta="Estado">
                     <button
@@ -470,13 +473,13 @@ export default function BiometricoClient({
             )}
 
             <label className="block text-sm">
-              <span className="mb-1 block font-medium text-gray-800">Sucursal (opcional)</span>
+              <span className="mb-1 block font-medium text-gray-800">{niveles.sucursal} (opcional)</span>
               <select
                 value={form.sucursalId}
                 onChange={(e) => setForm((f) => ({ ...f, sucursalId: e.target.value }))}
                 className="input"
               >
-                <option value="">Todas las sucursales</option>
+                <option value="">{niveles.todasSucursales}</option>
                 {sucursales.map((s) => (
                   <option key={s.id} value={s.id}>{s.nombre}</option>
                 ))}

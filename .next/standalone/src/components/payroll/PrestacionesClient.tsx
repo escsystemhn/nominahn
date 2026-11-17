@@ -25,6 +25,7 @@ import {
   type EstadoDecimo,
 } from "@/lib/payroll/estado-prestaciones";
 import { CAUSAS_TERMINACION, TIPOS_DECIMO, etiquetaCausa } from "@/lib/payroll/etiquetas-prestaciones";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 interface EmpleadoOpcion {
   id: string;
@@ -39,6 +40,7 @@ interface Props {
   permisos: string[];
   empleados: EmpleadoOpcion[];
   sucursales: { id: string; nombre: string }[];
+  niveles: NivelesEstructura;
 }
 
 interface Liquidacion {
@@ -113,7 +115,7 @@ const formVacio = {
   saldoFondoReserva: "",
 };
 
-export default function PrestacionesClient({ tabInicial, permisos, empleados, sucursales }: Props) {
+export default function PrestacionesClient({ tabInicial, permisos, empleados, sucursales, niveles }: Props) {
   const { confirmar } = useAvisos();
   const [tab, setTab] = useState<"liquidaciones" | "decimos">(tabInicial);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -530,9 +532,9 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
             </div>
             {puedeGenerar && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="dec-suc">Sucursal</label>
+                <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="dec-suc">{niveles.sucursal}</label>
                 <select id="dec-suc" className="input" value={filtroDec.sucursalId} onChange={(e) => setFiltroDec((f) => ({ ...f, sucursalId: e.target.value }))}>
-                  <option value="">Todas</option>
+                  <option value="">{niveles.todasSucursales}</option>
                   {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                 </select>
               </div>

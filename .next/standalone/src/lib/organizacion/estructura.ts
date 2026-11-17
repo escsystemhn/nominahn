@@ -183,11 +183,16 @@ export function aplicarCambioOpciones(actual: OpcionesOrganizacion, cambio: Part
 
 /** Nombre de cada nivel: con la jerarquía de nómina, la sucursal es un grupo y la división, una empresa. */
 export function etiquetasNiveles(jerarquia: boolean) {
+  // Con la jerarquía, los dos niveles son «Grupo» (Grupo PAGSA, ELECTRONICA, PRASA…) y
+  // «Sucursal» (Pagsa SPS, Audi Tegus…): el segundo NO es una empresa —las sucursales de un
+  // grupo comparten su RTN— y llamarlo así hacía poner ciudades donde iban razones sociales.
+  // Se llamó «Unidad» el 2026-11-16 y «Sucursal» desde el 2026-11-17, a pedido de Edbin.
+  // Los mismos nombres en TODAS las pantallas (el modelo `Sucursal` es aquí el grupo).
   return jerarquia
     ? {
-        sucursal: "Grupo de nómina", sucursalCorta: "Grupo", sucursales: "Grupos de nómina", nuevaSucursal: "Nuevo grupo de nómina", todasSucursales: "Todos los grupos",
-        division: "Empresa", divisiones: "Empresas", nuevaDivision: "Nueva empresa", todasDivisiones: "Todas las empresas", sinDivision: "Sin empresa asignada", sinDivisiones: "Sin empresas",
-        // El modelo `Empresa` (la de los libros) queda por encima del grupo: no debe llamarse igual que las empresas del grupo.
+        sucursal: "Grupo", sucursalCorta: "Grupo", sucursales: "Grupos", nuevaSucursal: "Nuevo grupo", todasSucursales: "Todos los grupos",
+        division: "Sucursal", divisiones: "Sucursales", nuevaDivision: "Nueva sucursal", todasDivisiones: "Todas las sucursales", sinDivision: "Sin sucursal asignada", sinDivisiones: "Sin sucursales",
+        // El modelo `Empresa` (la de los libros) queda por encima de los grupos.
         empresaLegal: "Empresa principal", todaLaEmpresa: "Todos los grupos",
       }
     : {

@@ -158,8 +158,10 @@ export async function GET(req: NextRequest) {
     ({ cabeceras, datos, filas } = tabla);
     if (reporteId === "planilla-detallada" && conDivisiones && searchParams.get("porDivision") === "1") {
       // El RTN sólo tiene sentido si cada división es una empresa del grupo.
-      const conRtn = conJerarquia ? await prisma.division.findMany({ where: { rtn: { not: null } }, select: { id: true, rtn: true } }) : [];
-      hojas = hojasPorDivision(lineas, niveles, new Map(conRtn.map((v) => [v.id, v.rtn!])));
+      // El RTN de cada unidad: el suyo o, si no tiene, el de su grupo (lo comparten las unidades de un grupo).
+      const unidades = conJerarquia ? await prisma.division.findMany({ select: { id: true, rtn: true, sucursal: { select: { rtn: true } } } }) : [];
+      const rtns = new Map(unidades.flatMap((v) => (v.rtn ?? v.sucursal.rtn ? [[v.id, (v.rtn ?? v.sucursal.rtn)!] as const] : [])));
+      hojas = hojasPorDivision(lineas, niveles, rtns);
     } else if (reporteId === "planilla-detallada") {
       // Impresa: el detalle cierra en el total de cada empresa; el subtotal del grupo y
       // el total general van en el resumen de la última página.

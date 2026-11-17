@@ -1,6 +1,6 @@
 var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/configuracion/parametros/isr-acumulados/route.js")
 R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
-R.c("server/chunks/[root-of-the-server]__07qemsu4juyo7._.js")
+R.c("server/chunks/[root-of-the-server]__0sdm0q0frei5l._.js")
 R.c("server/chunks/_043i7o-p2_6a5._.js")
 R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
 R.c("server/chunks/_160atohuo54ez._.js")

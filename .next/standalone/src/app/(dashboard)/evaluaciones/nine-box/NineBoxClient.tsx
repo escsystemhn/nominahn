@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
+import FotoAvatar from "@/components/employees/FotoAvatar";
 
 interface Empleado {
   id: string;
   nombre: string;
   codigo: string;
+  fotoVersion: number | null;
   puesto: string;
   departamento: string;
   desempeno: number; // 0–100 → eje X
@@ -107,9 +109,11 @@ export default function NineBoxClient({ datos }: Props) {
                                 onClick={() => setSeleccionado(emp)}
                                 title={emp.nombre}
                                 aria-label={emp.nombre}
-                                className={`flex h-6 w-6 items-center justify-center rounded-full ${cuad.dot} text-xs font-bold text-white transition-transform hover:scale-110`}
+                                className={`flex h-6 w-6 items-center justify-center overflow-hidden rounded-full ${cuad.dot} text-xs font-bold text-white transition-transform hover:scale-110`}
                               >
-                                {emp.nombre.charAt(0)}
+                                {emp.fotoVersion !== null
+                                  ? <FotoAvatar empleadoId={emp.id} version={emp.fotoVersion} nombre={emp.nombre} tamano="xs" className="h-6 w-6" />
+                                  : emp.nombre.charAt(0)}
                               </button>
                             ))}
                           </div>
@@ -133,7 +137,10 @@ export default function NineBoxClient({ datos }: Props) {
           {seleccionado ? (
             <div className="panel p-5">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="font-semibold text-gray-900">{seleccionado.nombre}</h2>
+                <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+                  <FotoAvatar empleadoId={seleccionado.id} version={seleccionado.fotoVersion} nombre={seleccionado.nombre} tamano="md" />
+                  {seleccionado.nombre}
+                </h2>
                 <button
                   onClick={() => setSeleccionado(null)}
                   className="btn btn-ghost btn-sm"

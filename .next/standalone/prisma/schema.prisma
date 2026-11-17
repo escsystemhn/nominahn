@@ -165,6 +165,9 @@ model Sucursal {
   email        String?
   /// Para qué sirve, cuando la sucursal funciona como grupo de nómina (ver «Jerarquía de nómina»).
   descripcion  String?
+  /// RTN del grupo (jerarquía de nómina): lo heredan sus unidades que no tengan uno propio
+  /// (Grupo PAGSA y sus 7 unidades comparten el de PAGSA). Pedido de Edbin, 2026-11-16.
+  rtn          String?
   activa       Boolean  @default(true)
   /// Sucursal (BPLID) equivalente en SAP Business One, si SAP usa varias sucursales.
   sapBplId     Int?
@@ -172,27 +175,25 @@ model Sucursal {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  empresaId        String
-  empresa          Empresa             @relation(fields: [empresaId], references: [id])
-  divisiones       Division[]
-  departamentos    Departamento[]
-  empleados        Empleado[]
-  planillas        Planilla[]
-  coberturas       CoberturaSucursal[]
-  horariosAtencion HorarioAtencion[]
-  detallesPlanilla PlanillaDetalle[]
+  empresaId          String
+  empresa            Empresa             @relation(fields: [empresaId], references: [id])
+  divisiones         Division[]
+  departamentos      Departamento[]
+  empleados          Empleado[]
+  planillas          Planilla[]
+  coberturas         CoberturaSucursal[]
+  horariosAtencion   HorarioAtencion[]
+  detallesPlanilla   PlanillaDetalle[]
   trasladosRecibidos TrasladoTemporal[]
-  logo             LogoSucursal?
+  logo               LogoSucursal?
 }
 
 /**
  * Logo de una sucursal, opcional. Sale en sus comprobantes y documentos.
- *
  * En la base y no en disco: el disco de Seenode se borra en cada despliegue, y
  * así el logo entra en el respaldo y se conserva al reinstalar. En tabla aparte
  * y no en `Sucursal`: decenas de consultas hacen `sucursal.findMany()` sin
  * `select`, y arrastrarían los bytes hasta las pantallas.
- *
  * Es siempre un PNG ya recortado y reducido: ver `lib/organizacion/logo.ts`.
  */
 model LogoSucursal {
@@ -658,6 +659,8 @@ model Empleado {
   planillasDetalle     PlanillaDetalle[]
   evaluaciones         Evaluacion[]
   documentos           Documento[]
+  /// Foto de la ficha (tabla aparte: los listados no arrastran los bytes).
+  foto                 FotoEmpleado?
   historialSalarios    HistorialSalario[]
   portalPosts          PortalPost[]
   anuncios             Anuncio[]
@@ -685,6 +688,22 @@ model Empleado {
   // El organigrama y el filtro de "mi equipo" recorren esta columna en cada carga.
   @@index([supervisorId])
   @@index([centroCostoId])
+}
+
+/**
+ * Foto del empleado: ficha, lista, organigrama, nine-box y Mi espacio (pedido de Edbin,
+ * 2026-11-16). En la base y no en disco, igual que el logo de sucursal: el disco de Seenode
+ * se borra en cada despliegue y así la foto entra en el respaldo. En tabla aparte para que
+ * `empleado.findMany()` no arrastre los bytes.
+ * Siempre un JPEG cuadrado ya recortado y reducido en el navegador; el servidor lo revisa y
+ * le quita los metadatos (EXIF con GPS, etc.) antes de guardarlo: ver `lib/empleados/foto.ts`.
+ */
+model FotoEmpleado {
+  empleadoId String   @id
+  empleado   Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  jpeg       Bytes
+  lado       Int
+  updatedAt  DateTime @updatedAt
 }
 
 model Contrato {
@@ -1463,19 +1482,19 @@ model EvaluacionParticipante {
 
 // Catálogo de competencias organizacionales
 model CompetenciaDefinicion {
-  id          String   @id @default(cuid())
-  nombre      String
-  descripcion String?  @db.Text
-  categoria   String   @default("CORE") // CORE | LIDERAZGO | TECNICA | COMPORTAMIENTO
-  activa      Boolean  @default(true)
+  id             String          @id @default(cuid())
+  nombre         String
+  descripcion    String?         @db.Text
+  categoria      String          @default("CORE") // CORE | LIDERAZGO | TECNICA | COMPORTAMIENTO
+  activa         Boolean         @default(true)
   // Aspecto general: se evalúa a quien no tenga aspectos asignados en su puesto.
   general        Boolean         @default(false)
   // En qué evaluación se usa; null = en las dos.
   tipoEvaluacion TipoEvaluacion?
   // Peso como aspecto general; en un puesto manda el peso de PuestoCompetencia.
   peso           Decimal         @default(1) @db.Decimal(4, 2)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   puestosCompetencia PuestoCompetencia[]
   criterios          CriterioEvaluacion[]

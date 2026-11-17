@@ -2,10 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede, puedeAlguno } from "@/lib/auth/guard";
 import ConfiguracionClient from "@/components/config/ConfiguracionClient";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { contarBorradores } from "@/lib/organizacion/movimientos-division";
+import { CLAVE_POLITICA_ASISTENCIA } from "@/lib/asistencia/deducciones/politica-bd";
 import { ORDEN_EMPRESA_PRINCIPAL } from "@/lib/empresa";
 import { leerMinutosInactividad } from "@/lib/auth/inactividad-bd";
 
-export default async function ConfiguracionPage() {
+export default async function ConfiguracionPage({ searchParams }: { searchParams: Promise<{ seccion?: string }> }) {
   const usuario = await requerirPermisoPagina([
     "configuracion.ver", "configuracion.editar", "configuracion.correo", "configuracion.parametros", "configuracion.sap",
     "seguridad.usuarios_gestionar", "configuracion.respaldos",
@@ -27,7 +29,13 @@ export default async function ConfiguracionPage() {
     prisma.empresa.findFirst({ orderBy: ORDEN_EMPRESA_PRINCIPAL }),
     prisma.sucursal.findMany({ orderBy: { nombre: "asc" }, include: { logo: { select: { updatedAt: true } } } }),
     prisma.division.findMany({
-      select: { id: true, nombre: true, codigo: true, rtn: true, activa: true, sucursalId: true, _count: { select: { departamentos: true, planillas: true, detallesPlanilla: true } } },
+      // Mover de grupo mira sólo las planillas calculadas o cerradas; los borradores se descartan.
+      select: {
+        id: true, nombre: true, codigo: true, rtn: true, activa: true, sucursalId: true,
+        _count: { select: { departamentos: true, planillas: { where: { estado: { not: "BORRADOR" } } }, detallesPlanilla: { where: { planilla: { estado: { not: "BORRADOR" } } } } } },
+        planillas: { where: { estado: "BORRADOR" }, select: { id: true } },
+        detallesPlanilla: { where: { planilla: { estado: "BORRADOR" } }, select: { planillaId: true }, distinct: ["planillaId"] },
+      },
       orderBy: [{ sucursal: { nombre: "asc" } }, { nombre: "asc" }],
     }),
     prisma.departamento.findMany({
@@ -47,7 +55,8 @@ export default async function ConfiguracionPage() {
     // Las claves SISTEMA_* (registro de la evaluación y activación de la licencia)
     // son firmas que el programa administra: no se muestran ni se editan aquí.
     prisma.configuracionSistema.findMany({
-      where: { NOT: { clave: { startsWith: "SISTEMA_" } } },
+      // La política de asistencia tiene su pestaña: su JSON no se muestra en crudo aquí.
+      where: { NOT: [{ clave: { startsWith: "SISTEMA_" } }, { clave: CLAVE_POLITICA_ASISTENCIA }] },
       orderBy: { clave: "asc" },
     }),
   ]);
@@ -60,7 +69,9 @@ export default async function ConfiguracionPage() {
     <ConfiguracionClient
       empresa={empresa}
       sucursales={sucursales.map(({ logo, ...s }) => ({ ...s, logoVersion: logo?.updatedAt.getTime() ?? null }))}
-      divisiones={divisiones.map(({ _count, ...v }) => ({ ...v, departamentos: _count.departamentos, conPlanillas: _count.planillas + _count.detallesPlanilla > 0 }))}
+      divisiones={divisiones.map(({ _count, planillas: propios, detallesPlanilla: lineas, ...v }) => ({
+        ...v, departamentos: _count.departamentos, conPlanillas: _count.planillas + _count.detallesPlanilla > 0, borradores: contarBorradores(propios, lineas),
+      }))}
       departamentos={departamentos.map(({ _count, ...d }) => ({ ...d, empleados: _count.empleados }))}
       puestos={puestos.map(({ _count, salarioMinimo: minimo, salarioMaximo: maximo, ...p }) => ({
         ...p,
@@ -84,6 +95,7 @@ export default async function ConfiguracionPage() {
       puedeSeguridad={puedeSeguridad}
       puedeRespaldos={puedeRespaldos}
       minutosInactividad={minutosInactividad}
+      seccionInicial={(await searchParams).seccion}
     />
   );
 }

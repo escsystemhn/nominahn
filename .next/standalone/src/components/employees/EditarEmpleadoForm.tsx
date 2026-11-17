@@ -9,7 +9,9 @@ import { z } from "zod";
 import { useAvisos } from "@/components/ui/Avisos";
 import { Field, PestanasFicha, ResumenErrores, erroresPorPestana, fieldClass, primerError, type PestanaFicha } from "./CamposFicha";
 import { montoComoTexto } from "@/lib/formato/monto-texto";
+import { etiquetasNiveles, type NivelesEstructura } from "@/lib/organizacion/estructura";
 import FlechasEmpleado, { type DestinoFlecha } from "./FlechasEmpleado";
+import EditorFotoEmpleado from "./EditorFotoEmpleado";
 
 const OBLIGATORIO = "Este dato es obligatorio.";
 const ELEGIR = "Elija una opción.";
@@ -75,6 +77,8 @@ interface Props {
   sucursales: Array<{ id: string; nombre: string }>;
   /** Vacío si el administrador no habilitó el nivel División. */
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
+  /** «Grupo»/«Sucursal» con la jerarquía de nómina; «Sucursal»/«División» sin ella. */
+  niveles?: NivelesEstructura;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   puestos: Array<{ id: string; nombre: string; departamentoId: string; activo: boolean }>;
   supervisores: Array<{ id: string; nombre: string }>;
@@ -87,6 +91,8 @@ interface Props {
   volverA: string;
   /** Flechas ‹ › al anterior y al siguiente de la lista; null si no hay lista que recorrer. */
   navegacion: { anterior: DestinoFlecha | null; siguiente: DestinoFlecha | null; posicion: number; total: number } | null;
+  /** Marca de la foto actual (updatedAt en ms); null = sin foto. */
+  fotoVersion?: number | null;
 }
 
 const TIPOS_CONTRATO: Record<FormData["tipoContrato"], string> = {
@@ -130,7 +136,9 @@ export default function EditarEmpleadoForm({
   tieneContratoVigente,
   puedeCambiarAportes,
   volverA,
+  niveles = etiquetasNiveles(false),
   navegacion,
+  fotoVersion = null,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -264,6 +272,11 @@ export default function EditarEmpleadoForm({
       {/* Personal */}
       {tab === "personal" && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
+          <div className="border-b border-gray-100 pb-4">
+            <p className="mb-2 text-sm font-medium text-gray-800">Foto</p>
+            <EditorFotoEmpleado empleadoId={empleado.id} version={fotoVersion} nombre={`${empleado.primerNombre} ${empleado.primerApellido}`} />
+            <p className="mt-2 text-xs text-gray-500">La foto se guarda al momento, sin esperar a «Guardar cambios».</p>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Primer nombre *" error={errors.primerNombre?.message}>
               <input {...register("primerNombre")} className={fieldClass} />
@@ -443,7 +456,7 @@ export default function EditarEmpleadoForm({
                 <option value="SEMANAL">Semanal</option>
               </select>
             </Field>
-            <Field label="Sucursal *" error={errors.sucursalId?.message}>
+            <Field label={`${niveles.sucursal} *`} error={errors.sucursalId?.message}>
               <select
                 {...register("sucursalId", { onChange: () => { setDivisionId(""); limpiarDesdeDepartamento(); } })}
                 className={fieldClass}
@@ -455,14 +468,14 @@ export default function EditarEmpleadoForm({
               </select>
             </Field>
             {divisiones.length > 0 && (
-              <Field label="División">
+              <Field label={niveles.division}>
                 <select
                   value={divisionId}
                   disabled={!sucursalId || divisionesSucursal.length === 0}
                   onChange={(e) => { setDivisionId(e.target.value); limpiarDesdeDepartamento(); }}
                   className={fieldClass}
                 >
-                  <option value="">{sucursalId && divisionesSucursal.length === 0 ? "La sucursal no tiene divisiones" : "Todas"}</option>
+                  <option value="">{sucursalId && divisionesSucursal.length === 0 ? niveles.sinDivisiones : niveles.todasDivisiones}</option>
                   {divisionesSucursal.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
                 </select>
               </Field>

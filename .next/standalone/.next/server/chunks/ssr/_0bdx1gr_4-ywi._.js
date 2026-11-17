@@ -1,3 +1,0 @@
-(()=>{"use strict";module.exports=[16644,a=>{var b=a.i(67161);a.s(["default",()=>b.Image])},86223,a=>{function b(a){return"number"==typeof a&&Number.isFinite(a)}a.s(["O",0,function(a){let c=0,d=0;for(let e of a)b(e.calificacion)&&e.peso>0&&(c+=Math.min(100,Math.max(0,e.calificacion))*e.peso,d+=e.peso);return d>0?Math.round((c/d+Number.EPSILON)*100)/100:null},"w",0,function(a){let c=a.filter(a=>a.peso>0);return c.length>0&&c.every(a=>b(a.calificacion))}])},59001,a=>{a.s(["l",0,"ESC System","m",0,"Gestión360 Nómina","n",0,"https://esc-systemhn.com"])}]})();
-
-//# sourceMappingURL=_0bdx1gr_4-ywi._.js.map
