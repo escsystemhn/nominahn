@@ -31,6 +31,7 @@ const CAMPOS = {
   primerApellido: true,
   segundoApellido: true,
   fotoPerfil: true,
+  foto: { select: { updatedAt: true } },
   estado: true,
   supervisorId: true,
   emailCorporativo: true,
@@ -56,6 +57,8 @@ export interface NodoOrganigrama {
   sucursal: string | null;
   centroCosto: string | null;
   fotoPerfil: string | null;
+  /** Marca de la foto (ms) para pedirla a /api/empleados/[id]/foto; null sin foto o fuera del alcance. */
+  fotoVersion: number | null;
   estado: string;
   emailCorporativo: string | null;
   extension: string | null;
@@ -149,6 +152,7 @@ export async function construirOrganigrama(
       sucursal: e.sucursal?.nombre ?? null,
       centroCosto: e.centroCosto ? `${e.centroCosto.codigo}, ${e.centroCosto.nombre}` : null,
       fotoPerfil: e.fotoPerfil,
+      fotoVersion: esContexto ? null : e.foto?.updatedAt.getTime() ?? null,
       estado: e.estado,
       // Un nodo de contexto no entrega datos de contacto: está fuera del alcance.
       emailCorporativo: esContexto ? null : e.emailCorporativo,

@@ -6,6 +6,7 @@ import { calcularDiasVacaciones } from "@/lib/payroll/calculos-hn";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import Link from "next/link";
 import PageHeader from "@/components/ui/PageHeader";
+import FotoAvatar from "@/components/employees/FotoAvatar";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import EstadoBadge, { etiquetaEstado, estadoDePlanilla } from "@/components/ui/EstadoBadge";
 import SaludFamilia from "@/components/employees/SaludFamilia";
@@ -59,6 +60,7 @@ export default async function FichaEmpleadoPage({
       sucursal: true,
       departamento: true,
       puesto: true,
+      foto: { select: { updatedAt: true } },
       contratos: { orderBy: { fechaInicio: "desc" } },
       permisos: { orderBy: { fechaInicio: "desc" } },
       deducciones: { include: { tipoDeduccion: true }, where: { activo: true } },
@@ -94,7 +96,7 @@ export default async function FichaEmpleadoPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={nombre}
+        title={<span className="flex items-center gap-3"><FotoAvatar empleadoId={emp.id} version={emp.foto?.updatedAt ?? null} nombre={nombre} tamano="md" />{nombre}</span>}
         description={
           <>
             <EstadoBadge valor={emp.estado} className="mr-2 align-middle" />

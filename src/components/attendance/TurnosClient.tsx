@@ -22,6 +22,7 @@ import {
   parseDias,
   type TipoJornada,
 } from "@/lib/asistencia/turnos-reglas";
+import { etiquetasNiveles, type NivelesEstructura } from "@/lib/organizacion/estructura";
 
 interface Turno {
   id: string;
@@ -64,7 +65,9 @@ const vacio = {
 const nombreEmp = (e: EmpleadoTurno) => [e.primerNombre, e.segundoNombre, e.primerApellido, e.segundoApellido].filter(Boolean).join(" ");
 const hoy = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" });
 
-export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departamentos, sucursales }: { puedeEditar: boolean; /** Los turnos valen para toda la empresa: asignarlos no es lo mismo que cambiarlos. */ puedeEditarCatalogo: boolean; departamentos: { id: string; nombre: string }[]; sucursales: { id: string; nombre: string }[] }) {
+export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departamentos, sucursales, niveles }: { puedeEditar: boolean; /** Los turnos valen para toda la empresa: asignarlos no es lo mismo que cambiarlos. */ puedeEditarCatalogo: boolean; departamentos: { id: string; nombre: string }[]; sucursales: { id: string; nombre: string }[]; niveles: NivelesEstructura }) {
+  // «Toda una sucursal» / «Todo un grupo»: los dos nombres del nivel no tienen el mismo género.
+  const todaUnaSucursal = `${niveles.sucursal === etiquetasNiveles(false).sucursal ? "Toda una" : "Todo un"} ${niveles.sucursal.toLowerCase()}`;
   const { confirmar } = useAvisos();
   const [turnos, setTurnos] = useState<Turno[] | null>(null);
   const [empleados, setEmpleados] = useState<EmpleadoTurno[]>([]);
@@ -252,7 +255,7 @@ export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departa
               <select id="a-alcance" className="input" value={asig.alcance} onChange={(e) => setAsig({ ...asig, alcance: e.target.value as typeof asig.alcance })}>
                 <option value="seleccion">Los marcados en la lista ({seleccion.size})</option>
                 <option value="departamento">Todo un departamento</option>
-                <option value="sucursal">Toda una sucursal</option>
+                <option value="sucursal">{todaUnaSucursal}</option>
               </select>
             </div>
             {asig.alcance === "departamento" && (
@@ -260,7 +263,7 @@ export default function TurnosClient({ puedeEditar, puedeEditarCatalogo, departa
                 <select id="a-depto" className="input" value={asig.departamentoId} onChange={(e) => setAsig({ ...asig, departamentoId: e.target.value })}><option value="">Elegir</option>{departamentos.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}</select></div>
             )}
             {asig.alcance === "sucursal" && (
-              <div><label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="a-suc">Sucursal</label>
+              <div><label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="a-suc">{niveles.sucursal}</label>
                 <select id="a-suc" className="input" value={asig.sucursalId} onChange={(e) => setAsig({ ...asig, sucursalId: e.target.value })}><option value="">Elegir</option>{sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select></div>
             )}
             <button type="button" className="btn btn-primary" onClick={() => void asignar()} disabled={!puedeAsignar}>Asignar turno</button>

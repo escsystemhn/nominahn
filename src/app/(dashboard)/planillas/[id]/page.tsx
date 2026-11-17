@@ -142,7 +142,7 @@ export default async function DetallePlanillaPage({
   const puedeImprimir = planilla.estado !== "ANULADA" && puede(usuario, "reportes.ver");
   const divisionesEnPlanilla = new Set(planilla.detalles.map((d) => ubicacionDeLinea(d, opciones.conDivisiones).division?.id ?? null));
   const variasDivisiones = divisionesEnPlanilla.size > 1;
-  // Con la jerarquía de nómina se imprime por empresa de entrada; el consolidado queda como la otra opción.
+  // Con la jerarquía de nómina se imprime por unidad de entrada; el consolidado queda como la otra opción.
   const separarDeEntrada = opciones.jerarquia && variasDivisiones;
 
   // Con acceso parcial, la suma de las personas que ve: el total de la planilla no le corresponde.
@@ -259,9 +259,9 @@ export default async function DetallePlanillaPage({
         )}
         {puedeImprimir && (
           <span className="ml-auto flex flex-wrap items-center gap-2">
-            <a href={urlImprimir(separarDeEntrada)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">{separarDeEntrada ? "Imprimir por empresa" : "Imprimir planilla"}</a>
+            <a href={urlImprimir(separarDeEntrada)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">{separarDeEntrada ? `Imprimir por ${niveles.division.toLowerCase()}` : "Imprimir planilla"}</a>
             {variasDivisiones && (
-              <a href={urlImprimir(!separarDeEntrada)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">{separarDeEntrada ? "Imprimir todo junto" : "Imprimir cada división en hoja aparte"}</a>
+              <a href={urlImprimir(!separarDeEntrada)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">{separarDeEntrada ? "Imprimir todo junto" : `Imprimir cada ${niveles.division.toLowerCase()} en hoja aparte`}</a>
             )}
           </span>
         )}

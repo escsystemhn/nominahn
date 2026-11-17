@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { construirBoleta, nombreArchivoComprobante, sucursalDeBoleta, type DetalleBoleta } from "./boleta";
+import { construirBoleta, entidadLegal, nombreArchivoComprobante, sucursalDeBoleta, type DetalleBoleta } from "./boleta";
 import { remitenteFormateado } from "@/lib/email/send";
 
 const detalle = (over: Partial<DetalleBoleta> = {}): DetalleBoleta => ({
@@ -104,6 +104,23 @@ describe("boleta — dónde estaba la persona al pagarle", () => {
   it("sin dirección de la sucursal usa la de la empresa", () => {
     const b = construirBoleta(detalle(), { ...ctx, empresa: { ...ctx.empresa, direccion: "Sede", telefono: "9999" }, ubicacion: { sucursal: { nombre: "Norte" } } });
     expect(b).toMatchObject({ direccion: "Sede", telefono: "9999" });
+  });
+});
+
+describe("boleta — quién paga (RTN del grupo heredado por sus unidades)", () => {
+  const empresa = { nombre: "Empresa principal", rtn: "08011999000001" };
+  const grupo = { nombre: "Grupo PAGSA", rtn: "05019000000017" };
+
+  it("la unidad sin RTN propio usa el del grupo; con uno propio, el suyo; sin ninguno, la empresa principal", () => {
+    expect(entidadLegal(empresa, grupo, { nombre: "Pagsa SPS", rtn: null })).toEqual({ nombre: "Grupo PAGSA", rtn: "05019000000017" });
+    expect(entidadLegal(empresa, grupo, { nombre: "Audi Tegus", rtn: "08019000000022" })).toEqual({ nombre: "Audi Tegus", rtn: "08019000000022" });
+    expect(entidadLegal(empresa, { nombre: "PRASA", rtn: null }, { nombre: "PRASA" })).toEqual(empresa);
+    expect(entidadLegal(empresa, null, null)).toEqual(empresa);
+  });
+
+  it("el comprobante de Pagsa SPS sale a nombre del grupo, sin repetirlo debajo, y nombra la unidad", () => {
+    const b = construirBoleta(detalle(), { ...ctx, ubicacion: { sucursal: { id: "g", ...grupo }, division: { nombre: "Pagsa SPS" } }, jerarquia: true });
+    expect(b).toMatchObject({ empresa: "Grupo PAGSA", empresaRtn: "05019000000017", sucursal: null, division: "Pagsa SPS" });
   });
 });
 

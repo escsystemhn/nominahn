@@ -3,11 +3,12 @@ import { filtroSucursales } from "@/lib/auth/alcance";
 import NuevoEmpleadoForm from "@/components/employees/NuevoEmpleadoForm";
 import PageHeader from "@/components/ui/PageHeader";
 import { puede, requerirPermisoPagina } from "@/lib/auth/guard";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 
 export default async function NuevoEmpleadoPage() {
   const usuario = await requerirPermisoPagina("empleados.crear");
-  const conDivisiones = await divisionesHabilitadas(prisma);
+  const [conDivisiones, conJerarquia] = await Promise.all([divisionesHabilitadas(prisma), jerarquiaNominaHabilitada(prisma)]);
 
   const [sucursales, divisiones, departamentos, puestos] = await Promise.all([
     prisma.sucursal.findMany({ where: { activa: true, ...filtroSucursales(usuario) }, select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
@@ -28,6 +29,7 @@ export default async function NuevoEmpleadoPage() {
         departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
         puestos={puestos}
         puedeCambiarAportes={puede(usuario, "configuracion.parametros")}
+        niveles={etiquetasNiveles(conJerarquia)}
       />
       </div>
     </div>

@@ -93,14 +93,14 @@ describe("con la jerarquía de nómina", () => {
   const sinEmpresa = { ...linea("ANA PAZ", MAY, "Ventas", 1000), ubicacion: { sucursal: CONF, division: null, departamento: { id: "x", nombre: "Ventas" } } };
 
   it("la hoja de quien no tiene empresa se nombra con esa palabra", () => {
-    expect(hojasPorDivision([...LINEAS, sinEmpresa], niveles).map((h) => h.pestana)).toEqual(["PAGSA MAYOREO", "PAGSA TEGUCIGALPA", "Sin empresa asignada", "Resumen"]);
+    expect(hojasPorDivision([...LINEAS, sinEmpresa], niveles).map((h) => h.pestana)).toEqual(["PAGSA MAYOREO", "PAGSA TEGUCIGALPA", "Sin sucursal asignada", "Resumen"]);
   });
 
-  it("el resumen titula sus columnas con Grupo y Empresa, y la última hoja cuenta empresas", () => {
-    expect(tablaResumenPlanilla(LINEAS, niveles).cabeceras[0]).toBe("Grupo / Empresa / Departamento");
-    expect(hojasPorDivision(LINEAS, niveles).at(-1)!.descripcion).toBe("Resumen: 2 empresas, 6 empleados");
-    expect(hojasPlanillaDetallada(LINEAS, niveles)[1].cabeceras[0]).toBe("Grupo / Empresa");
-    expect(tablaPlanillaDetallada([...LINEAS, sinEmpresa], niveles).datos.map((f) => f[0])).toContain("Sin empresa asignada");
+  it("el resumen titula sus columnas con Grupo y Sucursal, y la última hoja cuenta sucursales", () => {
+    expect(tablaResumenPlanilla(LINEAS, niveles).cabeceras[0]).toBe("Grupo / Sucursal / Departamento");
+    expect(hojasPorDivision(LINEAS, niveles).at(-1)!.descripcion).toBe("Resumen: 2 sucursales, 6 empleados");
+    expect(hojasPlanillaDetallada(LINEAS, niveles)[1].cabeceras[0]).toBe("Grupo / Sucursal");
+    expect(tablaPlanillaDetallada([...LINEAS, sinEmpresa], niveles).datos.map((f) => f[0])).toContain("Sin sucursal asignada");
   });
 
   it("cada hoja lleva el nombre y el RTN de su empresa; sin RTN, sólo el nombre", () => {

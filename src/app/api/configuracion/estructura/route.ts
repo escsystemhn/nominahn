@@ -1,7 +1,7 @@
 /**
  * Opciones de estructura organizacional: el nivel División
  * (Sucursal → División → Departamento) y la jerarquía de nómina
- * (Frecuencia → Grupo → Empresa → Departamento → Empleados). Las enciende o apaga
+ * (Frecuencia → Grupo → Sucursal → Departamento → Empleados). Las enciende o apaga
  * el administrador. Apagarlas no borra divisiones ni asignaciones: sólo deja de
  * mostrarlas (ver `src/lib/organizacion/estructura-bd.ts`).
  */

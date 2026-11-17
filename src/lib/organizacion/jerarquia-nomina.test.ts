@@ -37,7 +37,7 @@ const frecuencia = (lista: ReturnType<typeof construirJerarquiaNomina>, tipo: st
 describe("jerarquía de nómina", () => {
   const arbol = construirJerarquiaNomina(PLANTILLA, true);
 
-  it("reproduce Frecuencia → Grupo → Empresa → Departamento", () => {
+  it("reproduce Frecuencia → Grupo → Sucursal → Departamento", () => {
     expect(texto(frecuencia(arbol, "QUINCENAL").raiz)).toEqual([
       "Nómina quincenal (3)",
       "  Nómina Confidencial (3)",
@@ -121,7 +121,7 @@ describe("opciones de la estructura", () => {
     expect(aplicarCambioOpciones(nada, { divisiones: true })).toEqual({ divisiones: true, jerarquia: false });
   });
   it("cambia el nombre de los niveles sólo con la jerarquía", () => {
-    expect(etiquetasNiveles(true).divisiones).toBe("Empresas");
+    expect(etiquetasNiveles(true).divisiones).toBe("Sucursales");
     expect(etiquetasNiveles(false).divisiones).toBe("Divisiones");
   });
 });

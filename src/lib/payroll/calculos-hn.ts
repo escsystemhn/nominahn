@@ -880,6 +880,13 @@ export interface EntradaCalculoPlanilla {
    */
   semanasConAusencia?: number;
   /**
+   * Lo que ya calculó el motor de deducciones por asistencia (ausencias, séptimo, permisos
+   * sin goce y, si la política lo enciende, llegadas tarde y salidas anticipadas). Si viene,
+   * REEMPLAZA a `calcularDescuentoAusencia`; `diasAusentes` queda sólo para los días
+   * trabajados. Ver `lib/asistencia/deducciones`.
+   */
+  descuentoAsistencia?: MoneyInput;
+  /**
    * Salario que el patrono no paga por días de incapacidad a cargo del IHSS,
    * ya calculado (ver `lib/asistencia/incapacidades.ts`). Va en su propia
    * línea, igual que las ausencias. Por omisión, cero.
@@ -1117,7 +1124,9 @@ export function calcularPlanilla(
   // Lo que se deja de pagar por ausencias e incapacidad nunca pasa del sueldo
   // del período: ocho faltas en una quincena no pueden descontar más que la quincena.
   const ausencias = minimo(
-    calcularDescuentoAusencia(salarioMensual, diasAusentes, parametros.factorDescuentoAusencia, entrada.semanasConAusencia),
+    entrada.descuentoAsistencia !== undefined
+      ? redondear(entrada.descuentoAsistencia)
+      : calcularDescuentoAusencia(salarioMensual, diasAusentes, parametros.factorDescuentoAusencia, entrada.semanasConAusencia),
     salarioBase
   );
   const incapacidad = minimo(redondear(entrada.incapacidad ?? 0), maximo(salarioBase.minus(ausencias), 0));

@@ -49,12 +49,14 @@ interface SucursalBoleta {
   nombre: string;
   direccion?: string | null;
   telefono?: string | null;
+  /** RTN del grupo (jerarquía de nómina), que heredan sus unidades. */
+  rtn?: string | null;
 }
 
 /** Dónde estaba la persona al pagarle. Las líneas muy antiguas no lo guardaron. */
 export interface UbicacionBoleta {
   sucursal?: SucursalBoleta | null;
-  division?: { nombre: string } | null;
+  division?: { nombre: string; rtn?: string | null } | null;
   departamento?: { nombre: string } | null;
   /** Texto guardado en la línea desde el 2026-11-14; antes, null. */
   puesto?: string | null;
@@ -86,12 +88,12 @@ export interface ContextoBoleta {
 }
 
 /** Lo que la boleta consulta de la sucursal. */
-const SUCURSAL_BOLETA = { select: { id: true, nombre: true, direccion: true, telefono: true } } as const;
+const SUCURSAL_BOLETA = { select: { id: true, nombre: true, direccion: true, telefono: true, rtn: true } } as const;
 
 /** Lo que la boleta consulta de la línea de planilla, además de sus montos. */
 export const UBICACION_BOLETA = {
   sucursal: SUCURSAL_BOLETA,
-  division: { select: { nombre: true } },
+  division: { select: { nombre: true, rtn: true } },
   departamento: { select: { nombre: true } },
 } as const;
 
@@ -134,6 +136,21 @@ export function ubicacionDeMembrete(sucursal: string | null, division: string | 
   return [sucursal ? rotular(primero, sucursal) : null, division ? rotular(segundo, division) : null].filter((l): l is string => !!l);
 }
 
+/**
+ * Quién paga, para el encabezado: la unidad si tiene RTN propio, si no su grupo si lo
+ * tiene, y si no la empresa principal. Las unidades de Grupo PAGSA comparten el RTN del
+ * grupo; las de «Confidencial» tienen cada una el suyo (pedido de Edbin, 2026-11-16).
+ */
+export function entidadLegal(
+  empresa: { nombre: string; rtn: string },
+  grupo: { nombre: string; rtn?: string | null } | null,
+  unidad: { nombre: string; rtn?: string | null } | null
+): { nombre: string; rtn: string } {
+  if (unidad?.rtn) return { nombre: unidad.nombre, rtn: unidad.rtn };
+  if (grupo?.rtn) return { nombre: grupo.nombre, rtn: grupo.rtn };
+  return { nombre: empresa.nombre, rtn: empresa.rtn };
+}
+
 /** Mismo trato que el reporte: lo de la línea primero; si no lo guardó, lo actual del empleado. */
 export function sucursalDeBoleta(ubicacion: UbicacionBoleta | undefined, empleado: ContextoBoleta["empleado"]): SucursalBoleta | null {
   return ubicacion?.sucursal ?? empleado.sucursal ?? null;
@@ -157,14 +174,18 @@ export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): Da
   const sucursal = sucursalDeBoleta(ctx.ubicacion, ctx.empleado);
   const departamento = ctx.ubicacion?.departamento ?? ctx.empleado.departamento;
   const neto = money(detalle.salarioNeto);
-  // Una instalación con una sola sucursal suele llamarla igual que la empresa.
-  const sucursalVisible = sucursal && sucursal.nombre.trim().toLowerCase() !== ctx.empresa.nombre.trim().toLowerCase() ? sucursal.nombre : null;
-  const division = ctx.ubicacion?.division?.nombre ?? null;
+  const entidad = entidadLegal(ctx.empresa, sucursal, ctx.ubicacion?.division ?? null);
+  const igual = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  // Una instalación con una sola sucursal suele llamarla igual que la empresa; y el grupo
+  // que ya encabeza el comprobante (por su RTN) no se repite debajo.
+  const sucursalVisible = sucursal && !igual(sucursal.nombre, ctx.empresa.nombre) && !igual(sucursal.nombre, entidad.nombre) ? sucursal.nombre : null;
+  const divisionNombre = ctx.ubicacion?.division?.nombre ?? null;
+  const division = divisionNombre && !igual(divisionNombre, entidad.nombre) ? divisionNombre : null;
 
   return {
     estado: ctx.planilla.estado,
-    empresa: ctx.empresa.nombre,
-    empresaRtn: ctx.empresa.rtn,
+    empresa: entidad.nombre,
+    empresaRtn: entidad.rtn,
     sucursal: sucursalVisible,
     ubicacion: ubicacionDeMembrete(sucursalVisible, division, !!ctx.jerarquia),
     direccion: sucursal?.direccion || ctx.empresa.direccion || null,

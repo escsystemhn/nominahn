@@ -19,6 +19,7 @@ import { rango, fechaCorta, diaIso, periodoTexto, enumerar } from "@/lib/horario
 import type { Alerta, DiaCalculado, EmpleadoPlan, Faltante, ResumenEmpleado } from "@/lib/horarios/tipos";
 import AsistenteImportacion from "@/components/importacion/AsistenteImportacion";
 import TrasladoTemporalModal from "./TrasladoTemporalModal";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 interface Traslado {
   id: string;
@@ -68,7 +69,7 @@ interface Edicion {
   motivo: string;
 }
 
-export default function PlanHorarioClient({ id, puedeEditar }: { id: string; puedeEditar: boolean }) {
+export default function PlanHorarioClient({ id, puedeEditar, niveles }: { id: string; puedeEditar: boolean; niveles: NivelesEstructura }) {
   const router = useRouter();
   const { confirmar } = useAvisos();
   const [datos, setDatos] = useState<Datos | null>(null);
@@ -199,7 +200,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
           <a className="btn btn-secondary" href={`/api/horarios/planes/${id}/exportar?formato=pdf`}>PDF</a>
           <a className="btn btn-secondary" href={`/api/horarios/planes/${id}/exportar?formato=json`}>JSON</a>
           {editable && <button type="button" className="btn btn-secondary" onClick={() => setImportando(true)}>Importar de Excel</button>}
-          {editable && <button type="button" className="btn btn-secondary" onClick={() => setTrayendo(true)}>Personal de otra sucursal</button>}
+          {editable && <button type="button" className="btn btn-secondary" onClick={() => setTrayendo(true)}>Personal de fuera del plan</button>}
           {puedeEditar && plan.estado === "BORRADOR" && <button type="button" className="btn btn-primary" disabled={errLegales.length > 0} title={errLegales.length ? "Corrija los errores legales antes de publicar" : undefined} onClick={() => accion("publicar")}>Publicar</button>}
           {puedeEditar && plan.estado !== "BORRADOR" && <button type="button" className="btn btn-secondary" onClick={() => accion("borrador")}>Volver a borrador</button>}
           {puedeEditar && plan.estado !== "ARCHIVADO" && <button type="button" className="btn btn-ghost" onClick={() => accion("archivar")}>Archivar</button>}
@@ -223,7 +224,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
           { label: "Avisos", valor: validacion.alertas.filter((a) => a.nivel === "AVISO").length, detalle: "Revise antes de publicar" },
           { label: "Huecos de cobertura", valor: validacion.faltantes.length, detalle: "Franjas bajo el mínimo" },
           { label: "Horas extra", valor: Math.round(extraTotal * 100) / 100, detalle: extraTotal ? "Marcadas y clasificadas" : "Ninguna programada" },
-          { label: "Traslados", valor: traslados, detalle: "Días en otra sucursal" },
+          { label: "Traslados", valor: traslados, detalle: `Días fuera de su ${niveles.sucursal.toLowerCase()}` },
         ]}
       />
 
@@ -284,7 +285,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
                         <td className="sticky left-0 z-10 bg-white px-3 py-1.5">
                           <span className="font-medium text-gray-900">{e.nombre}</span>
                           {e.trasladoDe && (
-                            <span className="block text-xs text-blue-800" data-trasladado-de title="Traslado temporal: su sucursal y su planilla no cambian">
+                            <span className="block text-xs text-blue-800" data-trasladado-de title={`Traslado temporal: su ${niveles.sucursal.toLowerCase()} y su planilla no cambian`}>
                               De {e.trasladoDe.sucursalNombre}, {e.trasladoDe.desde === e.trasladoDe.hasta ? fechaCorta(e.trasladoDe.desde) : `${fechaCorta(e.trasladoDe.desde)} a ${fechaCorta(e.trasladoDe.hasta)}`}
                             </span>
                           )}
@@ -350,7 +351,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
                               type="button"
                               className="btn btn-sm border border-red-300 bg-white text-red-700 hover:bg-red-50"
                               onClick={async () => {
-                                if (!(await confirmar({ titulo: `¿Anular el traslado de ${t.empleadoNombre} a ${t.destinoNombre}?`, detalle: "Sus días en planes en borrador de esa sucursal se quitan.", accion: "Anular", peligro: true }))) return;
+                                if (!(await confirmar({ titulo: `¿Anular el traslado de ${t.empleadoNombre} a ${t.destinoNombre}?`, detalle: `Sus días en planes en borrador de ${t.destinoNombre} se quitan.`, accion: "Anular", peligro: true }))) return;
                                 const r = await fetch(`/api/horarios/traslados/${t.id}`, { method: "DELETE" });
                                 setAviso(r.ok ? { ok: true, texto: "Traslado anulado." } : { ok: false, texto: (await r.json().catch(() => ({}))).error ?? "No se pudo anular" });
                                 await cargar();
@@ -374,7 +375,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
         <AsistenteImportacion
           recurso="horarios"
           titulo="Importar horarios de Excel"
-          ayuda="Una fila por empleado y día: código o DNI, fecha, sucursal y turno (su código, D = descanso, A = ausencia) o la entrada y la salida. Otra sucursal del plan para alguien de otra sucursal crea su traslado temporal. Antes de aplicar verá cada fila con sus errores: empleados o sucursales que no existen, fechas fuera del plan, filas repetidas o turnos que se cruzan con otro plan publicado. Lo que el archivo no menciona queda como está."
+          ayuda={`Una fila por empleado y día: código o DNI, fecha, la columna Sucursal (${niveles.sucursal.toLowerCase()} donde trabaja ese día) y turno (su código, D = descanso, A = ausencia) o la entrada y la salida. Si la fila es de alguien de fuera del plan, esa columna crea su traslado temporal. Antes de aplicar verá cada fila con sus errores: empleados o ${niveles.sucursales.toLowerCase()} que no existen, fechas fuera del plan, filas repetidas o turnos que se cruzan con otro plan publicado. Lo que el archivo no menciona queda como está.`}
           extras={{ planId: id }}
           plantillas={{
             xlsx: `/api/exportar/horarios?plantilla=1&planId=${id}&formato=xlsx`,
@@ -391,6 +392,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
           desde={plan.desde}
           hasta={plan.hasta}
           sucursales={datos.sucursales}
+          niveles={niveles}
           onCerrar={() => setTrayendo(false)}
           onListo={async (avisoServidor) => {
             setTrayendo(false);
@@ -468,7 +470,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
           <section className="panel overflow-hidden">
             <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Cobertura por franja">
               <table className="table-base tabla-tarjetas">
-                <thead><tr><th>Sucursal</th><th>Puesto</th><th>Fecha</th><th>Franja</th><th className="num">Requeridos</th><th className="num">Programados</th></tr></thead>
+                <thead><tr><th>{niveles.sucursal}</th><th>Puesto</th><th>Fecha</th><th>Franja</th><th className="num">Requeridos</th><th className="num">Programados</th></tr></thead>
                 <tbody>
                   {validacion.faltantes.length === 0 && (
                     <tr>
@@ -523,7 +525,7 @@ export default function PlanHorarioClient({ id, puedeEditar }: { id: string; pue
                 <label><span className="font-medium text-gray-800">Entrada</span><input type="time" className="input mt-1" value={edicion.entrada} onChange={(e) => setEdicion({ ...edicion, entrada: e.target.value })} /></label>
                 <label><span className="font-medium text-gray-800">Salida</span><input type="time" className="input mt-1" value={edicion.salida} onChange={(e) => setEdicion({ ...edicion, salida: e.target.value })} /></label>
                 <label><span className="font-medium text-gray-800">Almuerzo / pausa (min)</span><input type="number" min={0} max={240} className="input mt-1" value={edicion.pausa} onChange={(e) => setEdicion({ ...edicion, pausa: Number(e.target.value) })} /></label>
-                <label><span className="font-medium text-gray-800">Sucursal</span>
+                <label><span className="font-medium text-gray-800">{niveles.sucursal}</span>
                   <select className="input mt-1" value={edicion.sucursalId} onChange={(e) => setEdicion({ ...edicion, sucursalId: e.target.value })}>
                     {datos.sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}{s.id !== edicion.empleado.sucursalId ? " (traslado)" : ""}</option>)}
                   </select>

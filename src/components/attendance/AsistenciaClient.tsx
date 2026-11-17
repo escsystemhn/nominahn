@@ -6,6 +6,7 @@ import { useAvisos } from "@/components/ui/Avisos";
 import { nombreCompleto } from "@/lib/utils";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 // Date cuando lo pasa el server component; string ISO cuando viene del JSON de
 // /api/marcajes. Ambas fuentes son reales, así que el tipo las admite.
@@ -49,6 +50,7 @@ interface Props {
   sucursales: Array<{ id: string; nombre: string }>;
   fecha: string;
   sucursalId: string;
+  niveles: NivelesEstructura;
 }
 
 /** De dónde salió cada marcaje. */
@@ -58,7 +60,7 @@ const FUENTE_MARCAJE: Record<string, string> = {
   PLANTILLA: "Plantilla de Excel",
 };
 
-export default function AsistenciaClient({ marcajes, empleados, sucursales, fecha, sucursalId }: Props) {
+export default function AsistenciaClient({ marcajes, empleados, sucursales, fecha, sucursalId, niveles }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
   const [loading, setLoading] = useState(false);
@@ -139,9 +141,9 @@ export default function AsistenciaClient({ marcajes, empleados, sucursales, fech
           <input name="fecha" type="date" defaultValue={fecha} className="input font-normal" />
         </label>
         <label className="block text-sm font-medium text-gray-800">
-          <span className="mb-1 block">Sucursal</span>
+          <span className="mb-1 block">{niveles.sucursal}</span>
           <select name="sucursalId" defaultValue={sucursalId} className="input font-normal">
-            <option value="">Todas las sucursales</option>
+            <option value="">{niveles.todasSucursales}</option>
             {sucursales.map((s) => (
               <option key={s.id} value={s.id}>{s.nombre}</option>
             ))}
@@ -162,7 +164,7 @@ export default function AsistenciaClient({ marcajes, empleados, sucursales, fech
             <thead>
               <tr>
                 <th>Empleado</th>
-                <th>Sucursal</th>
+                <th>{niveles.sucursal}</th>
                 <th>Entrada</th>
                 <th>Salida</th>
                 <th title="Almuerzo descontado: no es tiempo de trabajo">Almuerzo</th>
@@ -178,7 +180,7 @@ export default function AsistenciaClient({ marcajes, empleados, sucursales, fech
                   <td colSpan={9}>
                     <EstadoVacio
                       titulo="No hay marcajes para esta fecha."
-                      detalle="Cambie la fecha o la sucursal, o use el botón Registrar marcaje para anotar uno a mano."
+                      detalle={`Cambie de fecha o de ${niveles.sucursal.toLowerCase()}, o use el botón Registrar marcaje para anotar uno a mano.`}
                     />
                   </td>
                 </tr>
@@ -189,7 +191,7 @@ export default function AsistenciaClient({ marcajes, empleados, sucursales, fech
                       <div className="font-medium text-gray-900">{nombreCompleto(m.empleado)}</div>
                       <div className="text-xs text-gray-500">{m.empleado.codigo}</div>
                     </td>
-                    <td data-etiqueta="Sucursal" className="text-gray-600">{m.empleado.sucursal.nombre}</td>
+                    <td data-etiqueta={niveles.sucursal} className="text-gray-600">{m.empleado.sucursal.nombre}</td>
                     <td data-etiqueta="Entrada" className="whitespace-nowrap">{formatHora(m.horaEntrada)}</td>
                     <td data-etiqueta="Salida" className="whitespace-nowrap">{formatHora(m.horaSalida)}</td>
                     <td data-etiqueta="Almuerzo" className="whitespace-nowrap text-gray-500">

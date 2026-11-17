@@ -25,6 +25,7 @@ import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
+import FotoAvatar from "@/components/employees/FotoAvatar";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 
@@ -38,6 +39,8 @@ interface Nodo {
   departamentoId: string | null;
   sucursal: string | null;
   centroCosto: string | null;
+  /** Marca de la foto (ms); null sin foto o fuera del alcance. */
+  fotoVersion: number | null;
   estado: string;
   emailCorporativo: string | null;
   extension: string | null;
@@ -300,6 +303,7 @@ function Rama({
           )}
         </button>}
 
+        <FotoAvatar empleadoId={datos.id} version={datos.fotoVersion} nombre={datos.nombre} tamano="xs" className="mt-0.5" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             {datos.contexto ? (

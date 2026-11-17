@@ -19,8 +19,8 @@ export default async function JerarquiaNominaPage() {
         <div className="panel">
           <EstadoVacio
             titulo="La jerarquía de nómina no está activada."
-            detalle="Se activa en Configuración, en la pestaña Estructura organizacional."
-            accion={puede(usuario, "configuracion.editar") ? <Link href="/configuracion" className="btn btn-primary">Ir a Configuración</Link> : undefined}
+            detalle="Se activa en Configuración → Organización → Estructura organizacional."
+            accion={puede(usuario, "configuracion.editar") ? <Link href="/configuracion?seccion=estructura" className="btn btn-primary">Ir a la estructura</Link> : undefined}
           />
         </div>
       </div>

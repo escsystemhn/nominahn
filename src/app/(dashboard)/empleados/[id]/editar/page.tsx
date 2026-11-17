@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { alcanzaEmpleado, filtroSucursales } from "@/lib/auth/alcance";
-import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/ui/PageHeader";
@@ -40,7 +41,7 @@ export default async function EditarEmpleadoPage({
 
   const conDivisiones = await divisionesHabilitadas(prisma);
   const [emp, sucursales, divisiones, departamentos, puestos, centrosCosto, contratosVigentes] = await Promise.all([
-    prisma.empleado.findUnique({ where: { id } }),
+    prisma.empleado.findUnique({ where: { id }, include: { foto: { select: { updatedAt: true } } } }),
     prisma.sucursal.findMany({ where: { activa: true, ...filtroSucursales(usuario) }, orderBy: { nombre: "asc" } }),
     conDivisiones
       ? prisma.division.findMany({ where: { activa: true }, select: { id: true, nombre: true, sucursalId: true }, orderBy: { nombre: "asc" } })
@@ -143,6 +144,8 @@ export default async function EditarEmpleadoPage({
         tieneContratoVigente={contratosVigentes > 0}
         puedeCambiarAportes={puede(usuario, "configuracion.parametros")}
         volverA={`/empleados/${id}${conLista}`}
+        niveles={etiquetasNiveles(await jerarquiaNominaHabilitada(prisma))}
+        fotoVersion={emp.foto?.updatedAt.getTime() ?? null}
         navegacion={vecinos && vecinos.total > 1 ? {
           anterior: vecinos.anterior && { href: `/empleados/${vecinos.anterior.id}/editar${conLista}`, nombre: vecinos.anterior.nombre },
           siguiente: vecinos.siguiente && { href: `/empleados/${vecinos.siguiente.id}/editar${conLista}`, nombre: vecinos.siguiente.nombre },

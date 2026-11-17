@@ -3,6 +3,8 @@ import { conAlcance, filtroPorEmpleado, filtroSucursales } from "@/lib/auth/alca
 import { formatDate, hoyHN, fechaCalendario } from "@/lib/utils";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import AsistenciaClient from "@/components/attendance/AsistenciaClient";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import BarraDatos from "@/components/importacion/BarraDatos";
 import PageHeader from "@/components/ui/PageHeader";
 import FranjaCifras from "@/components/ui/FranjaCifras";
@@ -24,7 +26,7 @@ export default async function AsistenciaPage({
   // El cliente necesita el AAAA-MM-DD para el input type=date.
   const fechaStr = fecha.toISOString().split("T")[0];
 
-  const [marcajes, empleados, sucursales] = await Promise.all([
+  const [marcajes, empleados, sucursales, jerarquia] = await Promise.all([
     prisma.marcaje.findMany({
       where: {
         fecha,
@@ -66,6 +68,7 @@ export default async function AsistenciaPage({
       orderBy: { primerApellido: "asc" },
     }),
     prisma.sucursal.findMany({ where: filtroSucursales(usuario), select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
+    jerarquiaNominaHabilitada(prisma),
   ]);
 
   const presentes = marcajes.filter((m) => !m.esAusencia).length;
@@ -112,6 +115,7 @@ export default async function AsistenciaPage({
         sucursales={sucursales}
         fecha={fechaStr}
         sucursalId={sp.sucursalId ?? ""}
+        niveles={etiquetasNiveles(jerarquia)}
       />
     </div>
   );

@@ -44,7 +44,9 @@ const cabecerasSeguridad = [
   // No filtrar la ruta completa (que lleva ids de empleado y planilla) al salir
   // hacia otro origen.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  // La cámara sólo para el propio sitio: la foto del empleado se toma desde la ficha
+  // (2026-11-16). Micrófono, ubicación y pagos siguen cerrados.
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=()" },
   // Dos años, subdominios incluidos: los datos de nómina no viajan en claro.
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
 ];

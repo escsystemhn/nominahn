@@ -17,7 +17,6 @@ import {
   calcularPlanilla,
   calcularRAP,
   diasConDerechoASalario,
-  semanasDistintas,
   totalHorasExtra,
   type EntradaCalculoPlanilla,
   type HorasExtraPorJornada,
@@ -30,6 +29,10 @@ import {
 } from "./isr-personalizado";
 import { cargarHistorialIsr, leerConfigIsr } from "./isr-personalizado-bd";
 import { descuentoIncapacidades, fechasCubiertas, type IncapacidadParaPlanilla } from "@/lib/asistencia/incapacidades";
+import { resolutorTurnos } from "@/lib/asistencia/tardanzas";
+import { calcularDeduccionesAsistencia, lunesDe } from "@/lib/asistencia/deducciones/motor";
+import { incidenciasDelPeriodo, perfilDesdeTurno, type MarcaParaAsistencia } from "@/lib/asistencia/deducciones/incidencias";
+import { leerPoliticaAsistencia } from "@/lib/asistencia/deducciones/politica-bd";
 import { CERO, money, sumar, type Money } from "./money";
 import { aplicarDeducciones, CODIGO_ISR_FIJO, conMontosDelPeriodo, cuotaDelPeriodo, registrosDeAmortizacion, topesDelPeriodo, type Amortizacion } from "./deducciones";
 import { numeroDeQuincena, otraQuincena } from "./distribucion-quincenal";
@@ -188,6 +191,9 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       empleadoId: true,
       fecha: true,
       esAusencia: true,
+      horaEntrada: true,
+      horaSalida: true,
+      horasNormales: true,
       horasExtra: true,
       horasExtraDiurna: true,
       horasExtraMixta: true,
@@ -204,12 +210,50 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
     select: { empleadoId: true, fechaInicio: true, fechaFin: true, diasPatrono: true, porcentajeSubsidio: true },
   });
   const incapacidadesPorEmp = new Map<string, IncapacidadParaPlanilla[]>();
-  const fechasIncapacidad = new Set<string>();
   for (const inc of incapacidades) {
     const lista = incapacidadesPorEmp.get(inc.empleadoId) ?? [];
     lista.push({ ...inc, porcentajeSubsidio: Number(inc.porcentajeSubsidio) });
     incapacidadesPorEmp.set(inc.empleadoId, lista);
-    for (const t of fechasCubiertas(inc, desde, hasta)) fechasIncapacidad.add(`${inc.empleadoId}|${t}`);
+  }
+
+  // ─── Deducciones por asistencia (lib/asistencia/deducciones) ───────────────
+  // Una política para toda la instalación. Sin guardar, rige la de omisión, que descuenta
+  // igual que antes: día + séptimo por semana, sin llegadas tarde.
+  const { politica: politicaAsistencia } = await leerPoliticaAsistencia(prisma);
+  const texto = (d: Date) => d.toISOString().slice(0, 10);
+  const lunesDelPeriodo = lunesDe(texto(desde));
+  const MS_DIA = 86_400_000;
+  const [turnoDe, permisosAprobados, feriadosCercanos, ausenciasPrevias] = await Promise.all([
+    resolutorTurnos(empleadoIds, desde, hasta),
+    prisma.permiso.findMany({
+      where: { empleadoId: { in: empleadoIds }, estado: "APROBADO", fechaInicio: { lte: hasta }, fechaFin: { gte: desde } },
+      select: { empleadoId: true, tipo: true, fechaInicio: true, fechaFin: true, diasAprobados: true, diasSolicitados: true },
+    }),
+    // Una semana a cada lado: la falta junto a un feriado puede caer fuera del período.
+    prisma.feriado.findMany({
+      where: { activo: true, fecha: { gte: new Date(desde.getTime() - 7 * MS_DIA), lte: new Date(hasta.getTime() + 7 * MS_DIA) } },
+      select: { fecha: true, sucursalId: true },
+    }),
+    // Faltas de la misma semana ANTES del período: su séptimo ya lo descontó el anterior.
+    lunesDelPeriodo < texto(desde)
+      ? prisma.marcaje.findMany({
+          where: { empleadoId: { in: empleadoIds }, esAusencia: true, fecha: { gte: new Date(`${lunesDelPeriodo}T00:00:00Z`), lt: desde } },
+          select: { empleadoId: true },
+        })
+      : Promise.resolve([] as { empleadoId: string }[]),
+  ]);
+  const conSeptimoPrevio = new Set(ausenciasPrevias.map((a) => a.empleadoId));
+  const marcasPorEmp = new Map<string, MarcaParaAsistencia[]>();
+  for (const m of marcajes) {
+    const lista = marcasPorEmp.get(m.empleadoId) ?? [];
+    lista.push({ fecha: texto(m.fecha), esAusencia: m.esAusencia, horaEntrada: m.horaEntrada, horaSalida: m.horaSalida, horasNormales: Number(m.horasNormales) });
+    marcasPorEmp.set(m.empleadoId, lista);
+  }
+  const fechasIncapacidadPorEmp = new Map<string, Set<string>>();
+  for (const inc of incapacidades) {
+    const s = fechasIncapacidadPorEmp.get(inc.empleadoId) ?? new Set<string>();
+    for (const t of fechasCubiertas(inc, desde, hasta)) s.add(texto(new Date(t)));
+    fechasIncapacidadPorEmp.set(inc.empleadoId, s);
   }
 
   // Salario mínimo vigente: lo inembargable para el tope de deducciones (Art. 371).
@@ -233,14 +277,10 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   // Quien ya tiene liquidación de este mes con su RAP pendiente: lo cotizó ahí.
   const rapEnLiquidacion = basesRap ? await conRapEnLiquidacion(prisma, empleadoIds, mesDe(desde)) : new Set<string>();
 
-  // Fechas de ausencia por persona: cada semana con faltas pierde UN séptimo día.
-  const ausenciasPorEmp = new Map<string, Date[]>();
+  // Las ausencias ya no se cuentan aquí: las clasifica y descuenta el motor de asistencia.
   const extraPorEmp = new Map<string, HorasExtraPorJornada>();
 
   for (const m of marcajes) {
-    if (m.esAusencia && !fechasIncapacidad.has(`${m.empleadoId}|${m.fecha.getTime()}`)) {
-      ausenciasPorEmp.set(m.empleadoId, [...(ausenciasPorEmp.get(m.empleadoId) ?? []), m.fecha]);
-    }
 
     const acc = extraPorEmp.get(m.empleadoId) ?? { diurnas: 0, mixtas: 0, nocturnas: 0, feriado: 0 };
     const diurnas = Number(m.horasExtraDiurna);
@@ -288,9 +328,29 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
     // Años de servicio al cierre del PERÍODO, no a hoy: recalcular un mes pasado
     // o calcular uno futuro no debe cambiar la antigüedad con que se provisiona.
     const anios = calcularAniosTrabajados(emp.fechaIngreso, hasta);
-    const fechasAusencia = ausenciasPorEmp.get(emp.id) ?? [];
-    const diasAusentes = fechasAusencia.length;
     const horasExtra = extraPorEmp.get(emp.id) ?? {};
+
+    // Ausencias, séptimo, permisos sin goce y (si la política lo enciende) tardanzas.
+    const feriadosEmp = feriadosCercanos.filter((f) => f.sucursalId === null || f.sucursalId === emp.sucursalId).map((f) => texto(f.fecha));
+    const asistencia = calcularDeduccionesAsistencia({
+      perfil: perfilDesdeTurno(turnoDe(emp.id, desde), salario, tipo as "SEMANAL" | "QUINCENAL" | "MENSUAL"),
+      politica: politicaAsistencia,
+      periodo: { desde: texto(desde), hasta: texto(hasta) },
+      incidencias: incidenciasDelPeriodo({
+        desde: texto(desde),
+        hasta: texto(hasta),
+        marcas: marcasPorEmp.get(emp.id) ?? [],
+        turnoDe: (f) => turnoDe(emp.id, new Date(`${f}T00:00:00Z`)),
+        permisos: permisosAprobados
+          .filter((x) => x.empleadoId === emp.id)
+          .map((x) => ({ tipo: x.tipo, desde: texto(x.fechaInicio), hasta: texto(x.fechaFin), dias: x.diasAprobados ?? x.diasSolicitados })),
+        fechasIncapacidad: fechasIncapacidadPorEmp.get(emp.id) ?? new Set(),
+        feriados: new Set(feriadosEmp),
+      }),
+      feriados: feriadosEmp,
+      septimosYaDescontados: conSeptimoPrevio.has(emp.id) ? [lunesDelPeriodo] : [],
+    });
+    const diasAusentes = asistencia.totales.diasAusencia;
 
     // Días CON DERECHO A SALARIO. Antes se pasaba `diasMes` fijo, de modo que
     // un empleado contratado a mitad de período cobraba el período completo.
@@ -367,7 +427,7 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       bonificaciones,
       otrosIngresos: 0,
       diasAusentes,
-      semanasConAusencia: semanasDistintas(fechasAusencia),
+      descuentoAsistencia: asistencia.totales.monto,
       incapacidad: inc.descuento,
       // Primero sin las demás deducciones: lo que queda después de las de ley
       // fija los topes de los Arts. 371 y 372.

@@ -12,6 +12,7 @@ import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 import { motivoParaNoDesactivarSucursal, motivoSucursalRepetida } from "@/lib/organizacion/sucursales";
 import { motivoParaNoEliminarSucursal } from "@/lib/organizacion/eliminar";
+import { zRtnEmpresaOpcional } from "@/lib/organizacion/estructura-bd";
 
 const schema = z.object({
   nombre: z.string().trim().min(1).max(150).optional(),
@@ -19,6 +20,8 @@ const schema = z.object({
   direccion: z.string().trim().max(300).nullable().optional(),
   telefono: z.string().trim().max(50).nullable().optional(),
   descripcion: z.string().trim().max(300).nullable().optional(),
+  /** RTN del grupo, que heredan sus unidades sin RTN propio. */
+  rtn: zRtnEmpresaOpcional,
   activa: z.boolean().optional(),
 });
 
@@ -33,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const antes = await prisma.sucursal.findUnique({
     where: { id },
-    select: { nombre: true, codigo: true, direccion: true, telefono: true, descripcion: true, activa: true, empresaId: true },
+    select: { nombre: true, codigo: true, direccion: true, telefono: true, descripcion: true, rtn: true, activa: true, empresaId: true },
   });
   if (!antes) return NextResponse.json({ error: "La sucursal no existe." }, { status: 404 });
 
@@ -62,6 +65,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(c.direccion !== undefined ? { direccion: c.direccion || null } : {}),
       ...(c.telefono !== undefined ? { telefono: c.telefono || null } : {}),
       ...(c.descripcion !== undefined ? { descripcion: c.descripcion || null } : {}),
+      ...(c.rtn !== undefined ? { rtn: c.rtn || null } : {}),
       ...(c.activa !== undefined ? { activa: c.activa } : {}),
     },
   });
@@ -69,8 +73,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "UPDATE", tabla: "Sucursal", registroId: id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
-    valorAnterior: { nombre: antes.nombre, codigo: antes.codigo, direccion: antes.direccion, telefono: antes.telefono, descripcion: antes.descripcion, activa: antes.activa },
-    valorNuevo: { nombre: sucursal.nombre, codigo: sucursal.codigo, direccion: sucursal.direccion, telefono: sucursal.telefono, descripcion: sucursal.descripcion, activa: sucursal.activa },
+    valorAnterior: { nombre: antes.nombre, codigo: antes.codigo, direccion: antes.direccion, telefono: antes.telefono, descripcion: antes.descripcion, rtn: antes.rtn, activa: antes.activa },
+    valorNuevo: { nombre: sucursal.nombre, codigo: sucursal.codigo, direccion: sucursal.direccion, telefono: sucursal.telefono, descripcion: sucursal.descripcion, rtn: sucursal.rtn, activa: sucursal.activa },
     ip, userAgent,
   });
   return NextResponse.json(sucursal);

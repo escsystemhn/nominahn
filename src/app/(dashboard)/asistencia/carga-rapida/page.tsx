@@ -3,6 +3,8 @@ import { conAlcance, filtroSucursales } from "@/lib/auth/alcance";
 import { requerirPermisoPagina } from "@/lib/auth/guard";
 import { fechaCalendario, hoyHN, TZ_HN } from "@/lib/utils";
 import CargaRapidaClient, { type FilaCarga } from "@/components/attendance/CargaRapidaClient";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
+import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 
 export const metadata = { title: "Carga rápida de horas" };
 
@@ -29,7 +31,7 @@ export default async function CargaRapidaPage({
   // tabla no es «rápida» para nadie.
   const sucursalId = sp.sucursalId && sucursales.some((s) => s.id === sp.sucursalId) ? sp.sucursalId : (sucursales[0]?.id ?? "");
 
-  const [departamentos, empleados] = await Promise.all([
+  const [departamentos, empleados, jerarquia] = await Promise.all([
     prisma.departamento.findMany({
       where: { sucursalId, activo: true, empleados: { some: conAlcance({ estado: "ACTIVO" }, usuario) } },
       select: { id: true, nombre: true },
@@ -61,6 +63,7 @@ export default async function CargaRapidaPage({
       },
       orderBy: [{ departamento: { nombre: "asc" } }, { primerApellido: "asc" }],
     }),
+    jerarquiaNominaHabilitada(prisma),
   ]);
 
   const filas: FilaCarga[] = empleados.map((e) => {
@@ -93,6 +96,7 @@ export default async function CargaRapidaPage({
       sucursales={sucursales}
       departamentos={departamentos}
       filas={filas}
+      niveles={etiquetasNiveles(jerarquia)}
     />
   );
 }

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { motivoSucursalRepetida } from "@/lib/organizacion/sucursales";
+import { zRtnEmpresaOpcional } from "@/lib/organizacion/estructura-bd";
 
 const schema = z.object({
   nombre: z.string().trim().min(1).max(150),
@@ -13,6 +14,8 @@ const schema = z.object({
   telefono: z.string().trim().max(50).optional(),
   email: z.string().trim().email().max(150).optional().or(z.literal("")),
   descripcion: z.string().trim().max(300).optional(),
+  /** RTN del grupo (jerarquía de nómina), que heredan sus unidades. */
+  rtn: zRtnEmpresaOpcional,
   empresaId: zId,
 });
 
@@ -27,7 +30,7 @@ export async function POST(req: NextRequest) {
   const repetida = motivoSucursalRepetida(parsed.data, otras);
   if (repetida) return NextResponse.json({ error: repetida }, { status: 409 });
 
-  const sucursal = await prisma.sucursal.create({ data: { ...parsed.data, descripcion: parsed.data.descripcion || null } });
+  const sucursal = await prisma.sucursal.create({ data: { ...parsed.data, descripcion: parsed.data.descripcion || null, rtn: parsed.data.rtn || null } });
   const { ip, userAgent } = getClientInfo(req);
   await audit({
     accion: "CREATE", tabla: "Sucursal", registroId: sucursal.id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,

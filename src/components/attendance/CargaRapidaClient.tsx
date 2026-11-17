@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import { useAvisos } from "@/components/ui/Avisos";
+import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 export interface FilaCarga {
   empleadoId: string;
@@ -50,6 +51,7 @@ interface Props {
   sucursales: { id: string; nombre: string }[];
   departamentos: { id: string; nombre: string }[];
   filas: FilaCarga[];
+  niveles: NivelesEstructura;
 }
 
 const editable = (f: FilaCarga): Editable => ({ entrada: f.entrada, salida: f.salida, almuerzo: f.almuerzo, ausente: f.ausente, observacion: f.observacion });
@@ -62,7 +64,7 @@ function moverDia(fecha: string, dias: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default function CargaRapidaClient({ fecha, hoy, sucursalId, departamentoId, sucursales, departamentos, filas }: Props) {
+export default function CargaRapidaClient({ fecha, hoy, sucursalId, departamentoId, sucursales, departamentos, filas, niveles }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
   const [originales, setOriginales] = useState<Record<string, Editable>>(() => Object.fromEntries(filas.map((f) => [f.empleadoId, editable(f)])));
@@ -218,7 +220,7 @@ export default function CargaRapidaClient({ fecha, hoy, sucursalId, departamento
           </div>
         </label>
         <label className="text-sm">
-          <span className="block font-medium text-gray-800">Sucursal</span>
+          <span className="block font-medium text-gray-800">{niveles.sucursal}</span>
           <select className="input mt-1 w-56!" value={sucursalId} onChange={(e) => ir({ sucursalId: e.target.value })}>
             {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
           </select>
@@ -246,7 +248,7 @@ export default function CargaRapidaClient({ fecha, hoy, sucursalId, departamento
 
       {visibles.length === 0 ? (
         <div className="panel">
-          <EstadoVacio titulo="No hay empleados activos con este filtro." detalle="Cambie la sucursal o el departamento." />
+          <EstadoVacio titulo="No hay empleados activos con este filtro." detalle={`Cambie de ${niveles.sucursal.toLowerCase()} o de departamento.`} />
         </div>
       ) : (
         <div className="panel overflow-x-auto">

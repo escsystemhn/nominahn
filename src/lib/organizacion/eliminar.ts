@@ -47,13 +47,16 @@ export function motivoParaNoEliminarDepartamento(u: UsoDepartamento): string | n
 export interface UsoMovimientoDivision {
   planillas: number;
   lineasPlanilla: number;
-  /** Cobertura de horarios del grupo actual para los puestos que se irían con la empresa. */
+  /** Cobertura de horarios del grupo actual para los puestos que se irían con la unidad. */
   coberturasPuestos: number;
 }
 
-/** Una empresa cambia de grupo sólo sin movimientos: ni planillas ni líneas de planilla. */
+/**
+ * Una unidad cambia de grupo sólo sin movimientos: ni planillas ni líneas de planilla ya
+ * calculadas o cerradas. Los borradores no cuentan (ver `movimientos-division.ts`).
+ */
 export function motivoParaNoMoverDivision(u: UsoMovimientoDivision): string | null {
-  if (u.planillas + u.lineasPlanilla > 0) return "No se puede cambiar de grupo: ya tiene planillas. Las planillas emitidas cuelgan de su grupo actual.";
+  if (u.planillas + u.lineasPlanilla > 0) return "No se puede cambiar de grupo: ya tiene planillas calculadas o cerradas, que cuelgan de su grupo actual. Los borradores no cuentan.";
   if (u.coberturasPuestos > 0) {
     return "No se puede cambiar de grupo: sus puestos tienen cobertura de horarios en el grupo actual. Quítela en Horarios rotativos y vuelva a intentarlo.";
   }

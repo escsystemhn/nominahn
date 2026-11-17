@@ -40,7 +40,7 @@ export default async function MiEspacioPage() {
   const [empleado, saldo] = await Promise.all([
     prisma.empleado.findUnique({
       where: { id: empleadoId },
-      include: { puesto: { select: { nombre: true } }, departamento: { select: { nombre: true } } },
+      include: { puesto: { select: { nombre: true } }, departamento: { select: { nombre: true } }, foto: { select: { updatedAt: true } } },
     }),
     prisma.saldoVacaciones.findUnique({ where: { empleadoId } }),
   ]);
@@ -53,6 +53,8 @@ export default async function MiEspacioPage() {
   return (
     <MiEspacioClient
       nombre={empleado ? nombreCompleto(empleado) : "Empleado"}
+      empleadoId={empleado?.id}
+      fotoVersion={empleado?.foto?.updatedAt.getTime() ?? null}
       puesto={empleado?.puesto?.nombre ?? empleado?.departamento?.nombre ?? ""}
       diasDevengados={diasDevengados}
       diasDisponibles={diasDisponibles}

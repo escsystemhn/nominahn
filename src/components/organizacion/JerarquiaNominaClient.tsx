@@ -20,8 +20,8 @@ import type { FrecuenciaNomina, NivelNomina, NodoNomina, PersonaNomina } from "@
 
 const ETIQUETA_NIVEL: Record<NivelNomina, string> = {
   FRECUENCIA: "Toda la nómina",
-  GRUPO: "Grupo de nómina",
-  EMPRESA: "Empresa",
+  GRUPO: "Grupo",
+  EMPRESA: "Sucursal",
   DEPARTAMENTO: "Departamento",
 };
 
@@ -144,7 +144,7 @@ export default function JerarquiaNominaClient({ frecuencias, conSalarios }: { fr
     <div className="space-y-6">
       <PageHeader
         title="Jerarquía de nómina"
-        description="Grupo, empresa, departamento y empleados de cada nómina. Sólo aparecen las ramas con personal en la frecuencia elegida."
+        description="Grupo, sucursal, departamento y empleados de cada nómina. Sólo aparecen las ramas con personal en la frecuencia elegida."
         actions={
           <>
             <button type="button" className="btn btn-secondary" onClick={() => setAbiertos(new Set(frecuencias.flatMap((f) => clavesConHijos(f.raiz))))}>Desplegar todo</button>

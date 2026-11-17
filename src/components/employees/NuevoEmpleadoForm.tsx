@@ -9,6 +9,8 @@ import { z } from "zod";
 import { useAvisos } from "@/components/ui/Avisos";
 import { Field, PestanasFicha, ResumenErrores, erroresPorPestana, fieldClass, primerError, type PestanaFicha } from "./CamposFicha";
 import { montoComoTexto } from "@/lib/formato/monto-texto";
+import { etiquetasNiveles, type NivelesEstructura } from "@/lib/organizacion/estructura";
+import EditorFotoEmpleado from "./EditorFotoEmpleado";
 
 const OBLIGATORIO = "Este dato es obligatorio.";
 const ELEGIR = "Elija una opción.";
@@ -55,13 +57,15 @@ interface Props {
   sucursales: Array<{ id: string; nombre: string }>;
   /** Vacío si el administrador no habilitó el nivel División. */
   divisiones: Array<{ id: string; nombre: string; sucursalId: string }>;
+  /** «Grupo»/«Sucursal» con la jerarquía de nómina; «Sucursal»/«División» sin ella. */
+  niveles?: NivelesEstructura;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   puestos: Array<{ id: string; nombre: string; departamentoId: string }>;
   /** Apagar el IHSS o el RAP de la ficha: sólo con el permiso de los parámetros de ley. */
   puedeCambiarAportes: boolean;
 }
 
-export default function NuevoEmpleadoForm({ sucursales, divisiones, departamentos, puestos, puedeCambiarAportes }: Props) {
+export default function NuevoEmpleadoForm({ sucursales, divisiones, departamentos, puestos, puedeCambiarAportes, niveles = etiquetasNiveles(false) }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<PestanaFicha>("personal");
@@ -72,6 +76,9 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
   // «Guardar y registrar otro»: tras guardar, el formulario queda listo para el siguiente
   // (pedido de Edbin, 2026-11-16), con un aviso del que se acaba de registrar.
   const [registrado, setRegistrado] = useState<{ id: string; codigo: string; nombre: string } | null>(null);
+  // La foto se prepara antes de que exista el empleado y se sube después de crearlo.
+  const [foto, setFoto] = useState<Blob | null>(null);
+  const [vueltaFoto, setVueltaFoto] = useState(0);
 
   const {
     register,
@@ -98,6 +105,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
   // componente. `useWatch` es la variante suscrita a un campo concreto.
   const sucursalId = useWatch({ control, name: "sucursalId" });
   const departamentoId = useWatch({ control, name: "departamentoId" });
+  const [primerNombre, primerApellido] = useWatch({ control, name: ["primerNombre", "primerApellido"] });
   const divisionesSucursal = divisiones.filter((v) => v.sucursalId === sucursalId);
   const deptsFiltrados = departamentos.filter((d) =>
     (!sucursalId || d.sucursalId === sucursalId) && (!divisionId || d.divisionId === divisionId)
@@ -122,6 +130,10 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
         const campos = emp?.detalles ? Object.entries(emp.detalles).map(([k, v]) => `${k}: ${(v as string[]).join(", ")}`) : [];
         throw new Error([emp?.error ?? "El servidor no pudo registrar el empleado. Intente de nuevo.", ...campos].join("\n"));
       }
+      if (foto) {
+        const r = await fetch(`/api/empleados/${emp.id}/foto`, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: foto }).catch(() => null);
+        if (!r?.ok) avisar.error(`${emp.codigo} quedó registrado, pero su foto no se guardó. Súbala desde Editar.`);
+      }
       if (seguirRegistrando) {
         // Lo de la organización se conserva (suele ser igual para el siguiente); lo personal y el salario, no.
         const v = getValues();
@@ -131,6 +143,8 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
           sucursalId: v.sucursalId, departamentoId: v.departamentoId, puestoId: v.puestoId,
         });
         setRegistrado({ id: emp.id, codigo: emp.codigo, nombre: `${data.primerNombre} ${data.primerApellido}` });
+        setFoto(null);
+        setVueltaFoto((n) => n + 1);
         setTab("personal");
         window.scrollTo({ top: 0, behavior: "smooth" });
         setTimeout(() => setFocus("primerNombre"), 0);
@@ -163,6 +177,10 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
       {/* Personal */}
       {tab === "personal" && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
+          <div className="border-b border-gray-100 pb-4">
+            <p className="mb-2 text-sm font-medium text-gray-800">Foto</p>
+            <EditorFotoEmpleado key={vueltaFoto} nombre={`${primerNombre ?? ""} ${primerApellido ?? ""}`.trim()} onPreparada={setFoto} />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Primer nombre *" error={errors.primerNombre?.message}>
               <input {...register("primerNombre")} className={fieldClass} />
@@ -289,7 +307,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
                 <option value="SEMANAL">Semanal</option>
               </select>
             </Field>
-            <Field label="Sucursal *" error={errors.sucursalId?.message}>
+            <Field label={`${niveles.sucursal} *`} error={errors.sucursalId?.message}>
               {/* Cambiar de sucursal deja sin sentido la división, el departamento y el puesto elegidos. */}
               <select
                 {...register("sucursalId", { onChange: () => { setDivisionId(""); setValue("departamentoId", ""); setValue("puestoId", ""); } })}
@@ -302,14 +320,14 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
               </select>
             </Field>
             {divisiones.length > 0 && (
-              <Field label="División">
+              <Field label={niveles.division}>
                 <select
                   value={divisionId}
                   disabled={!sucursalId || divisionesSucursal.length === 0}
                   onChange={(e) => { setDivisionId(e.target.value); setValue("departamentoId", ""); setValue("puestoId", ""); }}
                   className={fieldClass}
                 >
-                  <option value="">{sucursalId && divisionesSucursal.length === 0 ? "La sucursal no tiene divisiones" : "Todas"}</option>
+                  <option value="">{sucursalId && divisionesSucursal.length === 0 ? niveles.sinDivisiones : niveles.todasDivisiones}</option>
                   {divisionesSucursal.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
                 </select>
               </Field>
@@ -324,7 +342,7 @@ export default function NuevoEmpleadoForm({ sucursales, divisiones, departamento
                 ))}
               </select>
               {sucursalId && deptsFiltrados.length === 0 && (
-                <p className="mt-1 text-xs text-amber-700">No hay departamentos aquí. Créelos en Configuración, Estructura organizacional.</p>
+                <p className="mt-1 text-xs text-amber-700">No hay departamentos aquí. Créelos en <Link href="/configuracion?seccion=estructura" className="underline">Configuración → Estructura organizacional</Link>.</p>
               )}
             </Field>
             <Field label="Puesto" error={errors.puestoId?.message}>

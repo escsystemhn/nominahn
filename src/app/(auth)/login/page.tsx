@@ -19,6 +19,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { cn } from "@/lib/utils";
+import { DESARROLLADOR, SITIO_DESARROLLADOR } from "@/lib/marca";
 import {
   VERSION,
   SOPORTE,
@@ -205,7 +206,17 @@ function PieSoporte({ estado, empresa }: { estado: EstadoServicio; empresa: stri
           </a>
         </div>
       </div>
-      <p className="text-xs text-white/50">Versión {VERSION}</p>
+      <p className="text-xs text-white/50">
+        Versión {VERSION} ·{" "}
+        <a
+          href={SITIO_DESARROLLADOR}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline-offset-2 transition-colors hover:text-white hover:underline"
+        >
+          Desarrollado por {DESARROLLADOR}
+        </a>
+      </p>
     </div>
   );
 }
