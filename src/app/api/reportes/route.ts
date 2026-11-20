@@ -8,7 +8,7 @@ import {
   normalizarFormato,
   BOM_UTF8,
 } from "@/lib/reportes/formato";
-import { requerirPermiso } from "@/lib/auth/guard";
+import { requerirPermiso, puede } from "@/lib/auth/guard";
 import { filtroEmpleados, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { etiquetasNiveles, filtroDetallesOrg, filtroEmpleadosOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
@@ -31,6 +31,9 @@ import { aXlsx, aPdf, contarDetalles, leerPapel, metaFila, type HojaReporte, typ
 import { reportePuntualidad, MAX_DIAS_REPORTE } from "@/lib/asistencia/tardanzas";
 import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
 import { PRODUCTO } from "@/lib/marca";
+import { formatoIdentidad } from "@/lib/empleados/identidad";
+import { leerDetalle } from "@/lib/reportes/estructura-organizacional";
+import { cargarTablaEstructura } from "@/lib/reportes/estructura-organizacional-bd";
 
 export async function GET(req: NextRequest) {
   const g = await requerirPermiso("reportes.ver");
@@ -82,7 +85,19 @@ export async function GET(req: NextRequest) {
   // Las líneas de planilla se filtran por dónde estaba la persona al pagarse.
   const filtroDet: Prisma.PlanillaDetalleWhereInput = { AND: [filtroDetallesOrg(alcance), filtroPorEmpleado(g.usuario)] };
 
-  if (reporteId === "empleados-activos") {
+  if (reporteId === "estructura-organizacional") {
+    // Grupo y sucursal vienen del alcance pedido; el departamento no aplica (es el nivel que se lista).
+    const tabla = await cargarTablaEstructura(prisma, g.usuario, {
+      detalle: leerDetalle(searchParams.get("detalle")),
+      sucursalId,
+      divisionId,
+      departamentoId,
+      incluirInactivos: searchParams.get("inactivos") === "1",
+      vePII: puede(g.usuario, "empleados.pii"),
+    });
+    ({ titulo, cabeceras, datos, filas, hojas } = tabla);
+    filtrosExtra.push(...tabla.filtros.slice(-2));
+  } else if (reporteId === "empleados-activos") {
     const empleados = await prisma.empleado.findMany({
       where: whereEmp,
       include: { sucursal: true, departamento: true, puesto: true },
@@ -93,7 +108,8 @@ export async function GET(req: NextRequest) {
     datos = empleados.map((e) => [
       e.codigo,
       nombreCompleto(e),
-      e.identidad ?? "",
+      // Con guiones, como en la ficha: leída como número, Excel le quitaba el cero inicial.
+      formatoIdentidad(e.identidad),
       e.sucursal.nombre,
       e.departamento.nombre,
       e.puesto?.nombre ?? "",

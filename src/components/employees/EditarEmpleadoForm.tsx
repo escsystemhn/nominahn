@@ -93,6 +93,8 @@ interface Props {
   navegacion: { anterior: DestinoFlecha | null; siguiente: DestinoFlecha | null; posicion: number; total: number } | null;
   /** Marca de la foto actual (updatedAt en ms); null = sin foto. */
   fotoVersion?: number | null;
+  /** Con `empleados.crear`: «Guardar y registrar otro» lleva al alta tras guardar (pedido de Edbin, 2026-11-18). */
+  puedeCrear?: boolean;
 }
 
 const TIPOS_CONTRATO: Record<FormData["tipoContrato"], string> = {
@@ -139,6 +141,7 @@ export default function EditarEmpleadoForm({
   niveles = etiquetasNiveles(false),
   navegacion,
   fotoVersion = null,
+  puedeCrear = false,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -195,7 +198,10 @@ export default function EditarEmpleadoForm({
   };
   const salarioCambio = Number(salarioBase) !== Number(valoresIniciales.salarioBase);
 
-  async function onSubmit(data: FormData) {
+  async function onSubmit(data: FormData, evento?: React.BaseSyntheticEvent) {
+    // Qué botón se pulsó: «Guardar y registrar otro» abre el alta en vez de volver a la ficha.
+    const registrarOtro = !!(evento?.nativeEvent as SubmitEvent | undefined)?.submitter?.hasAttribute("data-registrar-otro");
+    const destino = registrarOtro ? "/empleados/nuevo" : volverA;
     // Sólo al dar de baja: un registro antiguo sin fecha debe poder seguir
     // corrigiéndose. El API comprueba lo mismo.
     if (data.estado === "INACTIVO" && !data.fechaSalida && (dirtyFields.estado || dirtyFields.fechaSalida)) {
@@ -222,7 +228,7 @@ export default function EditarEmpleadoForm({
     }
 
     if (Object.keys(cambios).length === 0) {
-      router.push(volverA);
+      router.push(destino);
       return;
     }
 
@@ -245,8 +251,8 @@ export default function EditarEmpleadoForm({
         setErrorApi(mensajeDeError(body, res.status));
         return;
       }
-      avisar.exito("Cambios guardados.");
-      router.push(volverA);
+      avisar.exito(registrarOtro ? "Cambios guardados. Ya puede registrar al nuevo empleado." : "Cambios guardados.");
+      router.push(destino);
       router.refresh();
     } catch {
       setErrorApi("No se pudo conectar con el servidor. Intente nuevamente.");
@@ -568,6 +574,16 @@ export default function EditarEmpleadoForm({
               >
                 Cancelar
               </Link>
+              {puedeCrear && (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  data-registrar-otro
+                  className="px-5 py-2 border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Guardar y registrar otro
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={loading}

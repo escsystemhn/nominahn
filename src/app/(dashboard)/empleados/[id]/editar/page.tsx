@@ -146,6 +146,7 @@ export default async function EditarEmpleadoPage({
         volverA={`/empleados/${id}${conLista}`}
         niveles={etiquetasNiveles(await jerarquiaNominaHabilitada(prisma))}
         fotoVersion={emp.foto?.updatedAt.getTime() ?? null}
+        puedeCrear={puede(usuario, "empleados.crear")}
         navegacion={vecinos && vecinos.total > 1 ? {
           anterior: vecinos.anterior && { href: `/empleados/${vecinos.anterior.id}/editar${conLista}`, nombre: vecinos.anterior.nombre },
           siguiente: vecinos.siguiente && { href: `/empleados/${vecinos.siguiente.id}/editar${conLista}`, nombre: vecinos.siguiente.nombre },

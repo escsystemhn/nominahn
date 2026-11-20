@@ -73,7 +73,7 @@ export default function ComprobanteAcciones({
           Sin correo
         </span>
       )}
-      <div className="mt-1 text-xs space-x-2">
+      <div data-acciones className="mt-1 text-xs space-x-2">
         <a href={`${url}?modo=ver`} target="_blank" rel="noopener noreferrer" className={enlace}>Ver</a>
         <a href={url} title="Descargar en PDF" className="text-gray-500 hover:underline">Descargar</a>
         {puedeEnviar && correo && (

@@ -13,7 +13,7 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 import PageHeader from "@/components/ui/PageHeader";
-import { columnasNumericas, leerPapel, metaFila, PAPELES, type MetaFila, type Papel } from "@/lib/reportes/salida-celdas";
+import { columnasNumericas, conCifras, leerPapel, metaFila, PAPELES, type MetaFila, type Papel } from "@/lib/reportes/salida-celdas";
 
 // ─── Papel elegido por reporte ───────────────────────────────────────────────
 // En localStorage, como store externo: el valor no existe al dibujar en el servidor.
@@ -90,6 +90,7 @@ const reportes: DefReporte[] = [
   { id: "13vo-proyeccion", nombre: "Proyección del decimotercer mes", descripcion: "Acumulado de la provisión del décimo tercer mes.", categoria: "Provisiones", periodo: "anio", planilla: "no" },
   { id: "14vo-proyeccion", nombre: "Proyección del decimocuarto mes", descripcion: "Acumulado de la provisión del décimo cuarto mes.", categoria: "Provisiones", periodo: "anio", planilla: "no" },
   { id: "vacaciones-proyeccion", nombre: "Provisión de vacaciones", descripcion: "Saldo acumulado de vacaciones y provisión por empleado.", categoria: "Provisiones", periodo: "ninguno", planilla: "no" },
+  { id: "estructura-organizacional", nombre: "Estructura organizacional", descripcion: "Grupos y sucursales (o sucursales y divisiones) con sus departamentos y totales de puestos y empleados; a elección, con cada puesto o cada empleado.", categoria: "RRHH", periodo: "ninguno", planilla: "no" },
   { id: "empleados-activos", nombre: "Listado de empleados", descripcion: "Directorio de empleados activos con sus datos laborales.", categoria: "RRHH", periodo: "ninguno", planilla: "no" },
   { id: "historial-salarial", nombre: "Historial salarial", descripcion: "Los 200 cambios de salario más recientes.", categoria: "RRHH", periodo: "ninguno", planilla: "no" },
   { id: "evaluaciones-resumen", nombre: "Resumen de evaluaciones", descripcion: "Calificaciones de desempeño y competencias por período.", categoria: "RRHH", periodo: "opcional", planilla: "no" },
@@ -148,6 +149,9 @@ export default function ReportesClient({ conDivisiones, conJerarquia, sucursales
   const niveles = etiquetasNiveles(conJerarquia);
   // Con la jerarquía de nómina, lo normal es imprimir cada empresa aparte.
   const [porDivision, setPorDivision] = useState(conJerarquia);
+  // Estructura organizacional: hasta dónde se baja y si cuenta a los dados de baja.
+  const [detalleEstructura, setDetalleEstructura] = useState<"departamentos" | "puestos" | "empleados">("departamentos");
+  const [inactivosEstructura, setInactivosEstructura] = useState(false);
   // Los valores se conservan al pasar de un reporte a otro: lo usual es sacar varios del mismo período.
   const [filtros, setFiltros] = useState({
     fechaDesde: "",
@@ -221,6 +225,10 @@ export default function ReportesClient({ conDivisiones, conJerarquia, sucursales
     if (reporte.planilla !== "no" && filtros.planillaId) q.set("planillaId", filtros.planillaId);
     // Sólo cambia lo que se imprime: en pantalla se sigue viendo el árbol completo.
     if (reporte.id === "planilla-detallada" && conDivisiones && porDivision && formato !== "JSON") q.set("porDivision", "1");
+    if (reporte.id === "estructura-organizacional") {
+      q.set("detalle", detalleEstructura);
+      if (inactivosEstructura) q.set("inactivos", "1");
+    }
     if (formato === "PDF" || formato === "XLSX") q.set("papel", papel);
     return `/api/reportes?${q.toString()}`;
   }
@@ -371,6 +379,25 @@ export default function ReportesClient({ conDivisiones, conJerarquia, sucursales
             </div>
           </div>
 
+          {reporte.id === "estructura-organizacional" && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-700">
+              <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <legend className="sr-only">Detalle</legend>
+                <span className="font-medium text-gray-800">Detalle</span>
+                {([["departamentos", "Departamentos"], ["puestos", "Puestos"], ["empleados", "Empleados"]] as const).map(([valor, texto]) => (
+                  <label key={valor} className="flex items-center gap-1.5">
+                    <input type="radio" name="detalle-estructura" checked={detalleEstructura === valor} onChange={() => setDetalleEstructura(valor)} />
+                    {texto}
+                  </label>
+                ))}
+              </fieldset>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={inactivosEstructura} onChange={(e) => setInactivosEstructura(e.target.checked)} />
+                Contar también a los dados de baja
+              </label>
+            </div>
+          )}
+
           {reporte.id === "planilla-detallada" && conDivisiones && (
             <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
               <input type="checkbox" checked={porDivision} onChange={(e) => setPorDivision(e.target.checked)} />
@@ -479,6 +506,17 @@ function VisorReporte({
                   const m = metaFila(fila, visor.filas?.[f]);
                   // Sangría por nivel en los reportes agrupados (Sucursal → División → Departamento).
                   const sangria = visor.filas ? { paddingLeft: `${0.75 + m.nivel * 1.25}rem` } : undefined;
+                  const fondoGrupo = m.nivel === 0 ? "bg-blue-50" : m.nivel === 1 ? "bg-gray-100" : "bg-gray-50";
+                  if (m.tipo === "grupo" && conCifras(fila)) {
+                    // Un encabezado con sus propios totales (la estructura) los muestra en sus columnas.
+                    return (
+                      <tr key={f} className={cn("font-semibold text-gray-900", fondoGrupo)}>
+                        {visor.cabeceras.map((_, i) => (
+                          <td key={i} style={i === 0 ? sangria : undefined} className={cn("whitespace-nowrap px-3 py-2", numericas[i] && "text-right")}>{fila[i] ?? ""}</td>
+                        ))}
+                      </tr>
+                    );
+                  }
                   if (m.tipo === "grupo") {
                     return (
                       <tr key={f}>

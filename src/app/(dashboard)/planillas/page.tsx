@@ -12,6 +12,7 @@ import FormFiltros from "@/components/ui/FormFiltros";
 import FranjaCifras from "@/components/ui/FranjaCifras";
 import Paginacion from "@/components/ui/Paginacion";
 import ThOrden from "@/components/ui/ThOrden";
+import OrdenMovil from "@/components/ui/OrdenMovil";
 import { leerOrden, type Orden } from "@/lib/http/orden";
 import EstadoBadge, { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
 import FiltroEstructura from "@/components/organizacion/FiltroEstructura";
@@ -122,6 +123,17 @@ export default async function PlanillasPage({
             ))}
           </select>
         </FormFiltros>
+        <OrdenMovil
+          className="mt-2"
+          actual={orden}
+          opciones={[
+            { campo: "creada", etiqueta: "Creación", tipo: "fecha" },
+            { campo: "tipo", etiqueta: "Planilla", tipo: "texto" },
+            { campo: "periodo", etiqueta: "Período", tipo: "fecha" },
+            ...(ordenaMontos ? (["bruto", "deducciones", "neto"] as const).map((c) => ({ campo: c, etiqueta: c === "bruto" ? "Bruto" : c === "neto" ? "Neto" : "Deducciones", tipo: "numero" as const })) : []),
+            { campo: "estado", etiqueta: "Estado", tipo: "texto" },
+          ]}
+        />
       </PageHeader>
 
       {/* Última planilla de cada tipo, en una franja con divisores. */}

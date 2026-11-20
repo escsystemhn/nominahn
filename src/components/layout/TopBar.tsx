@@ -50,7 +50,7 @@ export default function TopBar({
             onClick={onAbrirMenu}
             aria-label="Abrir menú"
             aria-expanded={menuAbierto}
-            className="btn btn-ghost -ml-2 w-10 shrink-0 px-0 lg:hidden"
+            className="btn btn-ghost -ml-2 w-10 shrink-0 px-0 xl:hidden"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeWidth={1.75} d="M4 7h16M4 12h16M4 17h16" />

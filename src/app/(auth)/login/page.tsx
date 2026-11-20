@@ -108,7 +108,7 @@ function ConPantallas({ texto }: { texto: string }) {
 
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-2.5">
+    <section className="space-y-2">
       <h2 className="text-[13px] font-semibold text-white/50">{titulo}</h2>
       {children}
     </section>
@@ -123,7 +123,7 @@ function PanelInicio() {
   const mostradas = todas ? novedades : novedades.slice(0, VISIBLES);
 
   return (
-    <div className="space-y-6 lg:pb-4">
+    <div className="space-y-5 lg:pb-2">
       <Seccion titulo="Avisos">
         {avisos.length === 0 ? (
           <p className="text-sm text-white/50">Sin avisos pendientes.</p>
@@ -181,7 +181,7 @@ function PieSoporte({ estado, empresa }: { estado: EstadoServicio; empresa: stri
   const e = estado ? ESTADOS[estado] : null;
   const mensaje = `Hola, necesito ayuda con el sistema de nómina${empresa ? ` (${empresa})` : ""}.`;
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-3 text-sm">
       {e && (
         <p role="status" className="flex items-center gap-2 text-white/75">
           <span className={cn("h-2 w-2 shrink-0 rounded-full", e.punto)} aria-hidden="true" />
@@ -243,6 +243,30 @@ function useParametros() {
   return useMemo(() => new URLSearchParams(q), [q]);
 }
 
+/**
+ * ¿Queda contenido por ver más abajo en el panel? Sólo entonces se pinta el
+ * desvanecido de abajo: siempre encendido tapaba la última línea aunque todo cupiera,
+ * y apagaba el enlace «Ver las novedades».
+ */
+function useFaltaAbajo() {
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  const [falta, setFalta] = useState(false);
+  useEffect(() => {
+    if (!panel) return;
+    const medir = () => setFalta(panel.scrollHeight - panel.scrollTop - panel.clientHeight > 1);
+    medir();
+    const observador = new ResizeObserver(medir);
+    observador.observe(panel);
+    if (panel.firstElementChild) observador.observe(panel.firstElementChild);
+    panel.addEventListener("scroll", medir, { passive: true });
+    return () => {
+      observador.disconnect();
+      panel.removeEventListener("scroll", medir);
+    };
+  }, [panel]);
+  return { refPanel: setPanel, faltaAbajo: falta };
+}
+
 /** Por qué se llegó aquí con la sesión terminada (lo pone el cierre por inactividad o el proxy). */
 const MOTIVOS: Record<string, string> = {
   inactividad: "Su sesión se cerró por inactividad. Ingrese de nuevo para seguir donde estaba.",
@@ -265,6 +289,7 @@ export default function LoginPage() {
   const [olvido, setOlvido] = useState(false);
   const [estado, setEstado] = useState<EstadoServicio>("cargando");
   const [empresa, setEmpresa] = useState<string | null>(null);
+  const { refPanel, faltaAbajo } = useFaltaAbajo();
 
   // Estado del servicio: si la base no contesta, el login lo dice antes de que
   // alguien intente entrar. Sin respuesta, el problema es la red.
@@ -320,21 +345,23 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen grid-cols-1 bg-gray-50 lg:h-screen lg:grid-cols-[minmax(0,44%)_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)_auto]">
-      {/* Tapa: la marca. */}
-      <div className="bg-blue-900 px-6 py-8 text-white/75 sm:px-10 lg:col-start-1 lg:row-start-1 lg:px-14 lg:pb-8 lg:pt-12">
+      {/* Tapa: la marca. Desde 1280 px el lema va al lado del logo: con el logo encima
+          ocupaba 321 px de alto, y en una laptop de 1366 × 768 las novedades quedaban
+          cortadas a media frase. */}
+      <div className="bg-blue-900 px-6 py-8 text-white/75 sm:px-10 lg:col-start-1 lg:row-start-1 lg:px-14 lg:pb-6 lg:pt-10 xl:flex xl:items-center xl:gap-6">
         {/* El logo de Gestión360 lleva fondo blanco: va sobre una placa de papel, como
             hace el propio Gestión360 con su marca en la tapa. */}
-        <span className="inline-flex rounded-2xl bg-white p-2.5 shadow-sm lg:p-3">
+        <span className="inline-flex shrink-0 rounded-2xl bg-white p-2.5 shadow-sm lg:p-3">
           <Image
             src="/gestion360-logo.png"
             alt="Gestión360, ERP para pymes hondureñas"
             width={820}
             height={561}
             priority
-            className="h-auto w-[9rem] sm:w-[10.5rem] lg:w-[13rem]"
+            className="h-auto w-[9rem] sm:w-[10.5rem] lg:w-44 xl:w-40"
           />
         </span>
-        <h1 className="mt-4 max-w-md text-base leading-snug text-white/80 lg:mt-5 lg:text-xl">
+        <h1 className="mt-4 max-w-md text-base leading-snug text-white/80 lg:mt-5 lg:text-xl xl:mt-0 xl:text-lg">
           Nómina y talento humano para empresas en Honduras
         </h1>
       </div>
@@ -463,14 +490,16 @@ export default function LoginPage() {
       </div>
 
       {/* Tapa: lo que cambia con el tiempo. En pantalla ancha sólo este bloque se desplaza. */}
-      <div className="bg-blue-900 px-6 py-8 text-white/75 sm:px-10 lg:col-start-1 lg:row-start-2 lg:overflow-y-auto lg:px-14 lg:py-0">
+      <div ref={refPanel} className="bg-blue-900 px-6 py-8 text-white/75 sm:px-10 lg:col-start-1 lg:row-start-2 lg:overflow-y-auto lg:px-14 lg:py-0">
         <PanelInicio />
-        <div aria-hidden="true" className="pointer-events-none sticky bottom-0 -mt-8 hidden h-8 bg-gradient-to-t from-blue-900 to-transparent lg:block" />
+        {faltaAbajo && (
+          <div aria-hidden="true" data-falta-abajo className="pointer-events-none sticky bottom-0 -mt-8 hidden h-8 bg-gradient-to-t from-blue-900 to-transparent lg:block" />
+        )}
       </div>
 
       {/* Tapa: estado y soporte. */}
-      <div className="bg-blue-900 px-6 pb-8 text-white/75 sm:px-10 lg:col-start-1 lg:row-start-3 lg:px-14 lg:pb-10">
-        <div className="border-t border-white/10 pt-5">
+      <div className="bg-blue-900 px-6 pb-8 text-white/75 sm:px-10 lg:col-start-1 lg:row-start-3 lg:px-14 lg:pb-8">
+        <div className="border-t border-white/10 pt-4">
           <PieSoporte estado={estado} empresa={empresa} />
         </div>
       </div>

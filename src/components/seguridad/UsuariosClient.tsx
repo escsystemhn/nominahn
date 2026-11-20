@@ -23,6 +23,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import type { NivelesEstructura } from "@/lib/organizacion/estructura";
+import BuscadorEmpleado, { type EmpleadoBuscado } from "@/components/employees/BuscadorEmpleado";
 
 type Alcance = "TODO" | "SUCURSAL" | "DEPARTAMENTO" | "PROPIO";
 
@@ -37,14 +38,13 @@ interface Usuario {
   createdAt: string;
   sucursalesIds: string[];
   perfil: { id: string; nombre: string; alcance: Alcance; activo: boolean } | null;
-  empleado: { id: string; codigo: string; primerNombre: string; primerApellido: string; estado: string } | null;
+  empleado: { id: string; codigo: string; primerNombre: string; primerApellido: string; estado: string; buscado: EmpleadoBuscado } | null;
 }
 
 interface Props {
   usuarios: Usuario[];
   perfiles: Array<{ id: string; nombre: string; alcance: Alcance }>;
   sucursales: Array<{ id: string; nombre: string; codigo: string }>;
-  empleadosSinCuenta: Array<{ id: string; codigo: string; primerNombre: string; primerApellido: string }>;
   usuarioActualId: string;
   puedeGestionar: boolean;
   puedeResetear: boolean;
@@ -78,15 +78,17 @@ const FORM_VACIO = {
   name: "",
   perfilId: "",
   role: "EMPLEADO",
-  empleadoId: "",
+  empleado: null as EmpleadoBuscado | null,
   sucursalesIds: [] as string[],
 };
+
+/** El rótulo del buscador de empleado: sólo hay una ventana de usuario abierta a la vez. */
+const ID_ETIQUETA_EMPLEADO = "usuario-empleado-etiqueta";
 
 export default function UsuariosClient({
   usuarios,
   perfiles,
   sucursales,
-  empleadosSinCuenta,
   usuarioActualId,
   puedeGestionar,
   puedeResetear,
@@ -139,7 +141,7 @@ export default function UsuariosClient({
         name: form.name,
         role: form.role,
         perfilId: form.perfilId || undefined,
-        empleadoId: form.empleadoId || undefined,
+        empleadoId: form.empleado?.id || undefined,
         sucursalesIds: form.sucursalesIds,
       }),
     });
@@ -157,7 +159,7 @@ export default function UsuariosClient({
         name: form.name,
         role: form.role,
         perfilId: form.perfilId || null,
-        empleadoId: form.empleadoId || null,
+        empleadoId: form.empleado?.id || null,
         sucursalesIds: form.sucursalesIds,
       }),
     });
@@ -193,15 +195,29 @@ export default function UsuariosClient({
   }
 
   function abrirEdicion(u: Usuario) {
+    setError(null);
     setEditando(u);
     setForm({
       email: u.email,
       name: u.name ?? "",
       perfilId: u.perfil?.id ?? "",
       role: u.role,
-      empleadoId: u.empleado?.id ?? "",
+      empleado: u.empleado?.buscado ?? null,
       sucursalesIds: u.sucursalesIds,
     });
+  }
+
+  /**
+   * Elegir al empleado primero ahorra escribir: en una cuenta nueva, el nombre y el correo
+   * corporativo salen de su ficha si todavía están vacíos. Lo ya escrito no se pisa.
+   */
+  function elegirEmpleado(e: EmpleadoBuscado | null) {
+    setForm((f) => ({
+      ...f,
+      empleado: e,
+      name: !editando && e && !f.name.trim() ? e.nombre : f.name,
+      email: !editando && e?.correo && !f.email.trim() ? e.correo : f.email,
+    }));
   }
 
   const alcanceSeleccionado =
@@ -224,6 +240,7 @@ export default function UsuariosClient({
               <button
                 onClick={() => {
                   setForm(FORM_VACIO);
+                  setError(null);
                   setModalNuevo(true);
                 }}
                 className="btn btn-primary"
@@ -235,7 +252,8 @@ export default function UsuariosClient({
         }
       />
 
-      {error && (
+      {/* Con una ventana abierta, el error va dentro de ella: aquí quedaba detrás, oscurecido. */}
+      {error && !(modalNuevo || editando) && (
         <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
           {error}
         </div>
@@ -381,11 +399,33 @@ export default function UsuariosClient({
           onCerrar={() => {
             setModalNuevo(false);
             setEditando(null);
+            setError(null);
           }}
           onGuardar={editando ? guardarEdicion : crear}
           cargando={cargando}
+          error={error}
         >
           <div className="space-y-4">
+            {/* Primero el empleado: elegido, completa el nombre y el correo de abajo. */}
+            <div>
+              <span id={ID_ETIQUETA_EMPLEADO} className="mb-1 block text-sm font-medium text-gray-800">
+                Empleado vinculado <span className="font-normal text-gray-500">(opcional)</span>
+              </span>
+              <BuscadorEmpleado
+                etiquetaId={ID_ETIQUETA_EMPLEADO}
+                valor={form.empleado}
+                onCambio={elegirEmpleado}
+                endpoint="/api/usuarios/empleados-vinculables"
+                sugerencia={editando ? undefined : form.name}
+                vacio="Ningún empleado sin cuenta coincide. Los que ya tienen cuenta o están de baja no aparecen."
+              />
+              <span className="mt-1 block text-xs text-gray-500">
+                {editando
+                  ? "Le da acceso a Mi espacio y a sus comprobantes de pago."
+                  : "Elíjalo primero: completa el nombre y el correo corporativo. Le da acceso a Mi espacio y a sus comprobantes de pago."}
+              </span>
+            </div>
+
             <Campo etiqueta="Nombre completo">
               <input
                 value={form.name}
@@ -469,30 +509,6 @@ export default function UsuariosClient({
               </Campo>
             )}
 
-            <Campo
-              etiqueta="Empleado vinculado"
-              ayuda="Le da acceso a Mi Espacio y a sus boletas de pago. Opcional."
-            >
-              <select
-                value={form.empleadoId}
-                onChange={(e) => setForm({ ...form, empleadoId: e.target.value })}
-                className="input"
-              >
-                <option value="">Sin vincular</option>
-                {editando?.empleado && (
-                  <option value={editando.empleado.id}>
-                    {editando.empleado.codigo}, {editando.empleado.primerNombre}{" "}
-                    {editando.empleado.primerApellido}
-                  </option>
-                )}
-                {empleadosSinCuenta.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.codigo}, {e.primerNombre} {e.primerApellido}
-                  </option>
-                ))}
-              </select>
-            </Campo>
-
             {!editando && (
               <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                 Se generará una contraseña temporal que se mostrará una sola vez. El usuario deberá
@@ -532,12 +548,14 @@ function Modal({
   onCerrar,
   onGuardar,
   cargando,
+  error,
 }: {
   titulo: string;
   children: React.ReactNode;
   onCerrar: () => void;
   onGuardar: () => void;
   cargando: boolean;
+  error?: string | null;
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
@@ -546,6 +564,11 @@ function Modal({
           <h2 className="text-lg font-semibold text-gray-900">{titulo}</h2>
         </div>
         <div className="px-6 py-5 overflow-y-auto flex-1">{children}</div>
+        {error && (
+          <p role="alert" className="mx-6 mb-3 shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {error}
+          </p>
+        )}
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
           <button onClick={onCerrar} className="btn btn-ghost">
             Cancelar

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
-import { conAlcance } from "@/lib/auth/alcance";
+import { conAlcance, filtroSucursales } from "@/lib/auth/alcance";
 import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
+import ExportarEstructura from "@/components/organizacion/ExportarEstructura";
 import { construirJerarquiaNomina } from "@/lib/organizacion/jerarquia-nomina";
 import { nombreCompleto } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
@@ -62,5 +64,27 @@ export default async function JerarquiaNominaPage() {
     conSalarios
   );
 
-  return <JerarquiaNominaClient frecuencias={frecuencias} conSalarios={conSalarios} />;
+  // Con la jerarquía encendida, el nivel División también lo está (ver `aplicarCambioOpciones`).
+  let exportar: React.ReactNode = null;
+  if (puede(usuario, "empleados.exportar")) {
+    const niveles = etiquetasNiveles(true);
+    const grupos = await prisma.sucursal.findMany({ where: filtroSucursales(usuario), select: { id: true, nombre: true }, orderBy: { nombre: "asc" } });
+    const divisiones = await prisma.division.findMany({
+      where: { sucursalId: { in: grupos.map((g) => g.id) } },
+      select: { id: true, nombre: true, sucursalId: true },
+      orderBy: { nombre: "asc" },
+    });
+    exportar = (
+      <ExportarEstructura
+        grupos={grupos}
+        divisiones={divisiones}
+        etiquetas={{
+          sucursal: niveles.sucursal, todasSucursales: niveles.todasSucursales, sucursales: niveles.sucursales,
+          division: niveles.division, todasDivisiones: niveles.todasDivisiones, divisiones: niveles.divisiones,
+        }}
+      />
+    );
+  }
+
+  return <JerarquiaNominaClient frecuencias={frecuencias} conSalarios={conSalarios} exportar={exportar} />;
 }

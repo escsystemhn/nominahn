@@ -21,7 +21,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { filtroBusquedaEmpleados } from "@/lib/empleados/busqueda";
-import { Prisma, EstadoEmpleado } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { filtroEstado } from "@/lib/empleados/lista";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso, puede, type Usuario } from "@/lib/auth/guard";
@@ -179,6 +180,7 @@ export async function GET(req: NextRequest) {
   // Mismos filtros que la pantalla, para que se exporte lo que se está viendo.
   const search = searchParams.get("search") ?? "";
   const sucursalId = searchParams.get("sucursalId");
+  const divisionId = searchParams.get("divisionId");
   const departamentoId = searchParams.get("departamentoId");
   const estado = searchParams.get("estado");
 
@@ -186,8 +188,9 @@ export async function GET(req: NextRequest) {
     AND: [
       await filtroBusquedaEmpleados(prisma, search, { conIdentidad: vePII }),
       sucursalId ? { sucursalId } : {},
+      divisionId ? { departamento: { divisionId } } : {},
       departamentoId ? { departamentoId } : {},
-      estado ? { estado: estado as EstadoEmpleado } : {},
+      filtroEstado(estado),
     ],
   };
   const where = conAlcance(filtros, g.usuario);
@@ -210,7 +213,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return responderExportacion(req, g.usuario, where, { delimitador }, { search: search || undefined, sucursalId, departamentoId, estado }, archivoConFecha());
+  return responderExportacion(req, g.usuario, where, { delimitador }, { search: search || undefined, sucursalId, divisionId, departamentoId, estado }, archivoConFecha());
 }
 
 export async function POST(req: NextRequest) {

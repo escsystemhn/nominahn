@@ -217,7 +217,7 @@ export default function OrganigramaClient({
             detalle="Quite el filtro de sucursal o borre la búsqueda para ver a todo el personal de su alcance."
           />
         ) : (
-          <ul className="space-y-1 min-w-[32rem]">
+          <ul className="space-y-1 sm:min-w-[32rem]">
             {raices.map((nodo) => (
               <Rama
                 key={nodo.datos.id}
@@ -294,6 +294,7 @@ function Rama({
           type="button"
           onClick={() => alternar(datos.id)}
           aria-label={plegado ? "Desplegar equipo" : "Plegar equipo"}
+          data-toque
           className="mt-1 w-5 h-5 shrink-0 flex items-center justify-center rounded text-xs text-gray-500 hover:bg-gray-200"
         >
           {tieneHijos && (
@@ -312,6 +313,7 @@ function Rama({
             ) : (
               <Link
                 href={`/empleados/${datos.id}`}
+                data-toque
                 className="font-medium text-gray-900 hover:text-blue-700"
               >
                 {datos.nombre}
@@ -373,7 +375,7 @@ function Rama({
       </div>
 
       {tieneHijos && !plegado && (
-        <ul className="ml-5 pl-3 border-l border-gray-200 space-y-1 mt-1">
+        <ul className="ml-2 pl-2 sm:ml-5 sm:pl-3 border-l border-gray-200 space-y-1 mt-1">
           {nodo.hijos.map((hijo) => (
             <Rama
               key={hijo.datos.id}

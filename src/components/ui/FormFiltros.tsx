@@ -16,12 +16,18 @@ const ESPERA_ESCRITURA_MS = 300;
 
 export default function FormFiltros({
   campos,
+  dependientes,
   etiqueta,
   className,
   children,
 }: {
   /** Los `name` de los filtros: son los que borra «Quitar filtros». */
   campos: readonly string[];
+  /**
+   * Filtros que dependen de otro y se vacían cuando ese cambia: al elegir otro grupo, la
+   * sucursal elegida ya no es suya y la lista saldría vacía sin razón aparente.
+   */
+  dependientes?: Readonly<Record<string, readonly string[]>>;
   etiqueta?: string;
   className?: string;
   children: React.ReactNode;
@@ -82,6 +88,10 @@ export default function FormFiltros({
       onChange={(e) => {
         const form = e.currentTarget;
         cancelarEspera();
+        for (const campo of dependientes?.[(e.target as HTMLElement).getAttribute("name") ?? ""] ?? []) {
+          const control = form.elements.namedItem(campo);
+          if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = "";
+        }
         const escribe = (e.target as HTMLElement).tagName === "INPUT";
         temporizador.current = setTimeout(() => aplicar(form), escribe ? ESPERA_ESCRITURA_MS : 0);
       }}

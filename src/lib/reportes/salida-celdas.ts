@@ -9,10 +9,15 @@ export type TipoCelda = "moneda" | "numero" | "porcentaje" | "texto";
 const RE_MONEDA = /^-?L\s?-?[\d,]+\.\d{2}$/;
 const RE_NUMERO = /^-?\d+(\.\d+)?$/;
 const RE_PORCENTAJE = /^-?\d+(\.\d+)?%$/;
+const RE_IDENTIFICADOR = /^(0\d+|\d{8,})$/;
 
 /** Interpreta el texto de una celda: moneda en lempiras, número, porcentaje o texto. */
 export function valorCelda(texto: string): { tipo: TipoCelda; valor: number | string } {
   const s = String(texto ?? "").trim();
+  // Sólo dígitos pero con cero adelante o de ocho o más cifras: es un identificador (identidad,
+  // RTN, cuenta bancaria, código), no una cantidad. Como número, Excel le quitaba el cero
+  // inicial («0501…» salía 501…) y redondeaba las cuentas largas.
+  if (RE_IDENTIFICADOR.test(s)) return { tipo: "texto", valor: s };
   if (RE_MONEDA.test(s)) {
     const negativo = s.startsWith("-") || /L\s?-/.test(s);
     const n = parseFloat(s.replace(/[^\d.]/g, ""));
@@ -100,6 +105,14 @@ export interface HojaReporte {
  */
 export function metaFila(fila: string[], meta?: MetaFila): MetaFila {
   return meta ?? { tipo: esFilaTotal(fila) ? "total" : "detalle", nivel: 0 };
+}
+
+/**
+ * ¿La fila trae algo además del nombre? Los encabezados de grupo de la planilla sólo
+ * traen el nombre y ocupan la fila entera; los de la estructura traen sus totales.
+ */
+export function conCifras(fila: readonly string[]): boolean {
+  return fila.slice(1).some((c) => String(c ?? "").trim() !== "");
 }
 
 /** Cuántas filas son registros de verdad (no encabezados, subtotales ni totales). */

@@ -17,6 +17,18 @@ describe("valorCelda", () => {
     expect(valorCelda("01/09/2026")).toEqual({ tipo: "texto", valor: "01/09/2026" });
     expect(valorCelda("0501-1981-04512")).toEqual({ tipo: "texto", valor: "0501-1981-04512" });
   });
+
+  it("un identificador de sólo dígitos queda como texto: Excel no le quita el cero ni lo redondea", () => {
+    expect(valorCelda("0501199805566")).toEqual({ tipo: "texto", valor: "0501199805566" }); // identidad
+    expect(valorCelda("05011999000099")).toEqual({ tipo: "texto", valor: "05011999000099" }); // RTN
+    expect(valorCelda("730098765432")).toEqual({ tipo: "texto", valor: "730098765432" }); // cuenta
+    expect(valorCelda("007")).toEqual({ tipo: "texto", valor: "007" }); // código
+    // Las cantidades siguen siendo números.
+    expect(valorCelda("0")).toEqual({ tipo: "numero", valor: 0 });
+    expect(valorCelda("0.50")).toEqual({ tipo: "numero", valor: 0.5 });
+    expect(valorCelda("1234567")).toEqual({ tipo: "numero", valor: 1234567 });
+    expect(valorCelda("16000.00")).toEqual({ tipo: "numero", valor: 16000 });
+  });
 });
 
 describe("columnasNumericas y filas de total", () => {
@@ -69,6 +81,24 @@ describe("aXlsx", () => {
     // Un .xlsx es un zip: empieza por la firma PK.
     expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");
     expect(buf.length).toBeGreaterThan(2000);
+  });
+});
+
+describe("aXlsx con identificadores", () => {
+  it("la identidad, el RTN y la cuenta llegan a Excel como texto, con su cero; el monto, como número", async () => {
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load((await aXlsx({
+      titulo: "Listado", generado: new Date(), filtros: [],
+      cabeceras: ["Identidad", "RTN", "Cuenta", "Monto"],
+      datos: [["0501199805566", "05011999000099", "730098765432", "L 1,000.00"]],
+    })) as unknown as ArrayBuffer);
+    const ws = libro.worksheets[0];
+    const valores: unknown[] = [];
+    ws.eachRow((fila) => fila.eachCell((c) => valores.push(c.value)));
+    expect(valores).toContain("0501199805566");
+    expect(valores).toContain("05011999000099");
+    expect(valores).toContain("730098765432");
+    expect(valores).toContain(1000);
   });
 });
 

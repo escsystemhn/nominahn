@@ -272,7 +272,7 @@ export default async function DetallePlanillaPage({
           <table className="table-base text-xs">
             <thead>
               <tr>
-                <th className="px-3">Empleado</th>
+                <th className="col-fija px-3">Empleado</th>
                 <th className="num px-3">Días</th>
                 <th className="num px-3">H. extra</th>
                 <th className="num px-3">Bruto</th>
@@ -295,7 +295,8 @@ export default async function DetallePlanillaPage({
                     <tr key={`g${i}`}>
                       <td colSpan={COLUMNAS} style={sangria(e.nivel)}
                         className={cn("py-2 text-sm font-semibold text-gray-900", e.nivel === 0 ? "bg-blue-50" : e.nivel === 1 ? "bg-gray-100" : "bg-gray-50")}>
-                        {e.grupo.nombre}
+                        {/* Fijo al recorrer la tabla de lado: si no, el grupo se pierde de vista. */}
+                        <span className="sticky left-3 inline-block">{e.grupo.nombre}</span>
                       </td>
                     </tr>
                   );
@@ -304,9 +305,11 @@ export default async function DetallePlanillaPage({
                   const personas = e.grupo.items.length;
                   return (
                     <tr key={`s${i}`} className="font-semibold text-gray-900 [&>td]:border-t [&>td]:border-gray-300">
-                      <td colSpan={3} style={sangria(e.nivel)} className="py-2">
+                      {/* En la columna del nombre, que queda fija: así el rótulo no se pierde al recorrer de lado. */}
+                      <td style={sangria(e.nivel)} className="col-fija py-2">
                         Subtotal {e.grupo.nombre} <span className="font-normal text-gray-500">({personas === 1 ? "1 empleado" : `${personas} empleados`})</span>
                       </td>
+                      <td colSpan={2} />
                       {montos(e.grupo.items).map((m, j) => (
                         <td key={j} className="num whitespace-nowrap px-3 py-2">{formatCurrency(m)}</td>
                       ))}
@@ -317,7 +320,7 @@ export default async function DetallePlanillaPage({
                 const d = e.item;
                 return (
                 <tr key={d.id}>
-                  <td className="py-2 pr-3" style={sangria(e.nivel)}>
+                  <td className="col-fija py-2 pr-3" style={sangria(e.nivel)}>
                     <div className="font-medium text-gray-900">{nombreCompleto(d.empleado)}</div>
                   </td>
                   <td className="num px-3 py-2">{Number(d.diasTrabajados).toFixed(0)}</td>

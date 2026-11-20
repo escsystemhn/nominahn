@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Menú y barra superior de todas las pantallas. Desde 1024 px el menú queda fijo a la
- * izquierda; por debajo se desliza sobre el contenido, para que en un celular la
- * pantalla sea de quien la está usando y no del menú.
+ * Menú y barra superior de todas las pantallas. Desde 1280 px el menú queda fijo a la
+ * izquierda; por debajo se desliza sobre el contenido, para que en un celular o una
+ * tableta la pantalla sea de quien la está usando y no del menú. A 1024 px, una tableta
+ * horizontal, el menú fijo dejaba 784 px y las tablas anchas corrían la pantalla de lado.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -71,7 +72,7 @@ export default function Armazon({
       {!bloqueado && (
         <>
           {abierto && (
-            <button type="button" aria-label="Cerrar menú" tabIndex={-1} onClick={cerrar} className="fixed inset-0 z-30 bg-blue-950/50 lg:hidden" />
+            <button type="button" aria-label="Cerrar menú" tabIndex={-1} onClick={cerrar} className="fixed inset-0 z-30 bg-blue-950/50 xl:hidden" />
           )}
           <Sidebar
             permisos={permisos}
