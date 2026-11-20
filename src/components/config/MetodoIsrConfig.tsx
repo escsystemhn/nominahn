@@ -3,6 +3,10 @@
 /**
  * Configuración → Parámetros de ley → Método de cálculo del ISR.
  *
+ * Primero, quién pone la retención: AUTOMÁTICO (la calcula el sistema con uno de los
+ * dos métodos) o MANUAL (la del período se importa o se fija en la ficha; sirve
+ * mientras el sistema no tiene lo pagado antes en el año).
+ *
  * ESTÁNDAR anualiza el mes. CÁLCULO PERSONALIZADO replica la hoja «Retención en
  * la fuente»: proyecta el año con lo pagado, promedia las comisiones y descuenta
  * lo ya retenido. Para empresas que empiezan a mitad de año, los meses anteriores
@@ -14,9 +18,10 @@ import { useAvisos } from "@/components/ui/Avisos";
 import { formatCurrency } from "@/lib/utils";
 
 type Metodo = "ESTANDAR" | "PERSONALIZADO";
+type Modo = "AUTOMATICO" | "MANUAL";
 interface TramoEdad { desdeEdad: number; monto: number }
 interface Config { deduccionPorEdad: TramoEdad[]; deducirIvm: boolean; deducirRap: boolean; deducirAfp: boolean }
-interface Estado { metodo: Metodo; personalizado: Config; acumulados: { anio: number; meses: number; empleados: number }[] }
+interface Estado { modo: Modo; metodo: Metodo; personalizado: Config; acumulados: { anio: number; meses: number; empleados: number }[] }
 interface FilaVista {
   fila: number; nombre: string; rtn: string; coincidencia: "RTN" | "IDENTIDAD" | "NOMBRE" | null;
   empleado: { id: string; codigo: string; nombre: string } | null;
@@ -35,7 +40,7 @@ async function error(r: Response) {
 
 export default function MetodoIsrConfig() {
   const [estado, setEstado] = useState<Estado | null>(null);
-  const [form, setForm] = useState<{ metodo: Metodo; personalizado: Config } | null>(null);
+  const [form, setForm] = useState<{ modo: Modo; metodo: Metodo; personalizado: Config } | null>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [recarga, setRecarga] = useState(0);
@@ -48,7 +53,7 @@ export default function MetodoIsrConfig() {
       if (!r.ok) { setAviso({ ok: false, texto: await error(r) }); return; }
       const d: Estado = await r.json();
       setEstado(d);
-      setForm({ metodo: d.metodo, personalizado: d.personalizado });
+      setForm({ modo: d.modo ?? "AUTOMATICO", metodo: d.metodo, personalizado: d.personalizado });
     })();
     return () => { vivo = false; };
   }, [recarga]);
@@ -66,7 +71,11 @@ export default function MetodoIsrConfig() {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
     });
     setGuardando(false);
-    setAviso(r.ok ? { ok: true, texto: "Método del ISR guardado. Se aplica desde la próxima planilla que se calcule." } : { ok: false, texto: await error(r) });
+    setAviso(r.ok
+      ? { ok: true, texto: form?.modo === "MANUAL"
+        ? "ISR en manual. Desde la próxima planilla que se calcule se retiene lo importado para el período o la retención fija de la ficha."
+        : "Método del ISR guardado. Se aplica desde la próxima planilla que se calcule." }
+      : { ok: false, texto: await error(r) });
     if (r.ok) setRecarga((x) => x + 1);
   }
 
@@ -77,6 +86,36 @@ export default function MetodoIsrConfig() {
         <p className="mt-1 text-sm text-gray-600">Cómo se calcula la retención mensual del impuesto sobre la renta de cada empleado.</p>
       </div>
 
+      <div className="grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="Quién pone la retención del ISR">
+        {([
+          ["AUTOMATICO", "Automático", "El sistema calcula la retención en cada planilla, con el método que elija abajo. A quien tenga una retención fija en su ficha se le retiene esa."],
+          ["MANUAL", "Manual", "El sistema no calcula el ISR. En cada período se retiene lo que se importe en Deducciones → Importar → Montos del período (la columna «ISR» o «Retención en la fuente»); si no, la retención fija de la ficha; a quien no tenga ninguna, nada."],
+        ] as const).map(([valor, titulo, texto]) => (
+          <label key={valor} className={`cursor-pointer rounded-lg border-2 p-4 ${form.modo === valor ? "border-blue-600 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}>
+            <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <input type="radio" name="modo-isr" value={valor} checked={form.modo === valor} onChange={() => setForm({ ...form, modo: valor })} />
+              {titulo}
+            </span>
+            <span className="mt-1 block text-xs text-gray-600">{texto}</span>
+          </label>
+        ))}
+      </div>
+
+      {form.modo === "MANUAL" && (
+        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" data-isr-manual>
+          <p>
+            Úselo mientras el sistema no tiene lo pagado y retenido antes en el año, por ejemplo al empezar a mitad de año:
+            el cálculo automático lo necesita, y la planilla anterior de la empresa ya trae calculada la retención de cada quincena.
+          </p>
+          <p>
+            Quien revisa la planilla debe cuidar que cada período traiga el ISR: si no se importa, sólo se retiene la retención fija de la ficha.
+            Las planillas hechas en manual cuentan después como pagadas y retenidas para el cálculo automático. Para volver a él, elija
+            «Automático»; con el cálculo personalizado, importe antes los meses que se pagaron fuera del sistema.
+          </p>
+        </div>
+      )}
+
+      {form.modo === "AUTOMATICO" && (
       <div className="grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="Método de cálculo del ISR">
         {([
           ["ESTANDAR", "Estándar", "Anualiza el ingreso del período (salario, horas extra y bonos × 12), resta IHSS, RAP, AFP y L40,000 de gastos médicos, y retiene el ISR anual ÷ 12 cada mes."],
@@ -91,8 +130,9 @@ export default function MetodoIsrConfig() {
           </label>
         ))}
       </div>
+      )}
 
-      {form.metodo === "PERSONALIZADO" && (
+      {form.modo === "AUTOMATICO" && form.metodo === "PERSONALIZADO" && (
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Gastos médicos según la edad</h3>
@@ -132,7 +172,7 @@ export default function MetodoIsrConfig() {
       {aviso && <p className={`text-sm ${aviso.ok ? "text-green-700" : "text-red-700"}`} role={aviso.ok ? "status" : "alert"}>{aviso.texto}</p>}
       <button type="button" className="btn btn-primary" disabled={guardando} onClick={guardar}>{guardando ? "Guardando…" : "Guardar método del ISR"}</button>
 
-      {form.metodo === "PERSONALIZADO" && <Acumulados acumulados={estado.acumulados} onCambio={() => setRecarga((x) => x + 1)} />}
+      {form.modo === "AUTOMATICO" && form.metodo === "PERSONALIZADO" && <Acumulados acumulados={estado.acumulados} onCambio={() => setRecarga((x) => x + 1)} />}
     </section>
   );
 }

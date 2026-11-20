@@ -77,7 +77,7 @@ export function sugerirCategoria(nombre: string): CategoriaDeduccion {
   if (/ (alimentos|alimenticia)/.test(t)) return "PENSION_ALIMENTICIA";
   if (/ embargo/.test(t)) return "EMBARGO";
   if (/ (adelanto|anticipo)/.test(t)) return "ADELANTO";
-  if (/ (prestamo|ptmo|prest)/.test(t) && !/ (rap|banc|bac|atlantida|ficohsa|banpais|occidente|davivienda|lafise|cxc|cuenta)/.test(t)) return "PRESTAMO";
+  if (/ (prestamo|ptmo|ptamo|prest)/.test(t) && !/ (rap|banc|bac|atlantida|ficohsa|banpais|occidente|davivienda|lafise|cxc|cuenta)/.test(t)) return "PRESTAMO";
   return "VOLUNTARIA";
 }
 
@@ -88,9 +88,40 @@ export function sugerirCategoria(nombre: string): CategoriaDeduccion {
  */
 export function noEsDeduccionPorEmpleado(nombre: string): string | null {
   const t = ` ${plano(nombre)} `;
+  if (esColumnaIsr(nombre)) return "Es la retención del ISR: no es una deducción más, la maneja Parámetros de ley.";
   if (/ (total|neto|bruto|sueldo|salario|devengado|liquido|a pagar|dias|horas|codigo|nombre|cargo|puesto) /.test(t)) return "Parece un total o un dato del empleado, no una deducción.";
-  if (/ (ihss|ivm|rap|infop|isr|vecinal|impuesto|seguro social|reserva laboral) /.test(t) && !/ (prestamo|ptmo|cxc)/.test(t)) return "Parece de ley: la calcula la planilla.";
+  if (/ (ihss|ivm|rap|infop|isr|vecinal|impuesto|seguro social|reserva laboral) /.test(t) && !/ (prestamo|ptmo|ptamo|prest|cxc)/.test(t)) return "Parece de ley: la calcula la planilla.";
   return null;
+}
+
+/**
+ * Abreviaturas de las planillas hechas a mano, para reconocer «Ptamo. BANCATLAN» como
+ * «Préstamo BANCATLAN» o «Ret. Seg.Med.» como «Retención seguro médico».
+ */
+const ABREVIATURAS: Record<string, string> = {
+  ptamo: "prestamo", ptmo: "prestamo", pmo: "prestamo", prest: "prestamo", prestamos: "prestamo",
+  coop: "cooperativa", coope: "cooperativa", cooperativas: "cooperativa",
+  ret: "retencion", retenc: "retencion", retenciones: "retencion",
+  seg: "seguro", seguros: "seguro", med: "medico", medica: "medico",
+  cta: "cuenta", ctas: "cuentas", fact: "facturas", facts: "facturas", factura: "facturas",
+  desc: "descuento", descuentos: "descuento", aport: "aportacion", aportaciones: "aportacion",
+};
+const PALABRAS_VACIAS = new Set(["de", "del", "la", "el", "los", "las", "y", "por", "a", "al", "en"]);
+
+/**
+ * El nombre reducido a sus palabras, con las abreviaturas escritas completas y sin
+ * artículos: dos nombres con la misma forma son el mismo descuento. Sólo se compara
+ * por igualdad, así que no confunde «Préstamo RAP» con «Préstamo BANCATLAN».
+ */
+export function nombreComparable(texto: string): string {
+  return plano(texto).split(" ").filter(Boolean).map((p) => ABREVIATURAS[p] ?? p).filter((p) => !PALABRAS_VACIAS.has(p)).join(" ");
+}
+
+/** «Retención en la fuente», «ISR», «Ret. ISR», «Impuesto sobre la renta»: la columna del ISR de una planilla. */
+export function esColumnaIsr(cabecera: string): boolean {
+  const t = ` ${nombreComparable(cabecera)} `;
+  if (/ (prestamo|cxc|cuenta|cuentas) /.test(t)) return false;
+  return / (isr|retencion fuente|impuesto sobre renta) /.test(t);
 }
 
 export const PATRON_CODIGO = /^[A-Z0-9][A-Z0-9_-]{0,29}$/;

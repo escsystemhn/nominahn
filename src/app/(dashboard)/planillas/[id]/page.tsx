@@ -24,6 +24,7 @@ import { cargarOpcionesEstructura } from "@/lib/organizacion/estructura-bd";
 import { ubicacionDeLinea } from "@/lib/reportes/planilla-estructura";
 import { sumarPor } from "@/lib/payroll/money";
 import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
+import { isrEsManual } from "@/lib/payroll/isr-personalizado-bd";
 import { cn } from "@/lib/utils";
 
 export default async function DetallePlanillaPage({
@@ -88,6 +89,8 @@ export default async function DetallePlanillaPage({
   // Se revisa mientras todavía se puede hacer algo al respecto: antes de confirmar y antes de aprobar.
   const enRevision = !parcial && (planilla.estado === "BORRADOR" || planilla.estado === "CALCULADA");
   const { revision, anterior } = enRevision ? await cargarRevision(prisma, planilla) : { revision: null, anterior: null };
+  // Con el ISR en manual, quien revisa debe saber que la planilla no lo calcula.
+  const isrManual = enRevision && (await isrEsManual(prisma));
   const totalLineas = hayFiltro ? await prisma.planillaDetalle.count({ where: { planillaId: id, ...enAlcance } }) : planilla.detalles.length;
 
   // Enviar sólo tiene sentido con la planilla cerrada: antes de aprobarla, el
@@ -216,6 +219,18 @@ export default async function DetallePlanillaPage({
             Revise la conciliación, las líneas y los{" "}
             <Link href={`/reportes?reporte=planilla-detallada&planillaId=${planilla.id}`} className="font-medium underline underline-offset-2">reportes</Link>.
             Si corrige horas, deducciones o salarios, use Recalcular. Cuando esté correcta, Confirmar planilla.
+          </p>
+        </div>
+      )}
+
+      {isrManual && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" data-isr-manual>
+          <p className="font-semibold">El ISR está en manual.</p>
+          <p className="mt-1">
+            Esta planilla no calcula el ISR: retiene lo importado para el período en Deducciones → Importar → Montos del período o, si no
+            hay, la retención fija de la ficha. A quien no tenga ninguna no se le retiene. Si importó el ISR después de calcularla, use
+            Recalcular. Se cambia en{" "}
+            <Link href="/configuracion?seccion=parametros" className="font-medium underline underline-offset-2">Parámetros de ley</Link>.
           </p>
         </div>
       )}

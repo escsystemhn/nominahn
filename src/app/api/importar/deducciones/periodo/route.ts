@@ -12,7 +12,7 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { crearLote, leerArchivo } from "@/lib/importacion/lote";
 import { ACEPTA_PLANTILLA, textoDeArchivo } from "@/lib/importacion/xlsx";
-import { cargarContexto, sugerirTiposNuevos, validarMontos } from "@/lib/importacion/montos-periodo";
+import { cargarContexto, etiquetaTipo, sugerirTiposNuevos, validarMontos } from "@/lib/importacion/montos-periodo";
 import {
   TIPOS_PLANILLA,
   errorDePeriodo,
@@ -52,7 +52,12 @@ export async function POST(req: NextRequest) {
     prisma.tipoDeduccionConfig.findMany({ select: { codigo: true } }),
   ]);
   const r = validarMontos(lectura.texto, ctx, (e) => alcanzaEmpleado(g.usuario, e));
-  const tiposNuevos = sugerirTiposNuevos(lectura.texto, r.columnasDesconocidas, codigos.map((c) => c.codigo));
+  const tiposNuevos = sugerirTiposNuevos(r.hoja ?? lectura.texto, r.columnasDesconocidas, codigos.map((c) => c.codigo));
+  // La planilla hecha a mano: dónde estaban los encabezados, para que se vea qué se leyó.
+  const h = r.hoja;
+  const dondeCabecera = h && (h.lineaCabecera > 1 || h.dosFilas)
+    ? `Los encabezados se leyeron en ${h.dosFilas ? `las filas ${h.lineaCabecera} y ${h.lineaCabecera + 1}` : `la fila ${h.lineaCabecera}`}; lo de arriba se ignora.`
+    : "";
 
   // El archivo exportado lleva sus fechas en el nombre: si no coinciden con las elegidas, se avisa.
   const delNombre = periodoDeNombreArchivo(archivo.nombre);
@@ -104,8 +109,11 @@ export async function POST(req: NextRequest) {
         ? `Se aplicarán sólo ${frasePeriodo(periodo, "a")}. Las deducciones de cada planilla no cambian: en este período, el monto nuevo las reemplaza.`
         : totalErrores === 0 ? "El archivo coincide con lo que ya hay en el período: no hay nada que cambiar." : "",
       r.sinMontos ? `${r.sinMontos} ${r.sinMontos === 1 ? "fila sin montos no se toca" : "filas sin montos no se tocan"}.` : "",
+      dondeCabecera,
     ].filter(Boolean).join(" ") || undefined,
     tiposNuevos,
+    columnasLeidas: r.columnasLeidas,
+    tiposExistentes: ctx.tipos.map((t) => ({ codigo: t.codigo, etiqueta: etiquetaTipo(t) })),
   };
   return NextResponse.json(informe);
 }

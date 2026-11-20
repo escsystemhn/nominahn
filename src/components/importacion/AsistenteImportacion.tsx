@@ -22,6 +22,11 @@ import { errorDePeriodo, frasePeriodo, type TipoPlanillaPeriodo } from "@/lib/pa
 import { CATEGORIAS } from "@/lib/deducciones/tipos";
 import type { InformeValidacion, ModoImportacion, RecursoImportacion, ResultadoImportacion, TipoSugerido } from "@/lib/importacion/tipos";
 
+/** Una columna nueva y lo que se decidió con ella: crear el tipo, asignarla a uno que existe (`equivalente`) o ignorarla. */
+type ColumnaNueva = TipoSugerido & { equivalente?: string };
+
+const POR_QUE_LEIDA = { PARECIDO: "por parecido", RECORDADA: "asignada antes" } as const;
+
 interface Props {
   /** Completa las rutas de la API. */
   recurso: RecursoImportacion;
@@ -78,7 +83,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
   const [resultado, setResultado] = useState<ResultadoImportacion | null>(null);
   // El archivo de la última revisión: al crear los tipos que faltan se vuelve a revisar sin pedirlo otra vez.
   const [archivoActual, setArchivoActual] = useState<File | null>(null);
-  const [nuevos, setNuevos] = useState<TipoSugerido[]>([]);
+  const [nuevos, setNuevos] = useState<ColumnaNueva[]>([]);
 
   const porPeriodo = variante === "montos";
   const ruta = porPeriodo ? `/api/importar/${recurso}/periodo` : `/api/importar/${recurso}`;
@@ -106,7 +111,9 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
 
       setArchivoActual(archivo);
       setInforme(datos as InformeValidacion);
-      setNuevos((datos as InformeValidacion).tiposNuevos ?? []);
+      // Lo que ya se decidió no importar sigue así al volver a revisar el mismo archivo.
+      setNuevos((antes) => ((datos as InformeValidacion).tiposNuevos ?? []).map((t) =>
+        antes.some((x) => x.cabecera === t.cabecera && !x.crear && !x.equivalente) ? { ...t, crear: false } : t));
       setPaso("revisar");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo leer el archivo.");
@@ -139,29 +146,59 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
     }
   }
 
-  async function crearTiposYRevisar() {
+  /** Crea los tipos elegidos, recuerda las columnas asignadas a un tipo que ya existe y vuelve a revisar. */
+  async function resolverColumnasYRevisar() {
     if (!archivoActual) return;
-    const elegidos = nuevos.filter((t) => t.crear);
+    const aCrear = nuevos.filter((t) => t.crear);
+    const aAsignar = nuevos.filter((t) => !t.crear && t.equivalente);
     setCargando(true);
     setError(null);
     try {
-      const res = await fetch("/api/deducciones/tipos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipos: elegidos.map(({ nombre, codigo, tipo }) => ({ nombre, codigo, tipo })) }),
-      });
-      const datos = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(datos.error ?? "No se pudieron crear los tipos de deducción.");
+      if (aCrear.length) {
+        const res = await fetch("/api/deducciones/tipos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tipos: aCrear.map(({ nombre, codigo, tipo }) => ({ nombre, codigo, tipo })) }),
+        });
+        const datos = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(datos.error ?? "No se pudieron crear los tipos de deducción.");
+      }
+      // Se crean primero: así la columna recordada puede apuntar a un tipo que acaba de crearse.
+      if (aAsignar.length) await cambiarColumnas({ agregar: aAsignar.map((t) => ({ cabecera: t.cabecera, codigo: t.equivalente! })) });
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron crear los tipos de deducción.");
+      setError(e instanceof Error ? e.message : "No se pudieron guardar las columnas.");
       setCargando(false);
       return;
     }
     await validar(archivoActual);
   }
 
-  const cambiarNuevo = (i: number, cambio: Partial<TipoSugerido>) =>
+  async function cambiarColumnas(cambio: { agregar?: Array<{ cabecera: string; codigo: string }>; quitar?: string[] }) {
+    const res = await fetch("/api/deducciones/columnas", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cambio),
+    });
+    const datos = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(datos.error ?? "No se pudieron guardar las columnas.");
+  }
+
+  async function olvidarColumna(cabecera: string) {
+    if (!archivoActual) return;
+    setCargando(true);
+    setError(null);
+    try {
+      await cambiarColumnas({ quitar: [cabecera] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo olvidar la columna.");
+      setCargando(false);
+      return;
+    }
+    await validar(archivoActual);
+  }
+
+  const cambiarNuevo = (i: number, cambio: Partial<ColumnaNueva>) =>
     setNuevos((lista) => lista.map((t, j) => (j === i ? { ...t, ...cambio } : t)));
 
   function reiniciar() {
@@ -172,8 +209,14 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
     if (inputArchivo.current) inputArchivo.current.value = "";
   }
 
-  // Columnas nuevas marcadas para crear: aplicar antes perdería sus montos sin que nadie lo note.
-  const tiposPendientes = porPeriodo && !!montosDelPeriodo?.puedeCrearTipos && nuevos.some((t) => t.crear);
+  // Columnas nuevas marcadas para crear o asignar: aplicar antes perdería sus montos sin que nadie lo note.
+  const tiposPendientes = porPeriodo && !!montosDelPeriodo?.puedeCrearTipos && nuevos.some((t) => t.crear || t.equivalente);
+  const porCrear = nuevos.filter((t) => t.crear).length;
+  const porAsignar = nuevos.filter((t) => !t.crear && t.equivalente).length;
+  // Las que hay que decidir; sueldos, días y totales van aparte.
+  const porDecidir = montosDelPeriodo?.puedeCrearTipos ? nuevos.filter((t) => !t.motivo || t.crear || t.equivalente).length : nuevos.length;
+  const leidas = informe?.columnasLeidas ?? [];
+  const adivinadas = leidas.filter((c) => c.por !== "NOMBRE").length;
   const errores = informe?.incidencias.filter((i) => i.severidad === "ERROR") ?? [];
   const avisos = informe?.incidencias.filter((i) => i.severidad === "AVISO") ?? [];
 
@@ -344,47 +387,111 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
               </p>
               {informe.resumen && <p className="text-sm text-gray-700" data-resumen>{informe.resumen}</p>}
 
+              {porPeriodo && leidas.length > 0 && (
+                <details className="rounded-lg border border-gray-200 px-4 py-2 text-sm" open={adivinadas > 0} data-columnas-leidas>
+                  <summary className="cursor-pointer font-medium text-gray-800">
+                    Cómo se leyó cada columna ({leidas.length}){adivinadas > 0 && <span className="font-normal text-gray-500">: revise las {adivinadas} que no se llaman igual que el tipo</span>}
+                  </summary>
+                  <ul className="mt-2 space-y-1 pb-1">
+                    {leidas.map((c) => (
+                      <li key={c.cabecera} className="flex flex-wrap items-center gap-x-2 gap-y-0.5" data-columna-leida={c.cabecera}>
+                        <span className="font-medium text-gray-900">«{c.cabecera}»</span>
+                        <span aria-hidden="true" className="text-gray-400">→</span>
+                        <span className="text-gray-700">{c.tipo}</span>
+                        {c.por !== "NOMBRE" && <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-900">{POR_QUE_LEIDA[c.por]}</span>}
+                        {c.por === "RECORDADA" && montosDelPeriodo?.puedeCrearTipos && (
+                          <button type="button" className="btn btn-ghost btn-sm" disabled={cargando} onClick={() => void olvidarColumna(c.cabecera)}>Olvidar</button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
               {porPeriodo && nuevos.length > 0 && (
                 <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950" data-tipos-nuevos>
                   <div>
                     <p className="font-medium">
-                      {nuevos.length === 1 ? "1 columna del archivo todavía no es" : `${nuevos.length} columnas del archivo todavía no son`} un tipo de deducción
+                      {porDecidir === 0
+                        ? "Columnas del archivo que no son descuentos"
+                        : `${porDecidir === 1 ? "1 columna del archivo todavía no es" : `${porDecidir} columnas del archivo todavía no son`} un tipo de deducción`}
                     </p>
                     <p className="mt-0.5 text-xs text-blue-900">
                       {montosDelPeriodo?.puedeCrearTipos
-                        ? "Marque las que sí son descuentos y revise la categoría: decide hasta cuánto se cobra. Al crearlas se vuelve a revisar el archivo; nada se aplica todavía."
+                        ? "Diga qué es cada una: un tipo nuevo, un tipo que ya existe con otro nombre en su planilla (se recordará para los próximos archivos) o nada. Revise la categoría de los nuevos: decide hasta cuánto se cobra. Después se vuelve a revisar el archivo; nada se aplica todavía."
                         : `Mientras no existan, se ignoran: ${nuevos.map((t) => t.cabecera).join(", ")}. Pida a quien configura las deducciones que las cree (Tipos de deducción → Nuevo tipo o Importar tipos) y vuelva a subir el archivo.`}
                     </p>
                   </div>
-                  {montosDelPeriodo?.puedeCrearTipos && (
-                    <>
-                      <ul className="divide-y divide-blue-100 rounded-md border border-blue-100 bg-white">
-                        {nuevos.map((t, i) => {
-                          const ayuda = CATEGORIAS.find((c) => c.valor === t.tipo)?.ayuda;
-                          return (
-                            <li key={t.cabecera} className="space-y-1.5 px-3 py-2" data-columna={t.cabecera}>
-                              <div className="grid items-center gap-2 sm:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
-                                <input type="checkbox" className="h-4 w-4" aria-label={`Crear «${t.cabecera}»`} checked={t.crear} onChange={(e) => cambiarNuevo(i, { crear: e.target.checked })} />
-                                <input className="input h-8" aria-label={`Nombre de «${t.cabecera}»`} value={t.nombre} disabled={!t.crear} onChange={(e) => cambiarNuevo(i, { nombre: e.target.value })} />
-                                <input className="input h-8 font-mono text-xs uppercase" aria-label={`Código de «${t.cabecera}»`} value={t.codigo} disabled={!t.crear} onChange={(e) => cambiarNuevo(i, { codigo: e.target.value.toUpperCase() })} />
-                                <select className="input h-8" aria-label={`Categoría de «${t.cabecera}»`} value={t.tipo} disabled={!t.crear} onChange={(e) => cambiarNuevo(i, { tipo: e.target.value })}>
-                                  {CATEGORIAS.map((c) => <option key={c.valor} value={c.valor}>{c.etiqueta}</option>)}
-                                </select>
-                              </div>
-                              <p className="text-xs text-gray-500 sm:pl-6">
-                                {t.conMontos} monto(s) en el archivo.{t.motivo && <span className="text-amber-800"> {t.motivo}</span>}{t.crear && ayuda && <> {ayuda}</>}
-                              </p>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      <div className="flex justify-end">
-                        <button type="button" className="btn btn-primary" disabled={cargando || !nuevos.some((t) => t.crear)} onClick={() => void crearTiposYRevisar()}>
-                          {cargando ? "Creando…" : `Crear ${nuevos.filter((t) => t.crear).length} tipo(s) y volver a revisar`}
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  {montosDelPeriodo?.puedeCrearTipos && (() => {
+                    const fila = (t: ColumnaNueva, i: number) => {
+                      const ayuda = CATEGORIAS.find((c) => c.valor === t.tipo)?.ayuda;
+                      const eleccion = t.crear ? "crear" : t.equivalente ? `tipo:${t.equivalente}` : "nada";
+                      return (
+                        <li key={t.cabecera} className="space-y-1.5 px-3 py-2" data-columna={t.cabecera}>
+                          <div className="grid items-center gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+                            <span className="font-medium text-gray-900">«{t.cabecera}»</span>
+                            <select className="input h-8" aria-label={`Qué es «${t.cabecera}»`} value={eleccion}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                cambiarNuevo(i, v === "crear" ? { crear: true, equivalente: undefined } : v === "nada" ? { crear: false, equivalente: undefined } : { crear: false, equivalente: v.slice(5) });
+                              }}>
+                              <option value="crear">Crear un tipo nuevo</option>
+                              <option value="nada">No importar esta columna</option>
+                              {(informe.tiposExistentes ?? []).length > 0 && (
+                                <optgroup label="Es un tipo que ya existe">
+                                  {(informe.tiposExistentes ?? []).map((x) => <option key={x.codigo} value={`tipo:${x.codigo}`}>{x.etiqueta}</option>)}
+                                </optgroup>
+                              )}
+                            </select>
+                          </div>
+                          {t.crear && (
+                            <div className="grid items-center gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
+                              <input className="input h-8" aria-label={`Nombre de «${t.cabecera}»`} value={t.nombre} onChange={(e) => cambiarNuevo(i, { nombre: e.target.value })} />
+                              <input className="input h-8 font-mono text-xs uppercase" aria-label={`Código de «${t.cabecera}»`} value={t.codigo} onChange={(e) => cambiarNuevo(i, { codigo: e.target.value.toUpperCase() })} />
+                              <select className="input h-8" aria-label={`Categoría de «${t.cabecera}»`} value={t.tipo} onChange={(e) => cambiarNuevo(i, { tipo: e.target.value })}>
+                                {CATEGORIAS.map((c) => <option key={c.valor} value={c.valor}>{c.etiqueta}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-500">
+                            {t.conMontos} monto(s) en el archivo.{t.motivo && <span className="text-amber-800"> {t.motivo}</span>}
+                            {t.crear && ayuda && <> {ayuda}</>}
+                            {!t.crear && t.equivalente && <> Sus montos se importarán en ese tipo, ahora y en los próximos archivos.</>}
+                          </p>
+                        </li>
+                      );
+                    };
+                    // Sueldos, días, totales y lo de ley: aparte, para que no estorben.
+                    const conIndice = nuevos.map((t, i) => [t, i] as const);
+                    const principales = conIndice.filter(([t]) => !t.motivo || t.crear || t.equivalente);
+                    const apartadas = conIndice.filter(([t]) => t.motivo && !t.crear && !t.equivalente);
+                    return (
+                      <>
+                        {principales.length > 0 && (
+                          <ul className="divide-y divide-blue-100 rounded-md border border-blue-100 bg-white">
+                            {principales.map(([t, i]) => fila(t, i))}
+                          </ul>
+                        )}
+                        {apartadas.length > 0 && (
+                          <details className="rounded-md border border-blue-100 bg-white" data-columnas-apartadas>
+                            <summary className="cursor-pointer px-3 py-2 text-xs text-gray-700">
+                              {apartadas.length === 1 ? "1 columna más no parece un descuento y se ignora" : `${apartadas.length} columnas más no parecen descuentos y se ignoran`}: {apartadas.map(([t]) => t.cabecera).join(", ")}
+                            </summary>
+                            <ul className="divide-y divide-blue-100 border-t border-blue-100">{apartadas.map(([t, i]) => fila(t, i))}</ul>
+                          </details>
+                        )}
+                        {(porCrear > 0 || porAsignar > 0) && (
+                          <div className="flex justify-end">
+                            <button type="button" className="btn btn-primary" disabled={cargando} onClick={() => void resolverColumnasYRevisar()}>
+                              {cargando
+                                ? "Guardando…"
+                                : `${[porCrear ? `Crear ${porCrear} tipo(s)` : "", porAsignar ? `asignar ${porAsignar} columna(s)` : ""].filter(Boolean).join(" y ").replace(/^a/, "A")} y volver a revisar`}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -417,7 +524,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
               {informe.filas.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Detalle por fila</h3>
-                  <div className="panel max-h-72 overflow-hidden overflow-y-auto">
+                  <div className="panel max-h-72 overflow-auto" data-detalle-filas>
                     <table className="table-base">
                       <thead className="sticky top-0">
                         <tr>
@@ -463,7 +570,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
         </div>
 
         {/* Pie */}
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
+        <div className="px-6 py-4 border-t border-gray-100 flex flex-wrap justify-end gap-3 shrink-0">
           {paso === "revisar" && (
             <>
               <button
@@ -481,7 +588,7 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
                 {cargando
                   ? "Aplicando…"
                   : tiposPendientes
-                    ? "Primero cree o desmarque las columnas nuevas"
+                    ? "Primero resuelva las columnas nuevas"
                   : informe?.aplicable
                     ? `Aplicar ${(informe.totalCrear + informe.totalActualizar).toLocaleString("es-HN")} cambio(s)`
                     : informe && informe.totalErrores === 0 ? "No hay cambios que aplicar" : "Corrija los errores para continuar"}

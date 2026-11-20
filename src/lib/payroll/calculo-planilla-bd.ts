@@ -34,7 +34,7 @@ import { calcularDeduccionesAsistencia, lunesDe } from "@/lib/asistencia/deducci
 import { incidenciasDelPeriodo, perfilDesdeTurno, type MarcaParaAsistencia } from "@/lib/asistencia/deducciones/incidencias";
 import { leerPoliticaAsistencia } from "@/lib/asistencia/deducciones/politica-bd";
 import { CERO, money, sumar, type Money } from "./money";
-import { aplicarDeducciones, CODIGO_ISR_FIJO, conMontosDelPeriodo, cuotaDelPeriodo, registrosDeAmortizacion, topesDelPeriodo, type Amortizacion } from "./deducciones";
+import { aplicarDeducciones, CODIGO_ISR_FIJO, conMontosDelPeriodo, cuotaDelPeriodo, esMontoDelPeriodo, registrosDeAmortizacion, topesDelPeriodo, type Amortizacion } from "./deducciones";
 import { numeroDeQuincena, otraQuincena } from "./distribucion-quincenal";
 import { mesDe, reglaDelMes } from "./rap-mes-vencido";
 import { basesDelMesVencido, conRapEnLiquidacion, leerBaseRap } from "./rap-mes-vencido-bd";
@@ -176,7 +176,9 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   // con lo pagado y lo retenido antes de este período, como la hoja de retención
   // del cliente; necesita ese historial, que se lee una sola vez para todos.
   const configIsr = await leerConfigIsr(prisma);
-  const isrPersonalizado = configIsr.metodo === "PERSONALIZADO";
+  // ISR MANUAL: no se calcula; se retiene lo importado para el período o lo fijo de la ficha.
+  const isrManual = configIsr.modo === "MANUAL";
+  const isrPersonalizado = !isrManual && configIsr.metodo === "PERSONALIZADO";
   const periodoIsr = indicePeriodoDelAnio(tipo as "SEMANAL" | "QUINCENAL" | "MENSUAL", hasta);
   const historialIsr = isrPersonalizado
     ? await cargarHistorialIsr(prisma, empleadoIds, hasta.getUTCFullYear(), desde)
@@ -365,7 +367,12 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
     if (diasPagables <= 0) continue;
 
     // Un monto del período reemplaza, en este período, a la deducción de cada planilla del mismo tipo.
-    const todas = conMontosDelPeriodo(emp.deducciones).map((d) => ({
+    // El ISR importado para el período sólo vale con el ISR en manual: en automático lo
+    // calcula el sistema y sólo manda la retención fija de la ficha.
+    const deEsteModo = isrManual
+      ? emp.deducciones
+      : emp.deducciones.filter((d) => !(d.tipoDeduccion.codigo === CODIGO_ISR_FIJO && esMontoDelPeriodo(d)));
+    const todas = conMontosDelPeriodo(deEsteModo).map((d) => ({
       id: d.id,
       monto: d.monto,
       saldo: d.saldo,
@@ -452,6 +459,10 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
     let isrDelPeriodo: Money | null = null;
     if (isrFijo.length > 0) {
       isrDelPeriodo = sumar(...isrFijo.map((d) => cuotaDelPeriodo(d)));
+      result = calcularPlanilla({ ...entradaCalculo, isrDelPeriodo }, parametros);
+    } else if (isrManual) {
+      // Sin retención importada ni fija: en manual no se retiene nada.
+      isrDelPeriodo = CERO;
       result = calcularPlanilla({ ...entradaCalculo, isrDelPeriodo }, parametros);
     } else if (isrPersonalizado) {
       const x = calcularIsrPersonalizado({

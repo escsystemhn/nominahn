@@ -3,7 +3,8 @@ import { money } from "@/lib/payroll/money";
 import { PARAMETROS_DEFAULT } from "@/lib/payroll/calculos-hn";
 import { conMontosDelPeriodo, MARCA_MONTO_PERIODO } from "@/lib/payroll/deducciones";
 import {
-  armarMatriz, decidirBaseRap, decidirCelda, estadosDelPeriodo, observacionMontoPeriodo, sugerirTiposNuevos, totalDeCelda, validarMontos,
+  armarMatriz, combinarEquivalencias, decidirBaseRap, decidirCelda, estadosDelPeriodo, ETIQUETA_ISR, observacionMontoPeriodo, sugerirTiposNuevos,
+  totalDeCelda, validarMontos,
   type ContextoMontos, type DeduccionParaEstado, type EmpleadoMatriz, type EstadoCelda, type OperacionMonto, type ResultadoMontos, type ContextoBaseRap,
 } from "@/lib/importacion/montos-periodo";
 
@@ -362,5 +363,94 @@ describe("columna «Base RAP (mes anterior)»", () => {
     // Ida y vuelta: lo exportado no cambia nada.
     const csv = [columnas.map((c) => c.etiqueta).join(","), ...filas.map((f) => f.join(","))].join("\n");
     expect(validarMontos(csv, ctx, todos).operaciones).toEqual([]);
+  });
+});
+describe("la planilla de la empresa tal como viene", () => {
+  // Título arriba, encabezados partidos en dos filas, una fila de departamento, guiones
+  // contables y un subtotal: como la planilla quincenal que lleva el cliente en Excel.
+  const HOJA = [
+    "PLANILLA DE SUELDOS PRIMERA QUINCENA,,,,,,",
+    "Código,Nombre del,Retención,Coop.,Ptamo.,Seguro,",
+    "Empl.,Empleado,en la Fuente,AUDI,RAP,médico,Vales",
+    "Depto. 01 ADMINISTRACION,,,,,,",
+    "010001,A,-,500.00,1399.41,1100,-",
+    "010130,C,250.00,-,-,-,80",
+    ",Total Depto. 01,250.00,500.00,1399.41,1100,80",
+    ",,250.00,500.00,1399.41,1100,80",
+  ].join("\n");
+  const ISR = { id: "isr", codigo: "ISR-FIJO", nombre: "Retención de ISR fija por período", etiqueta: ETIQUETA_ISR };
+
+  it("encuentra los encabezados en las filas 2 y 3 y reconoce las abreviaturas", () => {
+    const r = validarMontos(HOJA, contexto(), todos);
+    expect(r.hoja).toMatchObject({ lineaCabecera: 2, dosFilas: true });
+    expect(r.columnasLeidas.map((c) => `${c.cabecera}|${c.codigo}|${c.por}`)).toEqual([
+      "Coop. AUDI|COOP-AUDI|NOMBRE", "Seguro médico|SEG-MED|NOMBRE", "Ptamo. RAP|PTMO-RAP|PARECIDO",
+    ]);
+    expect(r.columnasDesconocidas).toEqual(["Vales"]);
+    expect(r.incidencias.filter((i) => i.severidad === "ERROR")).toEqual([]);
+  });
+
+  it("el «-» es cero, la fila del departamento no cuenta y los totales se ignoran con un aviso", () => {
+    const r = validarMontos(HOJA, contexto(), todos);
+    expect(r.filasTotales).toBe(2);
+    expect(r.incidencias.some((i) => i.severidad === "AVISO" && /totales o subtotales/.test(i.mensaje))).toBe(true);
+    expect(montosDe(r).map((o) => `${o.empleadoId}|${o.tipoDeduccionId}|${o.monto}`)).toEqual([
+      "id-010001|rap|1399.41", "id-010001|seg|1100.00",
+    ]);
+  });
+
+  it("con el ISR en automático, la columna del ISR se ignora con un aviso y no se propone crearla", () => {
+    const r = validarMontos(HOJA, contexto(), todos);
+    const aviso = r.incidencias.find((i) => i.columna === "Retención en la Fuente");
+    expect(aviso?.mensaje).toMatch(/automático.*manual/);
+    expect(sugerirTiposNuevos(r.hoja!, r.columnasDesconocidas, []).map((t) => t.cabecera)).toEqual(["Vales"]);
+  });
+
+  it("con el ISR en manual, la columna del ISR es la retención del período", () => {
+    const estados = new Map([...contexto().estados, ["id-010001|isr", estado({ cadaPlanilla: money(2000) })]]);
+    const r = validarMontos(HOJA, contexto({ tipos: [ISR, ...TIPOS], estados }), todos);
+    expect(r.columnasLeidas.find((c) => c.codigo === "ISR-FIJO")).toMatchObject({ cabecera: "Retención en la Fuente" });
+    const isr = montosDe(r).filter((o) => o.tipoDeduccionId === "isr");
+    expect(isr.map((o) => `${o.empleadoId}|${o.monto}`)).toEqual(["id-010001|0.00", "id-010130|250.00"]);
+    const fila = r.previsualizacion.find((f) => f.referencia === "010001 Empleado 010001, ISR del período");
+    expect(fila?.cambios?.join(" ")).toMatch(/no se retiene ISR.*retención fija de L\s?2,000\.00/);
+  });
+
+  it("una columna asignada antes se recuerda", () => {
+    const r = validarMontos(HOJA.replace(",Vales", ",Ret. Plan Pensiones"), contexto({ equivalencias: new Map([["ret_plan_pensiones", "audi"]]) }), todos);
+    // AUDI ya la toma «Coop. AUDI»: una columna recordada no le quita su tipo a otra.
+    expect(r.columnasDesconocidas).toEqual(["Ret. Plan Pensiones"]);
+    const r2 = validarMontos(HOJA.replace(",Vales", ",Ret. Plan Pensiones"), contexto({ tipos: [...TIPOS, { id: "afp", codigo: "AFP-ATL", nombre: "AFP Atlántida" }], equivalencias: new Map([["ret_plan_pensiones", "afp"]]) }), todos);
+    expect(r2.columnasLeidas.find((c) => c.cabecera === "Ret. Plan Pensiones")).toMatchObject({ codigo: "AFP-ATL", por: "RECORDADA" });
+    expect(montosDe(r2).find((o) => o.tipoDeduccionId === "afp")).toMatchObject({ empleadoId: "id-010130", monto: "80.00" });
+  });
+
+  it("una fila con nombre y montos pero sin código sigue siendo un error", () => {
+    const r = validarMontos(HOJA.replace("010130,C,", ",C,"), contexto(), todos);
+    expect(r.incidencias.find((i) => i.severidad === "ERROR")?.mensaje).toMatch(/Falta el código/);
+  });
+
+  it("sin ninguna fila con el código del empleado, el error de siempre", () => {
+    const r = validarMontos(["Planilla,,", "Empleado,Coop. AUDI", "A,500"].join("\n"), contexto(), todos);
+    expect(r.incidencias[0].mensaje).toMatch(/Falta la columna «Codigo Empleado»/);
+  });
+
+  it("el archivo exportado sigue leyéndose desde la primera fila", () => {
+    const r = validarMontos([CAB, "010001,A,Adm,500.00,,1000.00"].join("\n"), contexto(), todos);
+    expect(r.hoja).toMatchObject({ lineaCabecera: 1, dosFilas: false });
+    expect(r.sinCambio).toBe(2);
+  });
+
+  it("con el ISR en manual, su columna va primero en el archivo exportado", () => {
+    const { columnas } = armarMatriz([{ id: "id-010001", codigo: "010001", nombre: "A", departamento: "Adm" }], [...TIPOS, ISR], contexto().estados);
+    expect(columnas[3].etiqueta).toBe(ETIQUETA_ISR);
+  });
+});
+
+describe("columnas recordadas", () => {
+  it("agrega, cambia y quita sin importar mayúsculas ni puntos", () => {
+    const antes = [{ cabecera: "Ret. Plan Pensiones", codigo: "AFP-ATL" }, { cabecera: "Vales", codigo: "ADELANTO" }];
+    const despues = combinarEquivalencias(antes, [{ cabecera: "RET PLAN PENSIONES", codigo: "AFP-FICOHSA" }], ["vales"]);
+    expect(despues).toEqual([{ cabecera: "RET PLAN PENSIONES", codigo: "AFP-FICOHSA" }]);
   });
 });
