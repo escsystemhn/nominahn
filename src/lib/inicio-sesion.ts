@@ -8,7 +8,7 @@
  * equivocado es peor que ninguno.
  */
 
-export const VERSION = "2.0.1";
+export const VERSION = "2.0.2";
 
 /** Contacto verificado en esc-systemhn.com. */
 export const SOPORTE = {
@@ -24,6 +24,38 @@ export interface Novedad {
 }
 
 export const NOVEDADES: Record<string, Novedad[]> = {
+  "2.0.2": [
+    {
+      titulo: "Formato de captura por sucursal",
+      detalle: "En Deducciones → Exportar: los empleados por departamento, como su planilla, con subtotales, para escribir los montos a mano y volver a importarlos.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "Su planilla, tal como viene",
+      detalle: "Montos del período lee encabezados en dos filas, abreviaturas como «Ptamo.» o «Coop.», guiones y totales, y recuerda a qué tipo va cada columna.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "ISR automático o manual",
+      detalle: "En Parámetros de ley. En manual se retiene el ISR que se importa para cada quincena: útil al empezar a mitad de año.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Limpiar pruebas",
+      detalle: "En Configuración → Sistema: quita las planillas de prueba sin aprobar y los montos importados desde una fecha, y devuelve las cuotas que cobraron.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "En el celular y la tablet",
+      detalle: "Menú, tablas y formularios hechos para el dedo, y se puede agregar a la pantalla de inicio como una aplicación.",
+      modulo: "General",
+    },
+    {
+      titulo: "Conectar celulares al servidor",
+      detalle: "La página del certificado trae un código QR y los pasos para Android y iPhone.",
+      modulo: "Instalación",
+    },
+  ],
   "2.0.1": [
     {
       titulo: "Columnas a su medida",
