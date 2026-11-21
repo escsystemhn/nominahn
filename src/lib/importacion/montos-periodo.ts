@@ -54,6 +54,8 @@ export interface TipoColumna {
   etiqueta?: string;
   /** Otros nombres con que llega en las planillas hechas a mano. */
   alias?: string[];
+  /** Categoría (`TipoDeduccion`): ordena las columnas del formato de captura. */
+  categoria?: string;
 }
 
 /**
@@ -79,11 +81,11 @@ const nombreTipo = (t: TipoColumna) => (esIsr(t) ? "ISR del período" : t.nombre
  */
 export async function cargarTiposMatriz(db: PrismaClient | Prisma.TransactionClient, isrManual?: boolean): Promise<TipoColumna[]> {
   const manual = isrManual ?? (await isrEsManual(db));
-  const tipos = await db.tipoDeduccionConfig.findMany({
+  const tipos = (await db.tipoDeduccionConfig.findMany({
     where: { activo: true, esLegal: false, ...(manual ? {} : { codigo: { not: CODIGO_ISR_FIJO } }) },
-    select: { id: true, codigo: true, nombre: true },
+    select: { id: true, codigo: true, nombre: true, tipo: true },
     orderBy: { nombre: "asc" },
-  });
+  })).map(({ tipo, ...t }): TipoColumna => ({ ...t, categoria: tipo }));
   return [
     ...tipos.filter(esIsr).map((t) => ({ ...t, etiqueta: ETIQUETA_ISR, alias: ALIAS_ISR })),
     ...tipos.filter((t) => !esIsr(t)),
@@ -589,6 +591,7 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
   }
 
   const vistas = new Map<string, number>();
+  let totalesSinRotulo = 0;
   const avisadas = new Set<string>();
   for (const { linea, celdas } of hoja.filas) {
     r.totalFilas++;
@@ -606,7 +609,12 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
       // Totales y subtotales de la planilla: con «Total» en alguna celda, o sin código ni nombre de nadie.
       const iNombre = indices[COLUMNA_NOMBRE.clave];
       const sinNombre = iNombre !== undefined && !(celdas[iNombre] ?? "").trim();
-      if (esFilaDeTotal(celdas) || (!codigo && sinNombre)) { r.filasTotales++; continue; }
+      if (esFilaDeTotal(celdas) || (!codigo && sinNombre)) {
+        r.filasTotales++;
+        // Las que dicen «Total» son obviamente totales; sólo se avisa de las que no lo dicen.
+        if (!esFilaDeTotal(celdas)) totalesSinRotulo++;
+        continue;
+      }
       if (!codigo) { error("Falta el código del empleado.", COLUMNA_CODIGO.etiqueta); continue; }
     }
     const emp = ctx.empleados.get(codigo.toLowerCase());
@@ -719,10 +727,10 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
       });
     }
   }
-  if (r.filasTotales) {
+  if (totalesSinRotulo) {
     r.incidencias.push({
       linea: L, severidad: "AVISO",
-      mensaje: `${r.filasTotales === 1 ? "Una fila con montos y sin código de empleado parece" : `${r.filasTotales} filas con montos y sin código de empleado parecen`} de totales o subtotales: no se importa${r.filasTotales === 1 ? "" : "n"}.`,
+      mensaje: `${totalesSinRotulo === 1 ? "Una fila con montos y sin código ni nombre de empleado parece" : `${totalesSinRotulo} filas con montos y sin código ni nombre de empleado parecen`} de totales o subtotales: no se importa${totalesSinRotulo === 1 ? "" : "n"}.`,
     });
   }
   return r;
