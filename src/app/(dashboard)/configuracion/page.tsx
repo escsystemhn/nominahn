@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede, puedeAlguno } from "@/lib/auth/guard";
+import { alcanceEsTotal } from "@/lib/auth/alcance";
 import ConfiguracionClient from "@/components/config/ConfiguracionClient";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import { contarBorradores } from "@/lib/organizacion/movimientos-division";
@@ -13,6 +14,8 @@ export default async function ConfiguracionPage({ searchParams }: { searchParams
     "seguridad.usuarios_gestionar", "configuracion.respaldos",
   ]);
   const puedeRespaldos = puede(usuario, "configuracion.respaldos");
+  // Limpiar pruebas borra planillas de cualquiera: hace falta también calcularlas y ver a toda la empresa.
+  const puedeLimpiarPruebas = puedeRespaldos && puede(usuario, "planillas.calcular") && alcanceEsTotal(usuario);
   const puedeSeguridad = puede(usuario, "seguridad.usuarios_gestionar");
   const minutosInactividad = puedeSeguridad ? await leerMinutosInactividad(prisma) : 0;
   const puedeVer = puedeAlguno(usuario, ["configuracion.ver", "configuracion.editar"]);
@@ -94,6 +97,7 @@ export default async function ConfiguracionPage({ searchParams }: { searchParams
       puedeBanco={puedeBanco}
       puedeSeguridad={puedeSeguridad}
       puedeRespaldos={puedeRespaldos}
+      puedeLimpiarPruebas={puedeLimpiarPruebas}
       minutosInactividad={minutosInactividad}
       seccionInicial={(await searchParams).seccion}
     />
