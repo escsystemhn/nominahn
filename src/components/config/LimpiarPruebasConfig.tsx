@@ -21,11 +21,12 @@ interface Datos {
   montos: Array<{ desde: string; hasta: string; cantidad: number; empleados: number }>;
   totalMontos: number;
   basesRap: number;
+  horasExtra: number;
   montosCambiados: number;
 }
 interface Resultado {
   planillas: Array<{ id: string; cuotasDevueltas: number }>;
-  omitidas: number; montos: number; montosEnUso: number; basesRap: number; respaldo: string | null;
+  omitidas: number; montos: number; montosEnUso: number; basesRap: number; horasExtra: number; respaldo: string | null;
 }
 
 const dos = (n: number) => String(n).padStart(2, "0");
@@ -60,7 +61,7 @@ export default function LimpiarPruebasConfig() {
     setDatos(x);
     setBuscadoDesde(iso);
     setMarcadas(new Set(x.planillas.filter((p) => !p.motivo).map((p) => p.id)));
-    setConMontos(x.totalMontos + x.basesRap > 0);
+    setConMontos(x.totalMontos + x.basesRap + x.horasExtra > 0);
   }
 
   async function limpiar() {
@@ -70,6 +71,7 @@ export default function LimpiarPruebasConfig() {
       n ? plural(n, "planilla de prueba", "planillas de prueba") : "",
       conMontos && datos.totalMontos ? plural(datos.totalMontos, "monto del período", "montos del período") : "",
       conMontos && datos.basesRap ? plural(datos.basesRap, "base del RAP", "bases del RAP") : "",
+      conMontos && datos.horasExtra ? plural(datos.horasExtra, "registro de horas extra", "registros de horas extra") : "",
     ].filter(Boolean);
     if (!(await confirmar({
       titulo: `¿Quitar ${partes.join(", ")}?`,
@@ -92,7 +94,7 @@ export default function LimpiarPruebasConfig() {
       ok: true,
       texto: [
         `Se quitaron ${plural(x.planillas.length, "planilla", "planillas")}${cuotas ? ` (${plural(cuotas, "cuota devuelta", "cuotas devueltas")})` : ""}`,
-        x.montos || x.basesRap ? ` y ${plural(x.montos, "monto del período", "montos del período")}${x.basesRap ? `, más ${plural(x.basesRap, "base del RAP", "bases del RAP")}` : ""}` : "",
+        x.montos || x.basesRap || x.horasExtra ? ` y ${plural(x.montos, "monto del período", "montos del período")}${x.basesRap ? `, más ${plural(x.basesRap, "base del RAP", "bases del RAP")}` : ""}${x.horasExtra ? `, más ${plural(x.horasExtra, "registro de horas extra", "registros de horas extra")}` : ""}` : "",
         ".",
         x.omitidas ? ` ${plural(x.omitidas, "planilla cambió", "planillas cambiaron")} de estado mientras revisaba y no se tocó.` : "",
         x.montosEnUso ? ` ${plural(x.montosEnUso, "monto sigue", "montos siguen")}: lo cobra una planilla que se queda.` : "",
@@ -104,7 +106,7 @@ export default function LimpiarPruebasConfig() {
 
   const limpiables = datos?.planillas.filter((p) => !p.motivo) ?? [];
   const cerradas = datos?.planillas.filter((p) => p.motivo) ?? [];
-  const hayAlgo = marcadas.size > 0 || (conMontos && !!datos && datos.totalMontos + datos.basesRap > 0);
+  const hayAlgo = marcadas.size > 0 || (conMontos && !!datos && datos.totalMontos + datos.basesRap + datos.horasExtra > 0);
 
   function alternar(id: string) {
     const nuevo = new Set(marcadas);
@@ -175,7 +177,7 @@ export default function LimpiarPruebasConfig() {
 
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Montos importados desde entonces</h3>
-            {datos.totalMontos + datos.basesRap === 0 ? (
+            {datos.totalMontos + datos.basesRap + datos.horasExtra === 0 ? (
               <p className="mt-1 text-sm text-gray-600">Ninguno.</p>
             ) : (
               <label className="mt-2 flex items-start gap-2 text-sm text-gray-800" data-montos-prueba>
@@ -183,6 +185,7 @@ export default function LimpiarPruebasConfig() {
                 <span>
                   Quitar {plural(datos.totalMontos, "monto del período", "montos del período")}
                   {datos.basesRap > 0 && <> y {plural(datos.basesRap, "base del RAP", "bases del RAP")}</>}
+                  {datos.horasExtra > 0 && <> y {plural(datos.horasExtra, "registro de horas extra", "registros de horas extra")}</>}
                   <span className="block text-xs text-gray-500">
                     {datos.montos.map((m) => `${rangoPeriodo(m.desde, m.hasta)}: ${plural(m.cantidad, "monto", "montos")} de ${plural(m.empleados, "empleado", "empleados")}`).join(". ")}
                     {datos.montos.length > 0 && "."} Las deducciones de cada planilla vuelven a cobrarse como siempre.

@@ -926,6 +926,11 @@ export interface EntradaCalculoPlanilla {
    */
   isrDelPeriodo?: MoneyInput | null;
   /**
+   * Impuesto vecinal del PERÍODO ya decidido (`vecinal-anual.ts`): con el cobro anual,
+   * lo confirmado para esta planilla, o 0. Si viene, reemplaza al doceavo calculado.
+   */
+  vecinalDelPeriodo?: MoneyInput | null;
+  /**
    * RAP y Reserva Laboral a MES VENCIDO (ver `rap-mes-vencido.ts`): `base` es lo
    * devengado el mes anterior y reemplaza a lo del período. Lo del mes de salida de
    * quien se va no se cobra aquí: lo toma su liquidación. Sin el dato, todo sobre el
@@ -1120,7 +1125,9 @@ export function calcularPlanilla(
   const isrProp = entrada.isrDelPeriodo !== undefined && entrada.isrDelPeriodo !== null
     ? redondear(entrada.isrDelPeriodo)
     : redondear(isrMensual.times(factorPlanilla));
-  const impVecProp = redondear(impVecinal.times(factorVecinal));
+  const impVecProp = entrada.vecinalDelPeriodo !== undefined && entrada.vecinalDelPeriodo !== null
+    ? redondear(entrada.vecinalDelPeriodo)
+    : redondear(impVecinal.times(factorVecinal));
   // Lo que se deja de pagar por ausencias e incapacidad nunca pasa del sueldo
   // del período: ocho faltas en una quincena no pueden descontar más que la quincena.
   const ausencias = minimo(

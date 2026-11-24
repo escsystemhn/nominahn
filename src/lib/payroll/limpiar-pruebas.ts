@@ -46,6 +46,8 @@ export interface DatosDePrueba {
   totalMontos: number;
   /** Bases del RAP a mes vencido importadas desde la fecha. */
   basesRap: number;
+  /** Horas extra del período importadas desde la fecha (formato de captura). */
+  horasExtra: number;
   /** Montos del período de antes que se cambiaron durante las pruebas: no se pueden deshacer solos. */
   montosCambiados: number;
 }
@@ -53,7 +55,7 @@ export interface DatosDePrueba {
 const dia = (d: Date) => d.toISOString().slice(0, 10);
 
 export async function buscarDatosDePrueba(db: Db, desde: Date): Promise<DatosDePrueba> {
-  const [planillas, montos, basesRap, montosCambiados] = await Promise.all([
+  const [planillas, montos, basesRap, horasExtra, montosCambiados] = await Promise.all([
     db.planilla.findMany({
       where: { createdAt: { gte: desde } },
       select: {
@@ -68,6 +70,7 @@ export async function buscarDatosDePrueba(db: Db, desde: Date): Promise<DatosDeP
       select: { empleadoId: true, fechaInicio: true, fechaFin: true },
     }),
     db.baseRapMes.count({ where: { createdAt: { gte: desde }, origen: "IMPORTACION" } }),
+    db.horasExtraPeriodo.count({ where: { createdAt: { gte: desde }, origen: "IMPORTACION" } }),
     db.deduccionEmpleado.count({ where: { createdAt: { lt: desde }, updatedAt: { gte: desde }, observacion: { startsWith: MARCA_MONTO_PERIODO } } }),
   ]);
 
@@ -91,6 +94,7 @@ export async function buscarDatosDePrueba(db: Db, desde: Date): Promise<DatosDeP
     montos: [...porPeriodo.values()].sort((a, b) => a.desde.localeCompare(b.desde)).map(({ empleados, ...p }) => ({ ...p, empleados: empleados.size })),
     totalMontos: montos.length,
     basesRap,
+    horasExtra,
     montosCambiados,
   };
 }
@@ -102,6 +106,7 @@ export interface ResultadoLimpieza {
   /** Montos que no se borraron porque los cobra una planilla que se queda. */
   montosEnUso: number;
   basesRap: number;
+  horasExtra: number;
 }
 
 /**
@@ -118,7 +123,7 @@ export async function limpiarDatosDePrueba(
     where: { id: { in: [...opciones.planillaIds] }, createdAt: { gte: opciones.desde } },
     select: { id: true, tipo: true, fechaInicio: true, fechaFin: true, estado: true, totalNeto: true, _count: { select: { enviosSap: true } } },
   });
-  const r: ResultadoLimpieza = { planillas: [], omitidas: opciones.planillaIds.length, montos: 0, montosEnUso: 0, basesRap: 0 };
+  const r: ResultadoLimpieza = { planillas: [], omitidas: opciones.planillaIds.length, montos: 0, montosEnUso: 0, basesRap: 0, horasExtra: 0 };
 
   for (const p of candidatas) {
     if (motivoNoLimpiable({ estado: p.estado, enviosSap: p._count.enviosSap })) continue;
@@ -141,6 +146,7 @@ export async function limpiarDatosDePrueba(
     r.montos = borrados.count;
     r.montosEnUso = await tx.deduccionEmpleado.count({ where: delPeriodo });
     r.basesRap = (await tx.baseRapMes.deleteMany({ where: { createdAt: { gte: opciones.desde }, origen: "IMPORTACION" } })).count;
+    r.horasExtra = (await tx.horasExtraPeriodo.deleteMany({ where: { createdAt: { gte: opciones.desde }, origen: "IMPORTACION" } })).count;
   }
   return r;
 }

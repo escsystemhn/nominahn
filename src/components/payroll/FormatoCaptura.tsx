@@ -5,7 +5,8 @@
  * departamento, como la planilla de la empresa, para escribir los montos a mano y
  * volver a importarlo. Ver `lib/importacion/formato-captura.ts`.
  *
- * Se elige el período, la sucursal, sus departamentos (todos marcados) y las columnas.
+ * Se elige el período, la sucursal, sus departamentos (todos marcados), si lleva las horas
+ * extra del período (antes de las deducciones) y las columnas.
  * Las columnas y su orden quedan como el formato de la empresa si quien descarga puede
  * configurar deducciones.
  */
@@ -27,6 +28,8 @@ interface Opciones {
   etiquetas: { grupo: string; sucursal: string };
   unidades: Unidad[];
   columnas: Columna[];
+  /** Lo recordado: si el formato lleva las horas extra. */
+  horasExtra: boolean;
   puedeRecordar: boolean;
 }
 
@@ -47,6 +50,7 @@ export default function FormatoCaptura({ titulo, periodo, onPeriodo, encabezado,
   const [marcados, setMarcados] = useState<ReadonlySet<string>>(new Set());
   const [columnas, setColumnas] = useState<Columna[]>([]);
   const [conMontos, setConMontos] = useState(true);
+  const [horasExtra, setHorasExtra] = useState(false);
   const [recordar, setRecordar] = useState(true);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +67,7 @@ export default function FormatoCaptura({ titulo, periodo, onPeriodo, encabezado,
         const o = d as Opciones;
         setCargadas({ tipo: periodo.tipo, o });
         setColumnas(o.columnas);
+        setHorasExtra(!!o.horasExtra);
         const primera = o.unidades[0];
         setUnidad(primera ? clave(primera) : "");
         setMarcados(new Set(primera?.departamentos.map((x) => x.id) ?? []));
@@ -119,7 +124,7 @@ export default function FormatoCaptura({ titulo, periodo, onPeriodo, encabezado,
           sucursalId: elegida.sucursalId, divisionId: elegida.divisionId,
           departamentoIds: elegida.departamentos.filter((d) => marcados.has(d.id)).map((d) => d.id),
           columnas: incluidas.map((c) => c.codigo),
-          conMontos, recordar: !!opciones?.puedeRecordar && recordar,
+          conMontos, horasExtra, recordar: !!opciones?.puedeRecordar && recordar,
         }),
       });
       if (!r.ok) {
@@ -143,7 +148,7 @@ export default function FormatoCaptura({ titulo, periodo, onPeriodo, encabezado,
   }
 
   const et = opciones?.etiquetas ?? { grupo: "Grupo", sucursal: "Sucursal" };
-  const puede = !!elegida && marcados.size > 0 && incluidas.length > 0 && !errorPeriodo;
+  const puede = !!elegida && marcados.size > 0 && (incluidas.length > 0 || horasExtra) && !errorPeriodo;
   return (
     <Modal titulo={titulo} error={error ?? errorPeriodo} cargando={cargando} puedeGuardar={puede} onCerrar={onCerrar} onGuardar={() => void descargar()}
       textoGuardar={empleados === 1 ? "Descargar formato (1 empleado)" : `Descargar formato (${empleados} empleados)`}>
@@ -201,6 +206,16 @@ export default function FormatoCaptura({ titulo, periodo, onPeriodo, encabezado,
             </span>
           </label>
 
+          <label className="flex items-start gap-2 text-sm text-gray-800" data-opcion-horas-extra>
+            <input type="checkbox" className="mt-0.5 h-4 w-4" checked={horasExtra} onChange={(e) => setHorasExtra(e.target.checked)} />
+            <span>
+              Incluir las horas extra del 25, 50, 75 y 100 %
+              <span className="block text-xs text-gray-500">
+                Cuatro columnas antes de las deducciones, en horas (no en Lempiras). En la planilla de este período reemplazan a las horas extra de los marcajes.
+              </span>
+            </span>
+          </label>
+
           <details className="rounded-lg border border-gray-200 px-3 py-2 text-sm" data-columnas-formato>
             <summary className="cursor-pointer font-medium text-gray-800">Columnas: {incluidas.length} de {columnas.length}</summary>
             <p className="mt-1 text-xs text-gray-500">Marque las que lleva su planilla y póngalas en su orden. Las de ley no van: las calcula la planilla.</p>
@@ -218,13 +233,13 @@ export default function FormatoCaptura({ titulo, periodo, onPeriodo, encabezado,
             {opciones.puedeRecordar && (
               <label className="mt-2 flex items-center gap-2 text-xs text-gray-700">
                 <input type="checkbox" className="h-4 w-4" checked={recordar} onChange={(e) => setRecordar(e.target.checked)} />
-                Recordar estas columnas y su orden para los próximos formatos
+                Recordar estas columnas, su orden y si lleva horas extra para los próximos formatos
               </label>
             )}
           </details>
 
           <p className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            Los empleados van por departamento y ordenados por código, que es la referencia al importar. La hoja va protegida: sólo se escriben los montos.
+            Los empleados van por departamento y ordenados por código, que es la referencia al importar. La hoja va protegida: sólo se escriben las cantidades.
             Llénela y súbala en Importar → Montos del período. La descarga queda registrada en la auditoría.
           </p>
         </>

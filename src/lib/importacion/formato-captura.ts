@@ -11,6 +11,10 @@
  * paréntesis, en letra chica: así la columna se reconoce aunque alguien cambie el
  * nombre del tipo.
  *
+ * Con la opción de horas extra (2026-11-23), lleva antes de las deducciones cuatro
+ * columnas con las horas extra del período al 25, 50, 75 y 100 %, en horas
+ * (`lib/payroll/horas-extra-periodo.ts`), con «(HE-25)» debajo del encabezado.
+ *
  * Se importa por el mismo camino que cualquier archivo de montos del período
  * (`validarMontos`): el título se salta, los encabezados en dos filas se unen, las
  * filas de departamento no traen montos y las de total se ignoran.
@@ -22,6 +26,7 @@ import { CODIGO_ISR_FIJO } from "@/lib/payroll/deducciones";
 import { frasePeriodo, rangoPeriodo, ETIQUETA_TIPO_PLANILLA, nombreArchivoPeriodo, type PeriodoPlanilla } from "@/lib/payroll/periodos-planilla";
 import type { Money } from "@/lib/payroll/money";
 import type { TipoColumna } from "./montos-periodo";
+import { HORAS_MAXIMAS_PERIODO, RECARGOS, type ClaveRecargo } from "@/lib/payroll/horas-extra-periodo";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -50,6 +55,8 @@ export interface FormatoGuardado {
   columnas: string[];
   /** Códigos que se decidió no llevar. Un tipo que no está en ninguna lista es nuevo: va al final. */
   ocultas: string[];
+  /** Lleva las horas extra del período (25, 50, 75 y 100 %) antes de las deducciones. */
+  horasExtra?: boolean;
 }
 
 export const CLAVE_FORMATO = "DEDUCCIONES_FORMATO_CAPTURA";
@@ -87,7 +94,7 @@ export async function leerFormatoGuardado(db: Db): Promise<FormatoGuardado | nul
   try {
     const v = JSON.parse(fila.valor) as Partial<FormatoGuardado>;
     const lista = (x: unknown) => (Array.isArray(x) ? x.filter((c): c is string => typeof c === "string") : []);
-    return { columnas: lista(v.columnas), ocultas: lista(v.ocultas) };
+    return { columnas: lista(v.columnas), ocultas: lista(v.ocultas), horasExtra: v.horasExtra === true };
   } catch {
     return null;
   }
@@ -127,6 +134,11 @@ export interface DatosFormato {
   columnas: TipoColumna[];
   /** El monto de hoy de una celda, o null para dejarla vacía. */
   monto: (empleadoId: string, tipoId: string) => Money | null;
+  /**
+   * Con las horas extra del período: las horas de hoy de cada recargo (null, vacía). Sin
+   * esto, el formato no lleva esas columnas.
+   */
+  horas?: ((empleadoId: string, recargo: ClaveRecargo) => number | null) | null;
 }
 
 /** «Pagsa SPS» → «Pagsa-SPS»: el nombre del archivo lleva la sucursal sin tildes ni espacios. */
@@ -143,6 +155,10 @@ const BORDE: Partial<ExcelJS.Border> = { style: "thin", color: { argb: "FFB8C4CC
 const BORDES: Partial<ExcelJS.Borders> = { top: BORDE, left: BORDE, bottom: BORDE, right: BORDE };
 const GRIS = "FFF1F4F6";
 const CABECERA = "FFDCEAF0";
+/** Las horas extra, en otro tono: no son Lempiras. */
+const CABECERA_HORAS = "FFF6E7C8";
+const CELDA_HORAS = "FFFFFAF0";
+const HORAS = '#,##0.00;-#,##0.00;"-"';
 const TINTA = "FF1F2937";
 /** Columnas fijas antes de los montos: código y nombre. */
 const FIJAS = 2;
@@ -162,7 +178,10 @@ export async function construirFormato(d: DatosFormato): Promise<Uint8Array> {
   libro.creator = "Gestión360 Nómina";
   // Que Excel calcule los subtotales al abrir: ExcelJS escribe la fórmula sin resultado.
   libro.calcProperties = { fullCalcOnLoad: true };
-  const ultima = FIJAS + d.columnas.length;
+  const recargos = d.horas ? RECARGOS : [];
+  /** Primera columna de deducción: después del código, el nombre y, si van, las horas extra. */
+  const DED = FIJAS + recargos.length + 1;
+  const ultima = FIJAS + recargos.length + d.columnas.length;
   const hoja = libro.addWorksheet("Deducciones", {
     views: [{ state: "frozen", xSplit: FIJAS, ySplit: TITULO + 2, showGridLines: false }],
     pageSetup: {
@@ -174,10 +193,11 @@ export async function construirFormato(d: DatosFormato): Promise<Uint8Array> {
   });
   hoja.getColumn(1).width = 11;
   hoja.getColumn(2).width = 40;
+  recargos.forEach((_, k) => { hoja.getColumn(FIJAS + 1 + k).width = 11; });
   // Cada columna del ancho de su nombre (entre 13 y 22): así el código cabe debajo, en la tercera línea.
   d.columnas.forEach((t, i) => {
     const largo = Math.max(...encabezadoDosLineas(t).map((l) => l.length), t.codigo.length * 0.75);
-    hoja.getColumn(FIJAS + 1 + i).width = Math.min(22, Math.max(13, Math.ceil(largo * 0.9) + 2));
+    hoja.getColumn(DED + i).width = Math.min(22, Math.max(13, Math.ceil(largo * 0.9) + 2));
   });
 
   // ── Título ──
@@ -188,8 +208,10 @@ export async function construirFormato(d: DatosFormato): Promise<Uint8Array> {
   };
   titulo(1, d.grupo.toLocaleUpperCase("es-HN"), { bold: true, size: 14 });
   titulo(2, `${d.etiquetaSucursal}: ${d.sucursal}`, { bold: true, size: 12 });
-  titulo(3, `Deducciones ${frasePeriodo(d.periodo, "de")}, ${rangoPeriodo(d.periodo.desde, d.periodo.hasta)} (planilla ${ETIQUETA_TIPO_PLANILLA[d.periodo.tipo].toLowerCase()})`, { size: 11 });
-  titulo(4, "Escriba sólo los montos. El código del empleado es la referencia. Celda vacía: no cambia nada; 0: no se cobra en este período.", { italic: true, size: 9, color: { argb: "FF55656E" } });
+  titulo(3, `${d.horas ? "Horas extra y deducciones" : "Deducciones"} ${frasePeriodo(d.periodo, "de")}, ${rangoPeriodo(d.periodo.desde, d.periodo.hasta)} (planilla ${ETIQUETA_TIPO_PLANILLA[d.periodo.tipo].toLowerCase()})`, { size: 11 });
+  titulo(4, d.horas
+    ? "Escriba sólo cantidades: las horas extra en horas y las deducciones en Lempiras. El código del empleado es la referencia. Celda vacía: no cambia nada; 0: nada en este período."
+    : "Escriba sólo los montos. El código del empleado es la referencia. Celda vacía: no cambia nada; 0: no se cobra en este período.", { italic: true, size: 9, color: { argb: "FF55656E" } });
 
   // ── Encabezados en dos filas; el código del tipo, chico, debajo ──
   const arriba = hoja.getRow(TITULO + 1);
@@ -197,21 +219,30 @@ export async function construirFormato(d: DatosFormato): Promise<Uint8Array> {
   arriba.height = 16;
   // Tres líneas: el resto del nombre puede ocupar dos y el código va debajo.
   abajo.height = 44;
-  const encabezado = (col: number, sup: string, inf: ExcelJS.CellValue) => {
+  const encabezado = (col: number, sup: string, inf: ExcelJS.CellValue, fondo = CABECERA) => {
     for (const [fila, valor] of [[arriba, sup], [abajo, inf]] as const) {
       const celda = fila.getCell(col);
       celda.value = valor;
       celda.font = { bold: true, size: 10, color: { argb: TINTA } };
-      celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CABECERA } };
+      celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fondo } };
       celda.alignment = { horizontal: "center", vertical: fila === arriba ? "bottom" : "top", wrapText: true };
       celda.border = fila === arriba ? { top: BORDE, left: BORDE, right: BORDE } : { bottom: BORDE, left: BORDE, right: BORDE };
     }
   };
   encabezado(1, "Código", "Empl.");
   encabezado(2, "Nombre del", "Empleado");
+  // Las horas extra primero: «Horas extra» arriba, el recargo abajo y su código, chico.
+  recargos.forEach((rc, k) => {
+    encabezado(FIJAS + 1 + k, "Horas extra", {
+      richText: [
+        { text: `${rc.porcentaje} %\n`, font: { bold: true, size: 10, color: { argb: TINTA } } },
+        { text: `(${rc.codigo})`, font: { size: 7, color: { argb: "FF7B8A93" } } },
+      ],
+    }, CABECERA_HORAS);
+  });
   d.columnas.forEach((t, i) => {
     const [sup, inf] = encabezadoDosLineas(t);
-    encabezado(FIJAS + 1 + i, sup, {
+    encabezado(DED + i, sup, {
       richText: [
         ...(inf ? [{ text: `${inf}\n`, font: { bold: true, size: 10, color: { argb: TINTA } } }] : []),
         { text: `(${t.codigo})`, font: { size: 7, color: { argb: "FF7B8A93" } } },
@@ -248,8 +279,22 @@ export async function construirFormato(d: DatosFormato): Promise<Uint8Array> {
         celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: GRIS } };
       }
       fila.getCell(1).alignment = { horizontal: "center" };
+      recargos.forEach((rc, k) => {
+        const celda = fila.getCell(FIJAS + 1 + k);
+        const h = d.horas?.(e.id, rc.clave) ?? null;
+        celda.value = h ? h : null;
+        celda.numFmt = HORAS;
+        celda.border = BORDES;
+        celda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CELDA_HORAS } };
+        celda.protection = { locked: false };
+        celda.dataValidation = {
+          type: "decimal", operator: "between", allowBlank: true, formulae: [0, HORAS_MAXIMAS_PERIODO],
+          showErrorMessage: true, errorStyle: "stop", errorTitle: "Horas no válidas",
+          error: `Escriba las horas extra al ${rc.porcentaje} % del período, en horas (no en Lempiras). Vacía, no cambia nada; 0, no se pagan en este período.`,
+        };
+      });
       d.columnas.forEach((t, i) => {
-        const celda = fila.getCell(FIJAS + 1 + i);
+        const celda = fila.getCell(DED + i);
         const m = d.monto(e.id, t.id);
         celda.value = m && !m.isZero() ? Number(m.toFixed(2)) : null;
         celda.numFmt = MONTO;
@@ -310,14 +355,21 @@ export async function construirFormato(d: DatosFormato): Promise<Uint8Array> {
   return new Uint8Array(await libro.xlsx.writeBuffer());
 }
 
-export function notasFormato(d: Pick<DatosFormato, "periodo" | "sucursal" | "columnas">): string[] {
+export function notasFormato(d: Pick<DatosFormato, "periodo" | "sucursal" | "columnas" | "horas">): string[] {
   const conIsr = d.columnas.some((t) => t.codigo === CODIGO_ISR_FIJO);
+  const deHoras = d.horas
+    ? [
+        "Las cuatro columnas «Horas extra» van antes de las deducciones y se escriben en HORAS, no en Lempiras: al 25 % (diurnas), 50 % (de noche en una jornada diurna o mixta), 75 % (prolongación de la jornada nocturna) y 100 % (en feriado o día de descanso). La planilla las paga con el salario por hora de cada quien.",
+        "Vienen con las horas que ya hay en el período. Lo que escriba reemplaza, recargo por recargo y sólo en este período, a las horas que suman los marcajes del reloj o la carga manual. Vacía: no cambia nada; 0: no se pagan horas de ese recargo en este período.",
+      ]
+    : [];
   return [
     `Deducciones de ${d.sucursal} ${frasePeriodo(d.periodo, "de")}, ${rangoPeriodo(d.periodo.desde, d.periodo.hasta)}.`,
     "Escriba los montos en la hoja Deducciones y súbala en Deducciones → Importar → Montos del período, eligiendo el mismo período. Antes de aplicar verá qué cambia.",
     "El código del empleado es la referencia: es lo único que se lee para saber de quién es la fila. Por eso la hoja está protegida y sólo se pueden escribir los montos. Si necesita quitar la protección: Revisar → Desproteger hoja (no tiene contraseña).",
     "Celda vacía: no cambia nada. 0 (se ve como «-»): no se cobra ese descuento en este período, aunque sea de cada planilla. Otro monto: reemplaza sólo en este período lo de cada planilla.",
     "Las cuotas de préstamos y los descuentos a plazo ya vienen sumados en la celda y siguen su curso: el monto no puede ser menor que ellos.",
+    ...deHoras,
     "Las filas «Depto.» y «Total» no se importan. Los totales se calculan solos.",
     "Un empleado que no aparece se registra primero en el sistema; luego vuelva a descargar el formato.",
     "Debajo de cada encabezado va el código del tipo de deducción, entre paréntesis: con él se reconoce la columna aunque el tipo cambie de nombre. No lo borre.",

@@ -124,6 +124,13 @@ export function formatCurrency(amount: number | string | { toString(): string })
   return fmtMoneda.format(Number(amount));
 }
 
+const fmtMonto = new Intl.NumberFormat(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Lempiras sin el símbolo, para una tabla que ya dice la moneda una vez («Montos en lempiras»). */
+export function formatMonto(amount: number | string | { toString(): string }): string {
+  return fmtMonto.format(Number(amount));
+}
+
 /** Años completos de servicio a una fecha (hoy, si no se indica). Nunca negativo. */
 export function calcularAniosTrabajados(fechaIngreso: Date | string, hasta: Date = new Date()): number {
   const ingreso = new Date(fechaIngreso);

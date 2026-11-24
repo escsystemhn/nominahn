@@ -28,12 +28,16 @@ import {
   type PeriodoPagadoIsr,
 } from "./isr-personalizado";
 import { cargarHistorialIsr, leerConfigIsr } from "./isr-personalizado-bd";
+import { CODIGO_VECINAL, leerCobroVecinal } from "./vecinal-anual";
+import { resumirDeducciones } from "./deducciones-de-linea";
 import { descuentoIncapacidades, fechasCubiertas, type IncapacidadParaPlanilla } from "@/lib/asistencia/incapacidades";
 import { resolutorTurnos } from "@/lib/asistencia/tardanzas";
 import { calcularDeduccionesAsistencia, lunesDe } from "@/lib/asistencia/deducciones/motor";
 import { incidenciasDelPeriodo, perfilDesdeTurno, type MarcaParaAsistencia } from "@/lib/asistencia/deducciones/incidencias";
 import { leerPoliticaAsistencia } from "@/lib/asistencia/deducciones/politica-bd";
 import { CERO, money, sumar, type Money } from "./money";
+import { horasDelPeriodo, sumarMarcajes } from "./horas-extra-periodo";
+import { cargarHorasFijadas } from "./horas-extra-periodo-bd";
 import { aplicarDeducciones, CODIGO_ISR_FIJO, conMontosDelPeriodo, cuotaDelPeriodo, esMontoDelPeriodo, registrosDeAmortizacion, topesDelPeriodo, type Amortizacion } from "./deducciones";
 import { numeroDeQuincena, otraQuincena } from "./distribucion-quincenal";
 import { mesDe, reglaDelMes } from "./rap-mes-vencido";
@@ -178,6 +182,8 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   const configIsr = await leerConfigIsr(prisma);
   // ISR MANUAL: no se calcula; se retiene lo importado para el período o lo fijo de la ficha.
   const isrManual = configIsr.modo === "MANUAL";
+  // Vecinal: con el cobro ANUAL no se calcula; se descuenta sólo lo confirmado para el período.
+  const cobroVecinal = await leerCobroVecinal(prisma);
   const isrPersonalizado = !isrManual && configIsr.metodo === "PERSONALIZADO";
   const periodoIsr = indicePeriodoDelAnio(tipo as "SEMANAL" | "QUINCENAL" | "MENSUAL", hasta);
   const historialIsr = isrPersonalizado
@@ -280,29 +286,18 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
   const rapEnLiquidacion = basesRap ? await conRapEnLiquidacion(prisma, empleadoIds, mesDe(desde)) : new Set<string>();
 
   // Las ausencias ya no se cuentan aquí: las clasifica y descuenta el motor de asistencia.
-  const extraPorEmp = new Map<string, HorasExtraPorJornada>();
-
+  // Horas extra por recargo: lo que suman los marcajes y, encima, lo fijado para el período
+  // en el formato de captura (cada recargo con valor reemplaza al de los marcajes).
+  const marcajesPorEmp = new Map<string, (typeof marcajes)[number][]>();
   for (const m of marcajes) {
-
-    const acc = extraPorEmp.get(m.empleadoId) ?? { diurnas: 0, mixtas: 0, nocturnas: 0, feriado: 0 };
-    const diurnas = Number(m.horasExtraDiurna);
-    const mixtas = Number(m.horasExtraMixta);
-    const nocturnas = Number(m.horasExtraNocturna);
-    const feriado = Number(m.horasFeriado);
-
-    // Marcajes anteriores al desglose (o importados del biométrico) sólo traen
-    // el total: se imputan a jornada diurna, que es el criterio conservador y el
-    // comportamiento que ya tenían.
-    const desglosado = diurnas + mixtas + nocturnas + feriado;
-    if (desglosado === 0 && Number(m.horasExtra) > 0) {
-      acc.diurnas = (acc.diurnas ?? 0) + Number(m.horasExtra);
-    } else {
-      acc.diurnas = (acc.diurnas ?? 0) + diurnas;
-      acc.mixtas = (acc.mixtas ?? 0) + mixtas;
-      acc.nocturnas = (acc.nocturnas ?? 0) + nocturnas;
-      acc.feriado = (acc.feriado ?? 0) + feriado;
-    }
-    extraPorEmp.set(m.empleadoId, acc);
+    const lista = marcajesPorEmp.get(m.empleadoId) ?? [];
+    lista.push(m);
+    marcajesPorEmp.set(m.empleadoId, lista);
+  }
+  const horasFijadas = await cargarHorasFijadas(prisma, empleadoIds, desde, hasta);
+  const extraPorEmp = new Map<string, HorasExtraPorJornada>();
+  for (const id of new Set([...marcajesPorEmp.keys(), ...horasFijadas.keys()])) {
+    extraPorEmp.set(id, horasDelPeriodo(sumarMarcajes(marcajesPorEmp.get(id) ?? []), horasFijadas.get(id)));
   }
 
   // Bonos de evaluación de TODA la plantilla, en dos consultas. Antes se
@@ -380,10 +375,16 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       cuotasPagadas: d.cuotasPagadas,
       tipo: d.tipoDeduccion.tipo,
       codigo: d.tipoDeduccion.codigo,
+      nombre: d.tipoDeduccion.nombre,
     }));
     // La retención fija de ISR no es una deducción más: reemplaza el ISR calculado.
     const isrFijo = todas.filter((d) => d.codigo === CODIGO_ISR_FIJO);
-    const vigentes = todas.filter((d) => d.codigo !== CODIGO_ISR_FIJO);
+    // Lo confirmado del vecinal va en su columna; sin nada confirmado, en el cobro anual no se descuenta.
+    const vecinalConfirmado = todas.filter((d) => d.codigo === CODIGO_VECINAL);
+    const vecinalDelPeriodo = vecinalConfirmado.length
+      ? sumar(...vecinalConfirmado.map((d) => cuotaDelPeriodo(d)))
+      : cobroVecinal === "ANUAL" ? CERO : null;
+    const vigentes = todas.filter((d) => d.codigo !== CODIGO_ISR_FIJO && d.codigo !== CODIGO_VECINAL);
     // La AFP no lleva tope: se resuelve antes, porque baja la base del ISR.
     const afp = aplicarDeducciones(vigentes.filter((d) => d.tipo === "AFP")).afp;
 
@@ -449,6 +450,7 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       aplicaRap: emp.aplicaRap,
       quincena,
       rapMesVencido,
+      vecinalDelPeriodo,
     };
     let result = calcularPlanilla(entradaCalculo, parametros);
 
@@ -493,11 +495,18 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       isrDetalle = x.detalle;
     }
 
-    // Préstamos, adelantos, cooperativa y demás, en orden y hasta sus topes: el
-    // neto nunca queda negativo y lo que no alcanza sigue en el saldo.
+    // Préstamos, adelantos, cooperativa y demás, en orden y completos mientras el neto no
+    // quede negativo; lo que no alcanza de un préstamo sigue en el saldo. Lo que pasa del
+    // tope de los Arts. 371 y 372 se cobra igual y queda en la línea para avisarlo.
     const minimoPeriodo = minimoMensual.times(factorPeriodo).times(diasPagables).div(diasMes);
     const ded = aplicarDeducciones(vigentes, topesDelPeriodo(result.salarioNeto, minimoPeriodo));
     amortizaciones.push(...ded.amortizaciones);
+    // Lo cobrado de cada tipo, para revisar la planilla columna por columna, con lo que
+    // no alcanzó y lo que pasa del tope de ley (los avisos del borrador).
+    const porId = new Map(vigentes.map((d) => [d.id, d]));
+    const deduccionesPorTipo = resumirDeducciones(ded.cobradas.map((c) => ({
+      codigo: porId.get(c.id)!.codigo, nombre: porId.get(c.id)!.nombre, monto: c.monto, asignado: c.cuota, tope: c.tope,
+    })));
     if (!ded.total.isZero()) {
       result = calcularPlanilla({ ...entradaCalculo, otrosDeducciones: ded.total, isrDelPeriodo }, parametros);
     }
@@ -532,6 +541,7 @@ export async function calcularLineas(p: PlanillaPorCalcular): Promise<ResultadoC
       diasIncapacidadIhss: inc.diasIhss,
       incapacidad: result.incapacidad,
       otrosDeducciones: ded.otros,
+      deducciones: deduccionesPorTipo as unknown as Prisma.InputJsonValue,
       totalDeducciones: result.totalDeducciones,
       ihssEmpleador: result.ihssEmpleador,
       rapEmpleador: result.rapEmpleador,

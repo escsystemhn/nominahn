@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { money } from "@/lib/payroll/money";
-import { CABECERAS_DETALLE, consolidarPorEmpleado, hojasPlanillaDetallada, hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "./planilla-estructura";
+import { consolidarPorEmpleado, hojasPlanillaDetallada, hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "./planilla-estructura";
 import { columnasNumericas, valorCelda } from "./salida-celdas";
 import { etiquetasNiveles, type Ubicacion } from "@/lib/organizacion/estructura";
 
@@ -15,10 +15,13 @@ const linea = (nombre: string, division: typeof MAY, departamento: string, neto:
   return {
     empleadoId: nombre, nombre, ubicacion, dias: 15,
     salario: m.plus(1000), horasExtra: money(0), otrosIngresos: money(0), devengado: m.plus(1000),
-    ihss: money(200), rap: money(150), afp: money(0), isr: money(500), vecinal: money(150), otras: money(0),
-    ausencias: money(0), deducciones: money(1000), neto: m, patronal: money(800),
+    ihss: money(200), rap: money(150), isr: money(500), vecinal: money(150), porTipo: new Map(),
+    ausencias: money(0), incapacidad: money(0), deducciones: money(1000), neto: m, patronal: money(800),
   };
 };
+
+/** Las columnas cuando nadie tiene deducciones por empleado, ausencias ni incapacidad. */
+const CABECERAS = ["Empleado", "Días trab.", "Salario", "Horas extra", "Otros ingresos", "Total devengado", "IHSS", "RAP", "ISR", "Imp. vecinal", "Total deducciones", "Neto a pagar"];
 
 /** `formatCurrency` separa la L con un espacio duro, como `Intl`. */
 const txt = (s: string) => s.replace(/ /g, " ");
@@ -62,7 +65,7 @@ describe("cada división en su hoja", () => {
 
   it("el resumen conserva el total general, con las mismas columnas que el detalle", () => {
     const ultima = hojas.at(-1)!;
-    expect(ultima.cabeceras).toEqual(["Sucursal / División", ...CABECERAS_DETALLE.slice(1)]);
+    expect(ultima.cabeceras).toEqual(["Sucursal / División", ...CABECERAS.slice(1)]);
     expect(ultima.datos.map((f) => f[0])).toEqual([
       "NOMINA CONFIDENCIAL", "PAGSA MAYOREO (3 empleados)", "PAGSA TEGUCIGALPA (3 empleados)",
       "Subtotal NOMINA CONFIDENCIAL (6 empleados)", "TOTAL GENERAL (6 empleados)",
@@ -140,7 +143,7 @@ describe("planilla detallada agrupada", () => {
 
   it("sin período; con días trabajados, total devengado, total deducciones y neto a pagar", () => {
     expect(t.cabeceras).not.toContain("Período");
-    expect(t.cabeceras).toEqual(CABECERAS_DETALLE);
+    expect(t.cabeceras).toEqual(CABECERAS);
     for (const c of ["Días trab.", "Total devengado", "Total deducciones", "Neto a pagar", "Imp. vecinal"]) expect(t.cabeceras).toContain(c);
     expect(t.datos[fila("JUAN PEREZ")][col("Días trab.")]).toBe("15");
     // Una columna sólo de números: Excel la suma.
@@ -149,7 +152,7 @@ describe("planilla detallada agrupada", () => {
 
   it("cada fila cuadra: las partes suman el devengado y las deducciones, y devengado − deducciones = neto", () => {
     const n = (f: string[], c: string) => valorCelda(f[col(c)]).valor as number;
-    const deducciones = ["IHSS", "RAP", "AFP", "ISR", "Imp. vecinal", "Otras ded.", "Ausencias e incap."];
+    const deducciones = ["IHSS", "RAP", "ISR", "Imp. vecinal"];
     for (const [i, f] of t.datos.entries()) {
       if (t.filas[i].tipo === "grupo") continue;
       expect(n(f, "Salario") + n(f, "Horas extra") + n(f, "Otros ingresos")).toBeCloseTo(n(f, "Total devengado"), 2);
@@ -284,5 +287,48 @@ describe("dónde estaba la persona al pagarse", () => {
 
   it("con las divisiones apagadas no hay división", () => {
     expect(ubicacionDeLinea({ sucursal: CONF, division: MAY, departamento: { id: "d1", nombre: "Ventas" }, empleado }, false).division).toBeNull();
+  });
+});
+
+describe("cada deducción en su columna, como en la planilla de la empresa", () => {
+  const base = linea("ANA", MAY, "Ventas", 10000);
+  const conTipos = (nombre: string, tipos: Record<string, number>, extra: Partial<LineaPlanilla> = {}): LineaPlanilla => {
+    const l = linea(nombre, MAY, "Ventas", 10000);
+    const porTipo = new Map(Object.entries(tipos).map(([k, v]) => [k, money(v)]));
+    const suma = [...porTipo.values()].reduce((a, b) => a.plus(b), money(0));
+    return { ...l, porTipo, deducciones: l.deducciones.plus(suma).plus(extra.ausencias ?? 0).plus(extra.incapacidad ?? 0),
+      neto: l.neto.minus(suma).minus(extra.ausencias ?? 0).minus(extra.incapacidad ?? 0), ...extra };
+  };
+
+  it("una columna por cada tipo cobrado, por nombre; sin columna para lo que nadie paga", () => {
+    const t = tablaPlanillaDetallada([conTipos("ANA", { "Préstamo RAP": 1399.41, "Cooperativa AUDI": 500 }), conTipos("LUIS", { "AFP Atlántida": 900 }), base]);
+    expect(t.cabeceras).toEqual(["Empleado", "Días trab.", "Salario", "Horas extra", "Otros ingresos", "Total devengado", "IHSS", "RAP", "ISR", "Imp. vecinal",
+      "AFP Atlántida", "Cooperativa AUDI", "Préstamo RAP", "Total deducciones", "Neto a pagar"]);
+    const f = t.datos.find((x) => x[0] === "ANA")!;
+    expect(txt(f[t.cabeceras.indexOf("Préstamo RAP")])).toBe(txt("L 1,399.41"));
+    expect(txt(f[t.cabeceras.indexOf("AFP Atlántida")])).toBe(txt("L 0.00"));
+  });
+
+  it("ausencias e incapacidad, cada una sólo si alguien la tiene", () => {
+    const t = tablaPlanillaDetallada([conTipos("ANA", {}, { ausencias: money(300) }), base]);
+    expect(t.cabeceras).toContain("Ausencias");
+    expect(t.cabeceras).not.toContain("Incapacidad");
+    const u = tablaPlanillaDetallada([conTipos("ANA", {}, { incapacidad: money(500) })]);
+    expect(u.cabeceras).toContain("Incapacidad");
+    expect(u.cabeceras).not.toContain("Ausencias");
+  });
+
+  it("y la fila sigue cuadrando: las partes suman el total de deducciones", () => {
+    const t = tablaPlanillaDetallada([conTipos("ANA", { "Préstamo RAP": 1399.41, "Cooperativa AUDI": 500 }, { ausencias: money(300) })]);
+    const n = (f: string[], c: string) => valorCelda(f[t.cabeceras.indexOf(c)]).valor as number;
+    const f = t.datos.find((x) => x[0] === "ANA")!;
+    const partes = ["IHSS", "RAP", "ISR", "Imp. vecinal", "Cooperativa AUDI", "Préstamo RAP", "Ausencias"].reduce((s, c) => s + n(f, c), 0);
+    expect(partes).toBeCloseTo(n(f, "Total deducciones"), 2);
+  });
+
+  it("al juntar las dos quincenas de una persona se suman también sus tipos", () => {
+    const [una] = consolidarPorEmpleado([conTipos("ANA", { "Préstamo RAP": 1000 }), conTipos("ANA", { "Préstamo RAP": 1000, "Vales": 250 })]);
+    expect(una.porTipo.get("Préstamo RAP")!.toFixed(2)).toBe("2000.00");
+    expect(una.porTipo.get("Vales")!.toFixed(2)).toBe("250.00");
   });
 });

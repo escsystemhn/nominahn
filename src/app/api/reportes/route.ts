@@ -13,6 +13,9 @@ import { filtroEmpleados, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { etiquetasNiveles, filtroDetallesOrg, filtroEmpleadosOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import { hojasPlanillaDetallada, hojasPorDivision, tablaPlanillaDetallada, tablaResumenPlanilla, ubicacionDeLinea, type LineaPlanilla } from "@/lib/reportes/planilla-estructura";
+import { comparadorPlanilla, direccionPorOmision, esCampoOrden, type CampoOrden, type FilaOrdenable } from "@/lib/payroll/vista-planilla";
+import { nombresEnOrden } from "@/lib/deducciones/orden-columnas";
+import { deduccionesPorNombre, leerDeduccionesGuardadas } from "@/lib/payroll/deducciones-de-linea";
 import { cargarParametrosLegales } from "@/lib/payroll/parametros-bd";
 import { nombreCompleto, formatCurrency, formatDate, calcularAniosTrabajados } from "@/lib/utils";
 import {
@@ -132,7 +135,7 @@ export async function GET(req: NextRequest) {
             sucursal: unidad, division: unidad, departamento: unidad,
             empleado: {
               select: {
-                primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true,
+                primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, fechaIngreso: true, codigo: true,
                 sucursal: unidad, departamento: { select: { id: true, nombre: true, division: unidad } },
               },
             },
@@ -141,11 +144,25 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { fechaFin: "desc" },
     });
+    // Las líneas de antes de guardar cada deducción por tipo: lo cobrado registrado, si la planilla se confirmó.
+    const sinTipos = planillas.filter((pl) => pl.detalles.some((d) => leerDeduccionesGuardadas(d.deducciones) === null)).map((pl) => pl.id);
+    const cobradas = sinTipos.length
+      ? await prisma.amortizacionPlanilla.findMany({
+        where: { planillaId: { in: sinTipos } },
+        select: { planillaId: true, montoAplicado: true, deduccion: { select: { empleadoId: true, tipoDeduccion: { select: { nombre: true } } } } },
+      })
+      : [];
+    const cobradasDe = new Map<string, { nombre: string; monto: Money }[]>();
+    for (const c of cobradas) {
+      const clave = `${c.planillaId}|${c.deduccion.empleadoId}`;
+      cobradasDe.set(clave, [...(cobradasDe.get(clave) ?? []), { nombre: c.deduccion.tipoDeduccion.nombre, monto: money(c.montoAplicado) }]);
+    }
 
     const lineas: LineaPlanilla[] = planillas.flatMap((pl) =>
       pl.detalles.map((d) => ({
         empleadoId: d.empleadoId,
         nombre: nombreCompleto(d.empleado),
+        fechaIngreso: d.empleado.fechaIngreso,
         ubicacion: ubicacionDeLinea(d, conDivisiones),
         dias: Number(d.diasTrabajados),
         salario: money(d.salarioBase),
@@ -154,22 +171,38 @@ export async function GET(req: NextRequest) {
         devengado: money(d.totalBruto),
         ihss: money(d.ihssEmpleado),
         rap: money(d.rapEmpleado),
-        afp: money(d.afpEmpleado),
         isr: money(d.isr),
         vecinal: money(d.impuestoVecinal),
-        otras: sumar(d.cooperativa, d.prestamos, d.adelantos, d.otrosDeducciones),
-        // La incapacidad a cargo del IHSS también es salario que no se paga: va con las ausencias.
-        ausencias: sumar(d.ausencias, d.incapacidad),
+        porTipo: deduccionesPorNombre(d, cobradasDe.get(`${pl.id}|${d.empleadoId}`)),
+        ausencias: money(d.ausencias),
+        incapacidad: money(d.incapacidad),
         deducciones: money(d.totalDeducciones),
         neto: money(d.salarioNeto),
         patronal: sumar(d.ihssEmpleador, d.rapEmpleador, d.infop, d.reservaLaboral),
       }))
     );
 
+    // Desde la pantalla de la planilla: en el orden que se estaba viendo (`orden` y `dir`).
+    if (esCampoOrden(searchParams.get("orden"))) {
+      const campo = searchParams.get("orden") as CampoOrden;
+      const dir = searchParams.get("dir") === "desc" ? "desc" : searchParams.get("dir") === "asc" ? "asc" : direccionPorOmision(campo);
+      const comparar = comparadorPlanilla(campo, dir);
+      const filaDe = new Map(planillas.flatMap((pl) => pl.detalles.map((d): [string, FilaOrdenable] => [d.empleadoId, {
+        nombre: nombreCompleto(d.empleado), fechaIngreso: d.empleado.fechaIngreso, codigo: d.empleado.codigo,
+        apellido: [d.empleado.primerApellido, d.empleado.segundoApellido, d.empleado.primerNombre, d.empleado.segundoNombre].filter(Boolean).join(" "),
+        salario: Number(d.salarioBase), bruto: Number(d.totalBruto), deducciones: Number(d.totalDeducciones), neto: Number(d.salarioNeto),
+      }])));
+      const orden = [...filaDe.entries()].sort((a, b) => comparar(a[1], b[1])).map(([id]) => id);
+      const posicion = new Map(orden.map((id, i) => [id, i]));
+      for (const l of lineas) l.posicion = posicion.get(l.empleadoId);
+    }
+
     // Agrupadas por Sucursal → División → Departamento, con subtotales. Sin
     // divisiones habilitadas, el nivel no aparece.
     const porNiveles = conDivisiones ? `${niveles.sucursalCorta}, ${niveles.division} y Departamento` : `${niveles.sucursalCorta} y Departamento`;
-    const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas, niveles) : tablaPlanillaDetallada(lineas, niveles);
+    // Las deducciones en el orden que eligió la empresa: el mismo que en la pantalla de la planilla.
+    const ordenTipos = await nombresEnOrden(prisma);
+    const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas, niveles) : tablaPlanillaDetallada(lineas, niveles, ordenTipos);
     titulo = reporteId === "resumen-planilla" ? `Resumen de Planilla por ${porNiveles}` : `Planilla Detallada por ${porNiveles}`;
     ({ cabeceras, datos, filas } = tabla);
     if (reporteId === "planilla-detallada" && conDivisiones && searchParams.get("porDivision") === "1") {
@@ -177,11 +210,11 @@ export async function GET(req: NextRequest) {
       // El RTN de cada unidad: el suyo o, si no tiene, el de su grupo (lo comparten las unidades de un grupo).
       const unidades = conJerarquia ? await prisma.division.findMany({ select: { id: true, rtn: true, sucursal: { select: { rtn: true } } } }) : [];
       const rtns = new Map(unidades.flatMap((v) => (v.rtn ?? v.sucursal.rtn ? [[v.id, (v.rtn ?? v.sucursal.rtn)!] as const] : [])));
-      hojas = hojasPorDivision(lineas, niveles, rtns);
+      hojas = hojasPorDivision(lineas, niveles, rtns, ordenTipos);
     } else if (reporteId === "planilla-detallada") {
       // Impresa: el detalle cierra en el total de cada empresa; el subtotal del grupo y
       // el total general van en el resumen de la última página.
-      hojas = hojasPlanillaDetallada(lineas, niveles);
+      hojas = hojasPlanillaDetallada(lineas, niveles, ordenTipos);
     }
   } else if (reporteId === "ihss-planilla") {
     titulo = "Planilla IHSS (EM + IVM)";

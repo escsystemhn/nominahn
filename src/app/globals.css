@@ -421,3 +421,23 @@
     display: none !important;
   }
 }
+
+/*
+ * La planilla en pantalla. El encabezado tiene dos filas (los grupos de columnas
+ * encima): la segunda se queda fija justo debajo de la primera, que mide 1.75rem (h-7).
+ * La fila bajo el ratón se pinta de punta a punta, para seguirla hasta el neto; una
+ * celda con aviso conserva su color.
+ */
+@media (min-width: 640px) {
+  /* Un píxel encima de la primera: sin rendija por donde se vea el cuerpo al bajar. */
+  .tabla-fija .tabla-planilla thead tr + tr th {
+    top: calc(1.75rem - 1px);
+  }
+  /* En una celda fija el borde no la acompaña: la línea entre grupos es una sombra. */
+  .tabla-fija .tabla-planilla thead th[data-divide] {
+    box-shadow: inset 1px 0 0 var(--color-gray-200), inset 0 -1px 0 var(--color-gray-200);
+  }
+}
+.tabla-planilla tbody tr[data-linea]:hover td:not([data-aviso-celda]) {
+  background: var(--color-blue-50);
+}

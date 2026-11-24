@@ -3,7 +3,8 @@ import ExcelJS from "exceljs";
 import { money, type Money } from "@/lib/payroll/money";
 import { periodoDeNombreArchivo } from "@/lib/payroll/periodos-planilla";
 import { columnasDelFormato, construirFormato, encabezadoDosLineas, nombreArchivoFormato, type DatosFormato } from "@/lib/importacion/formato-captura";
-import { validarMontos, type ContextoMontos, type EstadoCelda, type OperacionMonto, type TipoColumna } from "@/lib/importacion/montos-periodo";
+import { validarMontos, type ContextoMontos, type EstadoCelda, type OperacionHorasExtra, type OperacionMonto, type TipoColumna } from "@/lib/importacion/montos-periodo";
+import type { ClaveRecargo, HorasFijadas, HorasPorRecargo } from "@/lib/payroll/horas-extra-periodo";
 import { xlsxATexto } from "@/lib/importacion/xlsx";
 
 const PERIODO = { tipo: "QUINCENAL" as const, desde: "2026-12-01", hasta: "2026-12-15" };
@@ -68,14 +69,14 @@ function datos(o: Partial<DatosFormato> = {}): DatosFormato {
   };
 }
 
-function contexto(): ContextoMontos {
+function contexto(horas: ContextoMontos["horas"] = null): ContextoMontos {
   const estados = new Map<string, EstadoCelda>(
     Object.entries(HOY).map(([k, v]) => [k, { novedad: null, cadaPlanilla: money(v) as Money, otros: money(0) }]),
   );
   const empleados = new Map(Object.values(EMPLEADOS).map((e) => [e.codigo.toLowerCase(), {
     id: e.id, codigo: e.codigo, nombre: e.nombre, sucursalId: "s", departamentoId: "d", tipoPlanilla: "QUINCENAL" as const, cobra: true,
   }]));
-  return { periodo: PERIODO, tipos: COLUMNAS, noImportables: new Map(), empleados, estados, planillas: new Map() };
+  return { periodo: PERIODO, tipos: COLUMNAS, noImportables: new Map(), empleados, estados, planillas: new Map(), horas };
 }
 
 async function leerLibro(bytes: Uint8Array) {
@@ -144,5 +145,76 @@ describe("el formato de captura", () => {
     // Las filas «Total» se ignoran sin aviso: dicen lo que son.
     expect(r.filasTotales).toBe(3);
     expect(r.incidencias).toEqual([]);
+  });
+});
+
+// ─── Con las horas extra (pedido del 2026-11-23) ────────────────────────────
+
+/** Hoy: e1 tiene 6 h al 25 % de los marcajes; e2, 8 h al 100 % fijadas para el período. */
+const MARCAJES = new Map<string, HorasPorRecargo>([["e1", { diurnas: 6, mixtas: 0, nocturnas: 0, feriado: 0 }]]);
+const FIJADAS = new Map<string, HorasFijadas>([["e2", { diurnas: null, mixtas: null, nocturnas: null, feriado: 8 }]]);
+const horasHoy = (e: string, c: ClaveRecargo) => (FIJADAS.get(e)?.[c] ?? MARCAJES.get(e)?.[c] ?? 0) || null;
+
+describe("el formato con las horas extra", () => {
+  it("cuatro columnas de horas antes de las deducciones, con su código debajo y lo de hoy", async () => {
+    const hoja = (await leerLibro(await construirFormato(datos({ horas: horasHoy })))).getWorksheet("Deducciones")!;
+    const texto = (r: number, c: number) => {
+      const v = hoja.getCell(r, c).value as unknown;
+      return v && typeof v === "object" && "richText" in (v as object) ? (v as { richText: { text: string }[] }).richText.map((x) => x.text).join("") : String(v ?? "");
+    };
+    expect([3, 4, 5, 6].map((c) => texto(6, c))).toEqual(["Horas extra", "Horas extra", "Horas extra", "Horas extra"]);
+    expect([3, 4, 5, 6].map((c) => texto(7, c))).toEqual(["25 %\n(HE-25)", "50 %\n(HE-50)", "75 %\n(HE-75)", "100 %\n(HE-100)"]);
+    // Las deducciones empiezan después: el ISR en la 7.
+    expect(texto(6, 7)).toBe("Retención");
+    expect(texto(3, 1)).toMatch(/^Horas extra y deducciones/);
+    expect(hoja.getCell(9, 3).value).toBe(6);    // 010001: 6 h al 25 % de los marcajes
+    expect(hoja.getCell(10, 6).value).toBe(8);   // 010114: 8 h al 100 % fijadas
+    expect(hoja.getCell(9, 8).value).toBe(500);  // la cooperativa de 010001, corrida a la derecha
+    expect(hoja.getCell(9, 3).protection?.locked).toBe(false);
+    expect(hoja.getCell(9, 3).dataValidation).toMatchObject({ type: "decimal", formulae: [0, 400] });
+    expect((hoja.getCell(11, 3).value as { formula: string }).formula).toBe("SUBTOTAL(9,C9:C10)");
+  });
+
+  it("descargado y subido sin tocarlo, no cambia nada", async () => {
+    const lectura = await xlsxATexto(await construirFormato(datos({ horas: horasHoy })));
+    if (!lectura.ok) throw new Error(lectura.error);
+    const r = validarMontos(lectura.texto, contexto({ fijadas: FIJADAS, marcajes: MARCAJES }), () => true);
+    expect(r.columnasLeidas.filter((c) => c.codigo.startsWith("HE-")).map((c) => c.codigo)).toEqual(["HE-25", "HE-50", "HE-75", "HE-100"]);
+    expect(r.columnasDesconocidas).toEqual([]);
+    expect(r.incidencias).toEqual([]);
+    expect(r.operaciones).toEqual([]);
+  });
+
+  it("las horas escritas entran como horas extra del período; las deducciones, como siempre", async () => {
+    const libro = await leerLibro(await construirFormato(datos({ horas: horasHoy })));
+    const hoja = libro.getWorksheet("Deducciones")!;
+    hoja.getCell(9, 3).value = 10;    // 010001, 25 %: de 6 (marcajes) a 10
+    hoja.getCell(9, 4).value = 2.5;   // 010001, 50 %: nuevo
+    hoja.getCell(10, 6).value = 0;    // 010114, 100 %: de 8 (fijadas) a 0, que es lo de sus marcajes: se quita lo fijado
+    hoja.getCell(14, 5).value = 4;    // 010003, 75 %: nuevo
+    hoja.getCell(14, 10).value = 300; // 010003, Vales: nuevo (columna 6 + 4 de horas)
+    const lectura = await xlsxATexto(new Uint8Array(await libro.xlsx.writeBuffer()));
+    if (!lectura.ok) throw new Error(lectura.error);
+    const r = validarMontos(lectura.texto, contexto({ fijadas: FIJADAS, marcajes: MARCAJES }), () => true);
+    const horas = (r.operaciones as Array<OperacionHorasExtra | OperacionMonto>).filter((o): o is OperacionHorasExtra => o.clase === "HORAS_EXTRA");
+    expect(horas.map((o) => `${o.empleadoId}|${JSON.stringify(o.horas)}`)).toEqual([
+      'e1|{"diurnas":"10.00","mixtas":"2.50"}',
+      'e2|{"feriado":null}',
+      'e3|{"nocturnas":"4.00"}',
+    ]);
+    const montos = (r.operaciones as Array<OperacionHorasExtra | OperacionMonto>).filter((o): o is OperacionMonto => o.clase === "MONTO_PERIODO");
+    expect(montos.map((o) => `${o.empleadoId}|${o.tipoDeduccionId}|${o.monto}`)).toEqual(["e3|vales|300.00"]);
+    expect(r.previsualizacion.find((p) => p.referencia.startsWith("010001"))?.cambios).toEqual(["25 %: 6 h → 10 h", "50 %: — → 2.5 h"]);
+    expect(r.incidencias).toEqual([]);
+  });
+
+  it("más de 4 horas extra por día en el período se avisa (puede ser un error de tecleo)", async () => {
+    const libro = await leerLibro(await construirFormato(datos({ horas: horasHoy })));
+    libro.getWorksheet("Deducciones")!.getCell(9, 3).value = 61; // 15 días × 4 = 60
+    const lectura = await xlsxATexto(new Uint8Array(await libro.xlsx.writeBuffer()));
+    if (!lectura.ok) throw new Error(lectura.error);
+    const r = validarMontos(lectura.texto, contexto({ fijadas: FIJADAS, marcajes: MARCAJES }), () => true);
+    expect(r.incidencias.map((i) => `${i.severidad}: ${i.mensaje}`)).toEqual([expect.stringMatching(/^AVISO: 010001 queda con 61 h extra en 15 días: pasa de 4 por día/)]);
+    expect(r.operaciones).toHaveLength(1);
   });
 });

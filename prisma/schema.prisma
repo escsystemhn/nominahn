@@ -681,6 +681,7 @@ model Empleado {
   vistasMaterial       VistaMaterial[]
   acumuladosIsr        AcumuladoIsr[]
   basesRap             BaseRapMes[]
+  horasExtraPeriodo    HorasExtraPeriodo[]
   fichaMedica          FichaMedica?
   familiares           FamiliarEmpleado[]
   beneficiarios        BeneficiarioEmpleado[]
@@ -1110,6 +1111,9 @@ model PlanillaDetalle {
   /// períodos restantes). Null = método estándar. Lo lee el reporte DMR y queda
   /// como rastro aunque después cambie la configuración.
   isrDetalle          Json?
+  /// Lo cobrado de cada tipo de deducción por empleado (AFP incluida): [{ codigo, nombre, monto }].
+  /// Para revisar la planilla columna por columna; las líneas de antes no lo tienen.
+  deducciones         Json?
   impuestoVecinal     Decimal       @default(0) @db.Decimal(12, 2)
   cooperativa         Decimal       @default(0) @db.Decimal(12, 2)
   prestamos           Decimal       @default(0) @db.Decimal(12, 2)
@@ -1199,6 +1203,30 @@ model BaseRapMes {
 
   @@unique([empleadoId, anio, mes])
   @@index([anio, mes])
+}
+
+/// Horas extra de un período de planilla tal como las trae el formato de captura por
+/// sucursal: una cantidad por recargo para toda la quincena (pedido de Edbin, 2026-11-23).
+/// En la planilla de ESAS fechas cada recargo con valor REEMPLAZA lo que sumen los marcajes
+/// de ese recargo; uno en null deja lo de los marcajes. Ver `lib/payroll/horas-extra-periodo.ts`.
+model HorasExtraPeriodo {
+  id          String   @id @default(cuid())
+  empleadoId  String
+  empleado    Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  fechaInicio DateTime @db.Date
+  fechaFin    DateTime @db.Date
+  /// En horas: al 25 % (diurnas), 50 % (mixtas), 75 % (nocturnas) y 100 % (feriado o descanso).
+  diurnas     Decimal? @db.Decimal(6, 2)
+  mixtas      Decimal? @db.Decimal(6, 2)
+  nocturnas   Decimal? @db.Decimal(6, 2)
+  feriado     Decimal? @db.Decimal(6, 2)
+  /// IMPORTACION (formato de captura o montos del período) o MANUAL.
+  origen      String   @default("IMPORTACION")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([empleadoId, fechaInicio, fechaFin])
+  @@index([fechaInicio, fechaFin])
 }
 
 /// Registro de lo que CADA planilla amortizó de CADA deducción a plazo.

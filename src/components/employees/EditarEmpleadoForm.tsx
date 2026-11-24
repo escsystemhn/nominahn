@@ -121,8 +121,8 @@ function mensajeDeError(body: unknown, status: number): string {
 /**
  * Edición del expediente.
  *
- * A diferencia del alta, aquí sólo se envían los campos que el usuario TOCÓ
- * (`dirtyFields`): `PUT /api/empleados/[id]` aplica una actualización parcial
+ * A diferencia del alta, aquí sólo se envían los campos que CAMBIARON respecto de lo
+ * que se cargó (`cambio` en `onSubmit`): `PUT /api/empleados/[id]` aplica una actualización parcial
  * sobre un allowlist, y mandar el formulario entero reescribiría columnas que
  * nadie modificó — incluidas las que otro usuario pudo cambiar mientras esta
  * pantalla estaba abierta.
@@ -202,20 +202,29 @@ export default function EditarEmpleadoForm({
     // Qué botón se pulsó: «Guardar y registrar otro» abre el alta en vez de volver a la ficha.
     const registrarOtro = !!(evento?.nativeEvent as SubmitEvent | undefined)?.submitter?.hasAttribute("data-registrar-otro");
     const destino = registrarOtro ? "/empleados/nuevo" : volverA;
+    // Qué cambió: cada valor contra el que se cargó. El registro de campos «tocados» del
+    // formulario no siempre se enteraba: el departamento cambiado a un empleado sin puesto
+    // no viajaba y la ficha volvía como guardada, sin el cambio (Edbin, 2026-11-23).
+    const cambio = (clave: keyof FormData) => {
+      const a = data[clave];
+      const b = valoresIniciales[clave];
+      return typeof a === "boolean" || typeof b === "boolean" ? a !== b : String(a ?? "") !== String(b ?? "");
+    };
+
     // Sólo al dar de baja: un registro antiguo sin fecha debe poder seguir
     // corrigiéndose. El API comprueba lo mismo.
-    if (data.estado === "INACTIVO" && !data.fechaSalida && (dirtyFields.estado || dirtyFields.fechaSalida)) {
+    if (data.estado === "INACTIVO" && !data.fechaSalida && (cambio("estado") || cambio("fechaSalida"))) {
       setError("fechaSalida", { message: "Indique la fecha de salida: sin ella no se le pagarían los días trabajados del último período." });
       setTab("laboral");
       setTimeout(() => setFocus("fechaSalida"), 0);
       return;
     }
 
-    // Sólo los campos tocados. El API responde 400 "Sin cambios" con un body
+    // Sólo los campos que cambiaron. El API responde 400 "Sin cambios" con un body
     // vacío, así que ese caso se resuelve aquí sin ir al servidor.
     const cambios: Record<string, unknown> = {};
-    for (const clave of Object.keys(dirtyFields) as Array<keyof FormData>) {
-      if (clave === "motivo") continue; // no es columna; se añade abajo
+    for (const clave of Object.keys(data) as Array<keyof FormData>) {
+      if (clave === "motivo" || !cambio(clave)) continue; // el motivo no es columna; se añade abajo
       const valor = data[clave];
       const vacio = valor === "" || valor === undefined;
       if (vacio && CAMPOS_ANULABLES.includes(clave)) {

@@ -30,6 +30,11 @@ import { cargarBasesImportadas, cargarDevengadoDelMes, leerBaseRap } from "@/lib
 import { formatCurrency, nombreCompleto } from "@/lib/utils";
 import { esColumnaIsr, nombreComparable, noEsDeduccionPorEmpleado, partirCabecera, sugerirCategoria, sugerirCodigo } from "@/lib/deducciones/tipos";
 import { isrEsManual } from "@/lib/payroll/isr-personalizado-bd";
+import {
+  HORAS_MAXIMAS_PERIODO, RECARGOS, SIN_HORAS, decidirHoras, recargoDeCabecera, textoHoras, type ClaveRecargo,
+} from "@/lib/payroll/horas-extra-periodo";
+import { cargarHorasDelPeriodo, type HorasDelPeriodoBd } from "@/lib/payroll/horas-extra-periodo-bd";
+import { MAX_ORDINARIA_MAS_EXTRA_H } from "@/lib/horarios/ley";
 import { mapearColumnas, normalizarCabecera, parsearCsv, type ColumnaEsperada, type CsvParseado } from "./csv";
 import * as v from "./valores";
 import type { ColumnaCsv, ColumnaLeida, FilaPrevisualizada, Incidencia, TipoSugerido } from "./tipos";
@@ -334,6 +339,32 @@ export async function cargarContextoBaseRap(
   return { mes, regla, importadas, automaticas: devengado.porEmpleado, planillasMes, parametros };
 }
 
+// ─── HORAS EXTRA DEL PERÍODO ─────────────────────────────────────────────────
+//
+// El formato de captura puede llevar, antes que las deducciones, las horas extra del
+// período al 25, 50, 75 y 100 % (`lib/payroll/horas-extra-periodo.ts`). NO son montos:
+// se guardan en `HorasExtraPeriodo` y la planilla de esas fechas las paga.
+
+/** Marca de las filas del lote que son horas extra del período. */
+export const CLASE_HORAS_EXTRA = "HORAS_EXTRA";
+export const claveHoras = (c: ClaveRecargo) => `horas:${c}`;
+/** Horas extra (sin contar feriados) que caben en un día con la jornada ordinaria de 8 (Art. 332). */
+const EXTRAS_POR_DIA = MAX_ORDINARIA_MAS_EXTRA_H - 8;
+
+/** Las horas extra de un empleado que cambian: lo que se escribe al confirmar. */
+export interface OperacionHorasExtra {
+  clase: typeof CLASE_HORAS_EXTRA;
+  linea: number;
+  /** Fija los recargos que cambian (un recargo en null vuelve a los marcajes). */
+  accion: "PONER";
+  empleadoId: string;
+  /** Sólo los recargos que cambian: las horas («8.00»), o null para volver a las de los marcajes. */
+  horas: Partial<Record<ClaveRecargo, string | null>>;
+  antes: string;
+  despues: string;
+  referencia: string;
+}
+
 // ─── VALIDACIÓN DEL ARCHIVO ──────────────────────────────────────────────────
 
 export interface EmpleadoMatriz {
@@ -365,6 +396,8 @@ export interface ContextoMontos {
   planillas: Map<string, PlanillaDelPeriodo>;
   /** Columna de la base del RAP: sólo con el RAP a mes vencido en el mes del período. */
   baseRap?: ContextoBaseRap | null;
+  /** Horas extra del período de hoy (lo fijado y lo de los marcajes), para las columnas de horas. */
+  horas?: HorasDelPeriodoBd | null;
 }
 
 /** Una base del RAP que cambia: lo que se escribe al confirmar. */
@@ -395,7 +428,7 @@ export interface OperacionMonto {
 }
 
 export interface ResultadoMontos {
-  operaciones: Array<OperacionMonto | OperacionBaseRap>;
+  operaciones: Array<OperacionMonto | OperacionBaseRap | OperacionHorasExtra>;
   incidencias: Incidencia[];
   previsualizacion: FilaPrevisualizada[];
   columnasDesconocidas: string[];
@@ -470,6 +503,17 @@ function mapearMontos(cabeceras: readonly string[], ctx: ContextoMontos, esperad
       indices[claveTipo(t.id)] = i;
       leidas.push({ cabecera, tipo: etiquetaTipo(t), codigo: t.codigo, por });
     };
+    // Las horas extra del período («Horas extra 25 %», «(HE-25)»): no son un tipo de deducción.
+    const recargo = recargoDeCabecera(cabecera);
+    if (recargo) {
+      if (indices[claveHoras(recargo.clave)] === undefined) {
+        indices[claveHoras(recargo.clave)] = i;
+        leidas.push({ cabecera, tipo: recargo.etiqueta, codigo: recargo.codigo, por: "NOMBRE" });
+      } else {
+        ignoradas.push({ cabecera, motivo: `Ya hay otra columna de ${recargo.etiqueta.toLowerCase()} en el archivo.` });
+      }
+      continue;
+    }
     const { codigo, nombre } = partirCabecera(cabecera);
     const porCodigo = codigo ? ctx.tipos.find((t) => t.codigo === codigo) : undefined;
     if (porCodigo && libre(porCodigo)) { asignar(porCodigo, "NOMBRE"); continue; }
@@ -580,12 +624,15 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     });
   }
   const columnasTipo = ctx.tipos.filter((t) => indices[claveTipo(t.id)] !== undefined);
-  if (columnasTipo.length === 0 && !(conBase && br)) {
+  const columnasHoras = RECARGOS.filter((rc) => indices[claveHoras(rc.clave)] !== undefined);
+  const horasHoy = ctx.horas ?? { fijadas: new Map(), marcajes: new Map() };
+  const diasPeriodo = Math.round((fecha(ctx.periodo.hasta).getTime() - fecha(ctx.periodo.desde).getTime()) / 86_400_000) + 1;
+  if (columnasTipo.length === 0 && !(conBase && br) && columnasHoras.length === 0) {
     r.incidencias.push({
       linea: L, severidad: "ERROR",
       mensaje: r.columnasDesconocidas.length
         ? "Ninguna columna es todavía un tipo de deducción: créelos abajo o en Tipos de deducción, y vuelva a revisar."
-        : "El archivo no trae ninguna columna de deducción. Las columnas se llaman como el tipo, por ejemplo «Cooperativa (COOP1)».",
+        : "El archivo no trae ninguna columna de deducción ni de horas extra. Las columnas se llaman como el tipo, por ejemplo «Cooperativa (COOP1)», o «Horas extra 25 %».",
     });
     return r;
   }
@@ -600,6 +647,7 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     // El archivo trae a todos los empleados: sólo se importan las filas con algún monto.
     // Una fila vacía no se toca, aunque sea de alguien inactivo o de otro código.
     const conDatos = columnasTipo.some((t) => !v.vacia(celdas[indices[claveTipo(t.id)]]))
+      || columnasHoras.some((rc) => !v.vacia(celdas[indices[claveHoras(rc.clave)]]))
       || (conBase && br !== null && !v.vacia(celdas[indices[CLAVE_BASE_RAP_COLUMNA]]));
     if (!conDatos) {
       if (codigo) r.sinMontos++;
@@ -627,6 +675,48 @@ export function validarMontos(texto: string, ctx: ContextoMontos, alcanza: Compr
     const planilla = ctx.planillas.get(emp.id);
     const cerrada = planilla && (planilla.estado === "APROBADA" || planilla.estado === "PAGADA");
     let cambiaAlgo = false;
+
+    // Horas extra del período: van primero en el archivo y en la vista previa.
+    if (columnasHoras.length) {
+      const fijada = horasHoy.fijadas.get(emp.id) ?? null;
+      const deMarcajes = horasHoy.marcajes.get(emp.id) ?? SIN_HORAS;
+      const horas: OperacionHorasExtra["horas"] = {};
+      const notas: string[] = [];
+      for (const rc of columnasHoras) {
+        const bruto = celdaMonto(celdas[indices[claveHoras(rc.clave)]]);
+        // Vacía: ese recargo no se toca. Para no pagar horas de ese recargo este período, 0.
+        if (v.vacia(bruto)) continue;
+        const leido = v.decimal(bruto, { min: 0, max: HORAS_MAXIMAS_PERIODO });
+        if (!leido.ok) { error(leido.error, rc.etiqueta); continue; }
+        const d = decidirHoras(fijada?.[rc.clave] ?? null, deMarcajes[rc.clave], Number(leido.valor.toFixed(2)));
+        if (d.accion === "IGUAL") { r.sinCambio++; continue; }
+        horas[rc.clave] = d.accion === "QUITAR" ? null : d.valor.toFixed(2);
+        notas.push(`${rc.porcentaje} %: ${textoHoras(d.antes)} → ${textoHoras(d.despues)}${d.accion === "QUITAR" ? ", las de los marcajes" : ""}`);
+      }
+      const primera = RECARGOS.find((rc) => rc.clave in horas);
+      if (primera) {
+        if (!emp.cobra) error("El empleado no está activo: no se le pueden poner horas extra.", primera.etiqueta);
+        else if (cerrada) error(`La planilla de este período ya está ${ESTADO_PLANILLA[planilla.estado]}: sus horas extra no se pueden cambiar.`, primera.etiqueta);
+        else {
+          cambiaAlgo = true;
+          const referencia = `${emp.codigo} ${emp.nombre}, horas extra`;
+          const tipoCambio = fijada ? "ACTUALIZAR" : "CREAR";
+          if (tipoCambio === "CREAR") r.nuevos++;
+          else r.cambian++;
+          r.previsualizacion.push({ linea, accion: tipoCambio, referencia, cambios: notas });
+          r.operaciones.push({ clase: CLASE_HORAS_EXTRA, linea, accion: "PONER", empleadoId: emp.id, horas, antes: notas.map((n) => n.split(" → ")[0]).join("; "), despues: notas.join("; "), referencia });
+          // Lo que quedará en el período: más de 4 horas extra por día no cabe en la jornada legal.
+          const queda = (c: ClaveRecargo) => (c in horas ? (horas[c] === null ? deMarcajes[c] : Number(horas[c])) : fijada?.[c] ?? deMarcajes[c]);
+          const extras = queda("diurnas") + queda("mixtas") + queda("nocturnas");
+          if (extras > EXTRAS_POR_DIA * diasPeriodo) {
+            r.incidencias.push({
+              linea, columna: primera.etiqueta, severidad: "AVISO",
+              mensaje: `${emp.codigo} queda con ${textoHoras(extras)} extra en ${diasPeriodo} días: pasa de ${EXTRAS_POR_DIA} por día, el máximo con la jornada ordinaria (12 horas diarias, Art. 332). Revise que no sea un error de tecleo.`,
+            });
+          }
+        }
+      }
+    }
 
     for (const t of columnasTipo) {
       const bruto = celdaMonto(celdas[indices[claveTipo(t.id)]]);
@@ -812,12 +902,13 @@ export async function cargarContexto(db: PrismaClient, periodo: PeriodoPlanilla,
   }
 
   const ids = empleados.map((e) => e.id);
-  const [deducciones, planillas, baseRap] = await Promise.all([
+  const [deducciones, planillas, baseRap, horas] = await Promise.all([
     cargarDeduccionesDelPeriodo(db, ids, tipos.map((t) => t.id), periodo),
     cargarPlanillasDelPeriodo(db, ids, periodo),
     cargarContextoBaseRap(db, ids, periodo),
+    cargarHorasDelPeriodo(db, ids, periodo),
   ]);
-  return { periodo, tipos, equivalencias, noImportables, empleados: mapa, estados: estadosDelPeriodo(deducciones, periodo), planillas, baseRap };
+  return { periodo, tipos, equivalencias, noImportables, empleados: mapa, estados: estadosDelPeriodo(deducciones, periodo), planillas, baseRap, horas };
 }
 
 // ─── COLUMNAS RECORDADAS ─────────────────────────────────────────────────────
@@ -1003,6 +1094,49 @@ export async function aplicarBasesRap(
       else r.creados++;
       r.ids.push(fila.id);
     }
+  }
+  return r;
+}
+
+/**
+ * Escribe las horas extra del período. Cada operación cambia sólo sus recargos; si los
+ * cuatro quedan sin fijar, el registro se borra y la planilla vuelve a los marcajes.
+ */
+export async function aplicarHorasExtra(
+  tx: Prisma.TransactionClient,
+  operaciones: readonly OperacionHorasExtra[],
+  periodo: Pick<PeriodoPlanilla, "desde" | "hasta">
+): Promise<ResultadoAplicacionMontos> {
+  const planillas = await cargarPlanillasDelPeriodo(tx, operaciones.map((o) => o.empleadoId), periodo);
+  const cerrada = [...planillas.values()].find((p) => p.estado === "APROBADA" || p.estado === "PAGADA");
+  if (cerrada) throw new ErrorMontos(`Mientras revisaba, una planilla de este período quedó ${ESTADO_PLANILLA[cerrada.estado]}. Vuelva a subir el archivo.`);
+
+  const r: ResultadoAplicacionMontos = { creados: 0, actualizados: 0, quitados: 0, ids: [] };
+  for (const o of operaciones) {
+    const clave = { empleadoId_fechaInicio_fechaFin: { empleadoId: o.empleadoId, fechaInicio: fecha(periodo.desde), fechaFin: fecha(periodo.hasta) } };
+    const existe = await tx.horasExtraPeriodo.findUnique({ where: clave, select: { id: true, diurnas: true, mixtas: true, nocturnas: true, feriado: true } });
+    const valores: Record<ClaveRecargo, string | null> = {
+      diurnas: existe?.diurnas?.toFixed(2) ?? null, mixtas: existe?.mixtas?.toFixed(2) ?? null,
+      nocturnas: existe?.nocturnas?.toFixed(2) ?? null, feriado: existe?.feriado?.toFixed(2) ?? null,
+    };
+    for (const rc of RECARGOS) if (rc.clave in o.horas) valores[rc.clave] = o.horas[rc.clave] ?? null;
+    if (RECARGOS.every((rc) => valores[rc.clave] === null)) {
+      if (existe) {
+        await tx.horasExtraPeriodo.delete({ where: { id: existe.id } });
+        r.quitados++;
+        r.ids.push(existe.id);
+      }
+      continue;
+    }
+    const fila = await tx.horasExtraPeriodo.upsert({
+      where: clave,
+      update: { ...valores, origen: "IMPORTACION" },
+      create: { empleadoId: o.empleadoId, fechaInicio: fecha(periodo.desde), fechaFin: fecha(periodo.hasta), ...valores, origen: "IMPORTACION" },
+      select: { id: true },
+    });
+    if (existe) r.actualizados++;
+    else r.creados++;
+    r.ids.push(fila.id);
   }
   return r;
 }

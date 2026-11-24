@@ -79,10 +79,10 @@ export async function POST(req: NextRequest) {
       valorAnterior: { ...p, motivo: "Limpieza de pruebas", desde: desde.toISOString() }, ip, userAgent,
     });
   }
-  if (r.montos || r.basesRap) {
+  if (r.montos || r.basesRap || r.horasExtra) {
     await audit({
       accion: "DELETE", tabla: "DeduccionEmpleado", registroId: `limpieza:${r.montos}`, usuarioId: usuario.id, usuarioEmail: usuario.email ?? undefined,
-      valorAnterior: { motivo: "Limpieza de pruebas", desde: desde.toISOString(), montosDelPeriodo: r.montos, basesRap: r.basesRap, enUso: r.montosEnUso }, ip, userAgent,
+      valorAnterior: { motivo: "Limpieza de pruebas", desde: desde.toISOString(), montosDelPeriodo: r.montos, basesRap: r.basesRap, horasExtra: r.horasExtra, enUso: r.montosEnUso }, ip, userAgent,
     });
   }
   return NextResponse.json({ ...r, respaldo: archivoRespaldo });

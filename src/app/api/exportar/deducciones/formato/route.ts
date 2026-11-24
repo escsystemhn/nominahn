@@ -5,7 +5,8 @@
  *                                   empleados cobran en ese tipo de planilla), y las columnas
  *                                   del formato con su orden
  *   POST { tipoPlanilla, desde, hasta, sucursalId, divisionId, departamentoIds, columnas,
- *          conMontos, recordar }  → el .xlsx
+ *          conMontos, horasExtra, recordar }  → el .xlsx (con `horasExtra`, las horas extra
+ *          del período al 25, 50, 75 y 100 % antes de las deducciones)
  *
  * Con la estructura de grupos, la «sucursal» que se elige es la `Division` y el grupo es la
  * `Sucursal` (`etiquetasNiveles`). Sin divisiones, es la `Sucursal`.
@@ -22,6 +23,8 @@ import { cabecerasXlsx } from "@/lib/importacion/xlsx";
 import { cargarDeduccionesDelPeriodo, cargarTiposMatriz, estadosDelPeriodo, etiquetaTipo, totalDeCelda } from "@/lib/importacion/montos-periodo";
 import { columnasDelFormato, construirFormato, guardarFormato, leerFormatoGuardado, nombreArchivoFormato, type DepartamentoFormato } from "@/lib/importacion/formato-captura";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { horasEnCelda } from "@/lib/payroll/horas-extra-periodo";
+import { cargarHorasDelPeriodo } from "@/lib/payroll/horas-extra-periodo-bd";
 import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import { TIPOS_PLANILLA, errorDePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
@@ -38,8 +41,9 @@ const schema = z.object({
   sucursalId: zId,
   divisionId: z.string().trim().min(1).nullable().default(null),
   departamentoIds: z.array(zId).min(1, "Marque al menos un departamento.").max(500),
-  columnas: z.array(z.string().trim().min(1).max(30)).min(1, "Elija al menos una columna de deducción.").max(100),
+  columnas: z.array(z.string().trim().min(1).max(30)).max(100),
   conMontos: z.boolean().default(true),
+  horasExtra: z.boolean().default(false),
   recordar: z.boolean().default(false),
 });
 
@@ -98,6 +102,7 @@ export async function GET(req: NextRequest) {
     etiquetas: { grupo: conDivisiones ? et.sucursal : et.empresaLegal, sucursal: conDivisiones ? et.division : et.sucursal },
     unidades,
     columnas: columnasDelFormato(tipos, guardado).map(({ tipo: t, incluida }) => ({ codigo: t.codigo, etiqueta: etiquetaTipo(t), incluida })),
+    horasExtra: guardado?.horasExtra ?? false,
     puedeRecordar: puede(g.usuario, "deducciones.configurar"),
   });
 }
@@ -113,6 +118,7 @@ export async function POST(req: NextRequest) {
   const errorPeriodo = errorDePeriodo({ desde: b.desde, hasta: b.hasta });
   if (errorPeriodo) return NextResponse.json({ error: errorPeriodo }, { status: 400 });
   const periodo = { tipo: b.tipoPlanilla, desde: b.desde, hasta: b.hasta };
+  if (b.columnas.length === 0 && !b.horasExtra) return NextResponse.json({ error: "Elija al menos una columna de deducción, o las horas extra." }, { status: 400 });
 
   // La sucursal tiene que estar en el alcance; la división, ser suya; los departamentos, de ahí.
   const [conDivisiones, jerarquia, sucursal] = await Promise.all([
@@ -156,6 +162,8 @@ export async function POST(req: NextRequest) {
   const estados = b.conMontos
     ? estadosDelPeriodo(await cargarDeduccionesDelPeriodo(prisma, empleados.map((e) => e.id), columnas.map((t) => t.id), periodo), periodo)
     : new Map();
+  // Las horas de hoy: lo fijado para el período o, si no hay, lo que suman los marcajes.
+  const horasHoy = b.horasExtra && b.conMontos ? await cargarHorasDelPeriodo(prisma, empleados.map((e) => e.id), periodo) : null;
   const grupos: DepartamentoFormato[] = departamentos.sort(porCodigoYNombre).map((d) => ({
     nombre: d.nombre,
     empleados: empleados.filter((e) => e.departamentoId === d.id).map((e) => ({ id: e.id, codigo: e.codigo, nombre: nombreCompleto(e) })),
@@ -174,12 +182,15 @@ export async function POST(req: NextRequest) {
       const e = estados.get(`${empleadoId}|${tipoId}`);
       return e ? totalDeCelda(e) : null;
     },
+    horas: b.horasExtra
+      ? (empleadoId, recargo) => (horasHoy ? horasEnCelda(horasHoy.fijadas.get(empleadoId), horasHoy.marcajes.get(empleadoId), recargo) || null : null)
+      : null,
   });
 
   // Las columnas elegidas quedan como el formato de la empresa, si quien descarga puede configurarlo.
   if (b.recordar && puede(g.usuario, "deducciones.configurar")) {
     const elegidas = new Set(columnas.map((t) => t.codigo));
-    await guardarFormato(prisma, { columnas: columnas.map((t) => t.codigo), ocultas: tipos.map((t) => t.codigo).filter((c) => !elegidas.has(c)) });
+    await guardarFormato(prisma, { columnas: columnas.map((t) => t.codigo), ocultas: tipos.map((t) => t.codigo).filter((c) => !elegidas.has(c)), horasExtra: b.horasExtra });
   }
 
   const { ip, userAgent } = getClientInfo(req);
@@ -188,7 +199,7 @@ export async function POST(req: NextRequest) {
     usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined,
     valorNuevo: {
       formato: "captura por sucursal", sucursal: nombreSucursal, departamentos: departamentos.length, filas: empleados.length,
-      periodo, conMontos: b.conMontos, columnas: columnas.map((t) => t.codigo), incluyePII: true, alcance: g.usuario.alcance ?? "TODO",
+      periodo, conMontos: b.conMontos, horasExtra: b.horasExtra, columnas: columnas.map((t) => t.codigo), incluyePII: true, alcance: g.usuario.alcance ?? "TODO",
     },
     ip, userAgent,
   });
