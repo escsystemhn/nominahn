@@ -230,11 +230,18 @@ function copia(d: DatosBoleta, logo: LogoDocumento | null | undefined, rotulo: s
 
 export const COPIAS_COMPROBANTE = ["Copia del empleado", "Copia de la empresa"] as const;
 
-export async function pdfComprobante(d: DatosBoleta, logo?: LogoDocumento | null): Promise<Buffer> {
-  const pdfmake = pdfmakeListo();
-  const aviso = avisoDeEstado(d.estado);
+/**
+ * Las hojas de un comprobante: una carta con las dos copias o, si no caben, una hoja por
+ * copia. `nuevaHoja` lo empieza en una hoja aparte (todos menos el primero de un lote).
+ */
+function hojasDeComprobante(d: DatosBoleta, logo: LogoDocumento | null | undefined, nuevaHoja: boolean): Content[] {
   const caben = altoEstimadoCopia(d, !!logo) <= ALTO_COPIA;
-
+  if (!caben) {
+    return [
+      cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[0]), ...(nuevaHoja ? { pageBreak: "before" } : {}) }),
+      cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[1]), pageBreak: "before" }),
+    ];
+  }
   const corte = cuadro({
     stack: [
       filete(ANCHO_HOJA - 2 * 18, 0.5, TENUE, [0, 0, 0, 0], { length: 4, space: 3 }),
@@ -242,26 +249,46 @@ export async function pdfComprobante(d: DatosBoleta, logo?: LogoDocumento | null
     ],
     absolutePosition: { x: 18, y: MEDIA_HOJA },
   });
+  // Cada copia en su mitad, con posición absoluta: si una crece, no mueve a la otra. Lo
+  // absoluto se dibuja en la hoja en curso: un salto vacío abre la del siguiente empleado.
+  return [
+    ...(nuevaHoja ? [cuadro({ text: "", pageBreak: "before" })] : []),
+    cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[0]), absolutePosition: { x: MARGEN_X, y: MARGEN_Y } }),
+    corte,
+    cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[1]), absolutePosition: { x: MARGEN_X, y: MEDIA_HOJA + MARGEN_Y } }),
+  ];
+}
 
-  // Cada copia en su mitad, con posición absoluta: si una crece, no mueve a la otra.
-  const contenido: Content[] = caben
-    ? [
-        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[0]), absolutePosition: { x: MARGEN_X, y: MARGEN_Y } }),
-        corte,
-        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[1]), absolutePosition: { x: MARGEN_X, y: MEDIA_HOJA + MARGEN_Y } }),
-      ]
-    : [
-        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[0]) }),
-        cuadro({ stack: copia(d, logo, COPIAS_COMPROBANTE[1]), pageBreak: "before" }),
-      ];
+const BASE_DOCUMENTO = {
+  pageSize: "LETTER" as const,
+  pageMargins: [MARGEN_X, MARGEN_Y, MARGEN_X, MARGEN_Y] as [number, number, number, number],
+  defaultStyle: { font: "Helvetica", color: TEXTO },
+};
 
+export async function pdfComprobante(d: DatosBoleta, logo?: LogoDocumento | null): Promise<Buffer> {
+  const pdfmake = pdfmakeListo();
+  const aviso = avisoDeEstado(d.estado);
   const definicion: TDocumentDefinitions = {
-    pageSize: "LETTER",
-    pageMargins: [MARGEN_X, MARGEN_Y, MARGEN_X, MARGEN_Y],
-    defaultStyle: { font: "Helvetica", color: TEXTO },
+    ...BASE_DOCUMENTO,
     info: { title: `Comprobante de pago del ${d.periodo}`, producer: PRODUCTO },
     watermark: aviso ? { text: aviso.marca, color: ALERTA, opacity: 0.08, bold: true } : undefined,
-    content: contenido,
+    content: hojasDeComprobante(d, logo, false),
+  };
+  return pdfmake.createPdf(definicion).getBuffer();
+}
+
+/**
+ * Los comprobantes de varios empleados en un solo PDF, cada uno en su hoja, para imprimir
+ * un período de una vez (pedido de Edbin, 2026-11-24). Sin marca de agua: el lote puede
+ * mezclar planillas aprobadas y sin aprobar, y la marca es de todo el documento; cada
+ * copia sin aprobar ya lleva su aviso en rojo arriba.
+ */
+export async function pdfComprobantes(lista: ReadonlyArray<{ datos: DatosBoleta; logo?: LogoDocumento | null }>, titulo: string): Promise<Buffer> {
+  const pdfmake = pdfmakeListo();
+  const definicion: TDocumentDefinitions = {
+    ...BASE_DOCUMENTO,
+    info: { title: titulo, producer: PRODUCTO },
+    content: lista.flatMap((x, i) => hojasDeComprobante(x.datos, x.logo, i > 0)),
   };
   return pdfmake.createPdf(definicion).getBuffer();
 }

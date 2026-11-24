@@ -16,9 +16,12 @@ interface Resumen {
   errores: string[];
 }
 
-/** `base`: la ruta sin `formatoId`, p. ej. `/api/planillas/ID/archivo-banco` o `/api/decimos/archivo-banco?tipo=…&anio=…`. */
-export default function ArchivoBanco({ base, etiqueta = "Archivo para el banco" }: { base: string; etiqueta?: string }) {
-  const [abierto, setAbierto] = useState(false);
+/**
+ * `base`: la ruta sin `formatoId`, p. ej. `/api/planillas/ID/archivo-banco` o `/api/decimos/archivo-banco?tipo=…&anio=…`.
+ * `enVentana`: dentro de una ventana que ya tiene su «Cerrar» (el de varias planillas): abierto y sin marco.
+ */
+export default function ArchivoBanco({ base, etiqueta = "Archivo para el banco", enVentana = false }: { base: string; etiqueta?: string; enVentana?: boolean }) {
+  const [abierto, setAbierto] = useState(enVentana);
   const [formatos, setFormatos] = useState<{ id: string; nombre: string; activo: boolean }[] | null>(null);
   const [formatoId, setFormatoId] = useState("");
   const [resumen, setResumen] = useState<Resumen | null>(null);
@@ -67,7 +70,7 @@ export default function ArchivoBanco({ base, etiqueta = "Archivo para el banco" 
   if (!abierto) return <button type="button" className="btn btn-secondary" onClick={() => setAbierto(true)}>{etiqueta}</button>;
 
   return (
-    <div className="w-full max-w-xl space-y-3 rounded-md border border-gray-200 bg-white p-4 text-sm shadow-sm">
+    <div className={enVentana ? "space-y-3 text-sm" : "w-full max-w-xl space-y-3 rounded-md border border-gray-200 bg-white p-4 text-sm shadow-sm"}>
       <div className="flex items-end gap-2">
         <div className="flex-1">
           <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="ab-formato">Formato del banco</label>
@@ -75,7 +78,7 @@ export default function ArchivoBanco({ base, etiqueta = "Archivo para el banco" 
             {(formatos ?? []).map((f) => <option key={f.id} value={f.id}>{f.nombre}</option>)}
           </select>
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAbierto(false)}>Cerrar</button>
+        {!enVentana && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAbierto(false)}>Cerrar</button>}
       </div>
       {error && <p className="text-red-700">{error}</p>}
       {resumen && (

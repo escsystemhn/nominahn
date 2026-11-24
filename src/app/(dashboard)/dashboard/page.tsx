@@ -10,7 +10,10 @@ import { conAlcance, filtroEmpleados, filtroPorEmpleado, type UsuarioConAlcance 
 import { permisosPorResolver } from "@/lib/asistencia/solicitudes";
 import { sumarPor } from "@/lib/payroll/money";
 import PageHeader from "@/components/ui/PageHeader";
-import EstadoBadge, { estadoDePlanilla, etiquetaEstado } from "@/components/ui/EstadoBadge";
+import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
+import { periodosSinGenerar } from "@/lib/payroll/pendientes-generar-bd";
+import { claveDePeriodo, nombreDePeriodo } from "@/lib/payroll/planillas-por-periodo";
+import { ETIQUETA_TIPO_PLANILLA, frasePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 
 export const metadata = { title: "Inicio" };
 
@@ -32,6 +35,22 @@ function saludoSegunHora(): string {
   if (hora < 19) return "Buenas tardes";
   return "Buenas noches";
 }
+
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+const dia = (d: Date) => d.toISOString().slice(0, 10);
+
+/** «Centro, Norte y Sur»; con más de tres, «Centro, Norte, Sur y 6 más». */
+function algunosNombres(nombres: readonly string[]): string {
+  if (nombres.length <= 3) return nombres.length <= 1 ? nombres[0] ?? "" : `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}`;
+  return `${nombres.slice(0, 3).join(", ")} y ${nombres.length - 3} más`;
+}
+
+const PALABRAS_ESTADO: Array<[string, string, string]> = [
+  ["BORRADOR", "en borrador", "en borrador"],
+  ["CALCULADA", "confirmada", "confirmadas"],
+  ["APROBADA", "aprobada", "aprobadas"],
+  ["PAGADA", "pagada", "pagadas"],
+];
 
 const IconChevron = () => (
   <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -67,7 +86,7 @@ export default async function DashboardPage() {
     empleado: { AND: [{ estado: { not: "INACTIVO" as const } }, filtroEmpleados(alcance)] },
   };
 
-  const [empleados, activos, marcajesHoy, permisosPendientes, abiertas, ultimas, prestamosPendientes, contratos, totalContratos, erroresSap] =
+  const [empleados, activos, marcajesHoy, permisosPendientes, abiertas, periodosRecientes, prestamosPendientes, contratos, totalContratos, erroresSap, sinGenerar] =
     await Promise.all([
       veEmpleados ? prisma.empleado.count({ where: conAlcance({}, alcance) }) : null,
       veEmpleados ? prisma.empleado.count({ where: conAlcance({ estado: "ACTIVO" }, alcance) }) : null,
@@ -80,15 +99,16 @@ export default async function DashboardPage() {
             // Sólo las que puede resolver: las que incluyen gente fuera de su alcance no le tocan.
             where: { estado: { in: ["BORRADOR", "CALCULADA", "APROBADA"] }, ...filtroPlanillasCompletas(alcance) },
             orderBy: { fechaFin: "desc" },
-            select: { id: true, estado: true, totalNeto: true },
+            select: { id: true, estado: true, totalNeto: true, tipo: true, fechaInicio: true, fechaFin: true },
           })
         : [],
+      // Los últimos períodos de pago (fase 3): cada uno reúne las planillas de sus sucursales.
       vePlanillas
-        ? prisma.planilla.findMany({
-            where: filtroPlanillas(alcance),
-            orderBy: { createdAt: "desc" },
-            take: 6,
-            select: { id: true, tipo: true, fechaInicio: true, fechaFin: true, estado: true, totalNeto: true },
+        ? prisma.planilla.groupBy({
+            by: ["tipo", "fechaInicio", "fechaFin"],
+            where: { AND: [filtroPlanillas(alcance), { estado: { not: "ANULADA" } }] },
+            orderBy: [{ fechaInicio: "desc" }, { fechaFin: "desc" }],
+            take: 5,
           })
         : [],
       apruebaPrestamos ? prisma.solicitudPrestamo.count({ where: { estado: "PENDIENTE", ...filtroPorEmpleado(alcance) } }) : 0,
@@ -108,21 +128,64 @@ export default async function DashboardPage() {
       enviaSap
         ? prisma.sapEnvioAsiento.findMany({ where: { estado: "ERROR", planilla: filtroPlanillasCompletas(alcance) }, select: { planillaId: true }, orderBy: { updatedAt: "desc" } })
         : [],
+      // Sucursales a las que ya les toca su planilla y no la tienen (fase 3).
+      calculaPlanillas ? periodosSinGenerar(prisma, alcance, dia(hoy), await divisionesHabilitadas(prisma)) : [],
     ]);
 
-  // Con alcance limitado, los montos de las últimas son la suma de las personas que alcanza.
-  const visibles = await totalesVisibles(prisma, alcance, ultimas.map((p) => p.id));
+  // Las planillas de esos períodos, con sus montos (con alcance limitado, la suma de las personas que alcanza).
+  const delosPeriodos = periodosRecientes.length === 0 ? [] : await prisma.planilla.findMany({
+    where: { AND: [filtroPlanillas(alcance), { estado: { not: "ANULADA" } }, { OR: periodosRecientes.map((p) => ({ tipo: p.tipo, fechaInicio: p.fechaInicio, fechaFin: p.fechaFin })) }] },
+    select: { id: true, tipo: true, fechaInicio: true, fechaFin: true, estado: true, totalBruto: true, totalDeducciones: true, totalNeto: true },
+  });
+  const visibles = await totalesVisibles(prisma, alcance, delosPeriodos.map((p) => p.id));
+  const variasFrecuencias = new Set(periodosRecientes.map((p) => p.tipo)).size > 1;
+  const ultimosPeriodos = periodosRecientes.map((g) => {
+    const p = { tipo: g.tipo as TipoPlanillaPeriodo, desde: dia(g.fechaInicio), hasta: dia(g.fechaFin) };
+    const suyas = delosPeriodos.filter((x) => claveDePeriodo({ tipo: x.tipo, desde: dia(x.fechaInicio), hasta: dia(x.fechaFin) }) === claveDePeriodo(p));
+    const cuenta = (e: string) => suyas.filter((x) => x.estado === e).length;
+    const pagadas = cuenta("PAGADA");
+    return {
+      ...p,
+      clave: claveDePeriodo(p),
+      nombre: nombreDePeriodo(p),
+      planillas: suyas.length,
+      neto: sumarPor(suyas, (x) => visibles?.get(x.id)?.totalNeto ?? x.totalNeto),
+      estados: pagadas === suyas.length
+        ? (suyas.length === 1 ? "Pagada" : "Todas pagadas")
+        : PALABRAS_ESTADO.filter(([e]) => cuenta(e) > 0).map(([e, uno, varios]) => `${cuenta(e)} ${cuenta(e) === 1 ? uno : varios}`).join(", "),
+      pendiente: pagadas < suyas.length,
+    };
+  });
 
-  // Una sola: directo a ella. Varias: a la lista, ya filtrada.
-  const destinoPlanillas = (estado: string, lista: Array<{ id: string }>) =>
-    lista.length === 1 ? `/planillas/${lista[0].id}` : `/planillas?estado=${estado}`;
+  // Una sola: directo a ella. Varias: al período (o a la frecuencia), con ese estado.
+  const destinoPlanillas = (estado: string, lista: Array<{ id: string; tipo: string }>) => {
+    if (lista.length === 1) return `/planillas/${lista[0].id}`;
+    const tipos = new Set(lista.map((p) => p.tipo));
+    return `/planillas?estado=${estado}${tipos.size === 1 ? `&tipo=${lista[0].tipo}` : ""}`;
+  };
+  // «De la 2.ª quincena de noviembre de 2026.» si son todas del mismo período.
+  const periodoDe = (lista: typeof abiertas) => {
+    const claves = new Set(lista.map((p) => claveDePeriodo({ tipo: p.tipo, desde: dia(p.fechaInicio), hasta: dia(p.fechaFin) })));
+    if (claves.size !== 1) return `De ${plural(claves.size, "período", "períodos")}. `;
+    const p = { tipo: lista[0].tipo as TipoPlanillaPeriodo, desde: dia(lista[0].fechaInicio), hasta: dia(lista[0].fechaFin) };
+    const frase = frasePeriodo(p, "de");
+    return `${frase.charAt(0).toUpperCase()}${frase.slice(1)}. `;
+  };
   const planillasEn = (estado: string) => abiertas.filter((p) => p.estado === estado);
   const netoDe = (lista: typeof abiertas) => `Neto de ${formatCurrency(sumarPor(lista, (p) => p.totalNeto))}.`;
   const porPagar = pagaPlanillas ? planillasEn("APROBADA") : [];
   const porAprobar = apruebaPlanillas ? planillasEn("CALCULADA") : [];
   const borradores = calculaPlanillas ? planillasEn("BORRADOR") : [];
 
+  const sinPlanilla = (x: (typeof sinGenerar)[number]) => ({
+    n: x.sucursales.length,
+    titulo: x.sucursales.length === 1 ? "Sucursal sin planilla" : "Sucursales sin planilla",
+    detalle: `${nombreDePeriodo(x)}${x.vencido ? ", ya terminó" : ""}: ${algunosNombres(x.sucursales)}, con ${plural(x.empleados, "empleado", "empleados")}.`,
+    href: `/planillas?tipo=${x.tipo}&vista=tablero`,
+  });
   const pendientes = [
+    // Un período que ya terminó sin la planilla de alguna sucursal va primero: hay gente sin pagar.
+    ...sinGenerar.filter((x) => x.vencido).map(sinPlanilla),
     enviaSap && erroresSap.length > 0 && {
       n: erroresSap.length,
       titulo: erroresSap.length === 1 ? "Envío a SAP con error" : "Envíos a SAP con error",
@@ -132,21 +195,23 @@ export default async function DashboardPage() {
     porPagar.length > 0 && {
       n: porPagar.length,
       titulo: porPagar.length === 1 ? "Planilla aprobada por pagar" : "Planillas aprobadas por pagar",
-      detalle: netoDe(porPagar),
+      detalle: `${periodoDe(porPagar)}${netoDe(porPagar)}`,
       href: destinoPlanillas("APROBADA", porPagar),
     },
     porAprobar.length > 0 && {
       n: porAprobar.length,
       titulo: porAprobar.length === 1 ? "Planilla por aprobar" : "Planillas por aprobar",
-      detalle: `${netoDe(porAprobar)} ${porAprobar.length === 1 ? "Ya cobró" : "Ya cobraron"} cuotas y bonos.`,
+      detalle: `${periodoDe(porAprobar)}${netoDe(porAprobar)} ${porAprobar.length === 1 ? "Ya cobró" : "Ya cobraron"} cuotas y bonos.`,
       href: destinoPlanillas("CALCULADA", porAprobar),
     },
     borradores.length > 0 && {
       n: borradores.length,
       titulo: borradores.length === 1 ? "Borrador por confirmar" : "Borradores por confirmar",
-      detalle: `${netoDe(borradores)} Todavía no ${borradores.length === 1 ? "cobra" : "cobran"} nada.`,
+      detalle: `${periodoDe(borradores)}${netoDe(borradores)} Todavía no ${borradores.length === 1 ? "cobra" : "cobran"} nada.`,
       href: destinoPlanillas("BORRADOR", borradores),
     },
+    // El período en curso, ya cerca de su fin: el paso siguiente después de los borradores.
+    ...sinGenerar.filter((x) => !x.vencido).map(sinPlanilla),
     permisosPendientes > 0 && {
       n: permisosPendientes,
       titulo: permisosPendientes === 1 ? "Solicitud de permiso por aprobar" : "Solicitudes de permiso por aprobar",
@@ -199,9 +264,9 @@ export default async function DashboardPage() {
       detalle: "Datos personales, contrato, salario y cuenta de banco.",
     },
     calculaPlanillas && {
-      href: "/planillas/nueva",
-      titulo: "Generar una planilla",
-      detalle: "Queda en borrador para revisarla antes de confirmarla.",
+      href: "/planillas?generar=1",
+      titulo: "Generar el período",
+      detalle: "Un borrador por sucursal, para revisarlo antes de confirmarlo.",
     },
     veAsistencia && {
       href: "/asistencia",
@@ -278,51 +343,46 @@ export default async function DashboardPage() {
         {vePlanillas && (
           <section>
             <div className="flex items-baseline justify-between">
-              <h2 className="text-base font-semibold text-gray-900">Últimas planillas</h2>
+              <h2 className="text-base font-semibold text-gray-900">Últimos períodos</h2>
               <Link href="/planillas" data-toque className="text-sm text-blue-600 hover:underline">
-                Ver todas
+                Ver planillas
               </Link>
             </div>
             <div className="panel mt-3 overflow-hidden">
-              {ultimas.length === 0 ? (
+              {ultimosPeriodos.length === 0 ? (
                 <EstadoVacio
                   titulo="Todavía no hay planillas."
-                  detalle="Se generan desde Nómina, en Planillas, a partir de los empleados activos."
+                  detalle="Se generan desde Nómina, en Planillas: un borrador por sucursal para cada período."
                   accion={
                     calculaPlanillas && (
-                      <Link href="/planillas/nueva" className="btn btn-primary">
-                        Nueva planilla
+                      <Link href="/planillas?generar=1" className="btn btn-primary">
+                        Generar el período
                       </Link>
                     )
                   }
                 />
               ) : (
-                <table className="table-base tabla-tarjetas">
+                <table className="table-base tabla-tarjetas" data-ultimos-periodos>
                   <thead>
                     <tr>
-                      <th>Planilla</th>
                       <th>Período</th>
+                      <th className="num">Planillas</th>
                       <th className="num">Neto</th>
                       <th>Estado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {ultimas.map((p) => (
-                      <FilaEnlace key={p.id} href={`/planillas/${p.id}`}>
+                    {ultimosPeriodos.map((p) => (
+                      <FilaEnlace key={p.clave} href={`/planillas?tipo=${p.tipo}`}>
                         <td data-titulo>
-                          <Link href={`/planillas/${p.id}`} className="font-medium text-gray-900 hover:text-blue-700">
-                            {etiquetaEstado(p.tipo)}
+                          <Link href={`/planillas?tipo=${p.tipo}`} className="font-medium text-gray-900 hover:text-blue-700">
+                            {p.nombre}
                           </Link>
+                          {variasFrecuencias && <span className="block text-xs text-gray-500">{ETIQUETA_TIPO_PLANILLA[p.tipo]}</span>}
                         </td>
-                        <td data-etiqueta="Período" className="whitespace-nowrap">
-                          {formatDate(p.fechaInicio)} al {formatDate(p.fechaFin)}
-                        </td>
-                        <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">
-                          {formatCurrency(visibles?.get(p.id)?.totalNeto ?? p.totalNeto)}
-                        </td>
-                        <td data-etiqueta="Estado">
-                          <EstadoBadge valor={estadoDePlanilla(p.estado)} />
-                        </td>
+                        <td data-etiqueta="Planillas" className="num">{p.planillas}</td>
+                        <td data-etiqueta="Neto" className="num whitespace-nowrap font-medium text-gray-900">{formatCurrency(p.neto)}</td>
+                        <td data-etiqueta="Estado" className={p.pendiente ? "text-sm text-amber-900" : "text-sm text-gray-500"}>{p.estados}</td>
                       </FilaEnlace>
                     ))}
                   </tbody>

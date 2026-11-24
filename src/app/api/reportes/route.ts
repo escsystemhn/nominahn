@@ -49,11 +49,15 @@ export async function GET(req: NextRequest) {
   const formato = normalizarFormato(searchParams.get("formato"));
   // Obligatoria en «nomina-banco»; en los reportes de planilla, acota a una sola.
   const planillaId = searchParams.get("planillaId") || undefined;
-  // Un borrador sólo sale si se elige esa planilla: sumado a un período contaría
+  // Las de un período, elegidas en la lista de Planillas («Imprimir» del período, 2026-11-24).
+  const planillaIds = planillaId ? [] : [...new Set((searchParams.get("planillaIds") ?? "").split(",").map((x) => x.trim()).filter((x) => /^[A-Za-z0-9_-]{1,64}$/.test(x)))].slice(0, 300);
+  // Un borrador sólo sale si se eligen esas planillas: sumado a un período contaría
   // dinero que todavía no se ha confirmado. Y una anulada nunca: no se pagó.
   const planillasDelReporte: Prisma.PlanillaWhereInput = planillaId
     ? { id: planillaId, estado: { not: "ANULADA" } }
-    : { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] } };
+    : planillaIds.length
+      ? { id: { in: planillaIds }, estado: { not: "ANULADA" } }
+      : { estado: { in: ["CALCULADA", "APROBADA", "PAGADA"] } };
 
   // Alcance organizacional pedido (Sucursal → División → Departamento). La
   // división sólo cuenta si el administrador habilitó ese nivel.
@@ -205,7 +209,8 @@ export async function GET(req: NextRequest) {
     const tabla = reporteId === "resumen-planilla" ? tablaResumenPlanilla(lineas, niveles) : tablaPlanillaDetallada(lineas, niveles, ordenTipos);
     titulo = reporteId === "resumen-planilla" ? `Resumen de Planilla por ${porNiveles}` : `Planilla Detallada por ${porNiveles}`;
     ({ cabeceras, datos, filas } = tabla);
-    if (reporteId === "planilla-detallada" && conDivisiones && searchParams.get("porDivision") === "1") {
+    // Cada sucursal (o cada grupo, sin divisiones) en su hoja: «Imprimir» de una planilla o de un período.
+    if (reporteId === "planilla-detallada" && searchParams.get("porDivision") === "1") {
       // El RTN sólo tiene sentido si cada división es una empresa del grupo.
       // El RTN de cada unidad: el suyo o, si no tiene, el de su grupo (lo comparten las unidades de un grupo).
       const unidades = conJerarquia ? await prisma.division.findMany({ select: { id: true, rtn: true, sucursal: { select: { rtn: true } } } }) : [];
@@ -864,6 +869,19 @@ export async function GET(req: NextRequest) {
     if (pl?.estado === "BORRADOR") {
       titulo = `${titulo} (BORRADOR)`;
       filtros.push("BORRADOR: planilla sin confirmar");
+    }
+  }
+  if (planillaIds.length && reporteId !== "nomina-banco") {
+    const pls = await prisma.planilla.findMany({ where: { id: { in: planillaIds }, estado: { not: "ANULADA" } }, select: { fechaInicio: true, fechaFin: true, estado: true } });
+    if (pls.length) {
+      const desdePl = new Date(Math.min(...pls.map((p) => p.fechaInicio.getTime())));
+      const hastaPl = new Date(Math.max(...pls.map((p) => p.fechaFin.getTime())));
+      filtros.push(`${pls.length === 1 ? "Planilla" : `${pls.length} planillas`} del ${formatDate(desdePl)} al ${formatDate(hastaPl)}`);
+      const borradores = pls.filter((p) => p.estado === "BORRADOR").length;
+      if (borradores) {
+        titulo = `${titulo} (${borradores === pls.length ? "BORRADOR" : "CON BORRADORES"})`;
+        filtros.push(`BORRADOR: ${borradores === 1 ? "una planilla sin confirmar" : `${borradores} planillas sin confirmar`}`);
+      }
     }
   }
   // Notas propias de un reporte (por ejemplo, cuándo se paga la Planilla RAP).

@@ -142,6 +142,12 @@ export async function POST(req: NextRequest) {
     userAgent,
   });
 
+  // Al generar un período entero (`?resumen=1`) basta con lo que se muestra en el avance:
+  // no hace falta mandar al navegador la ficha de cada empleado de cada sucursal.
+  if (new URL(req.url).searchParams.get("resumen") === "1") {
+    return NextResponse.json({ id: planillaId, empleados: calculo.detalles.length, totalNeto: calculo.totales.totalNeto }, { status: 201 });
+  }
+
   const planillaFinal = await prisma.planilla.findUnique({
     where: { id: planillaId },
     include: { detalles: { include: { empleado: true } } },
