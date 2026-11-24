@@ -17,7 +17,6 @@ interface Props {
   /** Devolver a cálculo o anular una planilla ya aprobada. */
   puedeReabrir: boolean;
   puedeAnularPagada: boolean;
-  puedeEnviar: boolean;
   /** Para decir en cada confirmación a cuánta gente y a cuánto dinero afecta. */
   empleados: number;
   neto: string;
@@ -34,7 +33,6 @@ export default function PlanillaActions({
   puedeAnular,
   puedeReabrir,
   puedeAnularPagada,
-  puedeEnviar,
   empleados,
   neto,
   revision,
@@ -122,36 +120,6 @@ export default function PlanillaActions({
       router.refresh();
     } catch {
       avisar.error("No se pudo conectar con el servidor. Intente de nuevo.");
-      setLoading(false);
-    }
-  }
-
-  async function enviarEmails() {
-    const seguro = await confirmar({
-      titulo: estado === "PAGADA" ? "¿Reenviar los comprobantes por correo?" : "¿Enviar los comprobantes por correo?",
-      detalle: `Se enviarán a ${personas}, cada uno al correo de su ficha.`,
-      accion: estado === "PAGADA" ? "Reenviar" : "Enviar",
-    });
-    if (!seguro) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/planillas/${planillaId}/email`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      // El servidor dice por qué (sin servidor de correo, planilla sin aprobar);
-      // «intente nuevamente» no ayudaba a nadie a arreglarlo.
-      if (!res.ok) throw new Error(data.error ?? "No se pudieron enviar los comprobantes.");
-      const partes = [`Enviados: ${data.enviados} de ${data.total}.`];
-      if (data.sinCorreo?.length) {
-        partes.push(`Sin correo en su ficha (${data.sinCorreo.length}): ${data.sinCorreo.join(", ")}.`);
-      }
-      if (data.errores) partes.push(`Fallaron ${data.errores}: ${data.primerError ?? "error del servidor de correo"}.`);
-      const texto = partes.join("\n");
-      if (data.errores || data.sinCorreo?.length) avisar.error(texto);
-      else avisar.exito(texto);
-      router.refresh();
-    } catch (e) {
-      avisar.error(e instanceof Error ? e.message : "No se pudieron enviar los comprobantes.");
-    } finally {
       setLoading(false);
     }
   }
@@ -271,11 +239,6 @@ export default function PlanillaActions({
               Reabrir planilla
             </button>
           )}
-          {puedeEnviar && (
-            <button onClick={enviarEmails} disabled={loading} className="btn btn-secondary">
-              Enviar comprobantes por correo
-            </button>
-          )}
           {puedePagar && (
             <button
               onClick={() => cambiarEstado("PAGADA", {
@@ -305,11 +268,6 @@ export default function PlanillaActions({
           className={botonPeligro}
         >
           Anular planilla
-        </button>
-      )}
-      {estado === "PAGADA" && puedeEnviar && (
-        <button onClick={enviarEmails} disabled={loading} className="btn btn-secondary">
-          Reenviar comprobantes
         </button>
       )}
     </div>

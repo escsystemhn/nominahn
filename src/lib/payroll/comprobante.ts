@@ -32,6 +32,11 @@ export interface DatosBoleta {
   fechaPago?: string | null;
   diasTrabajados: string;
   horasExtra: string;
+  /**
+   * El sueldo mensual que regía en el período, formateado (pedido del 2026-11-24). No es
+   * el «Salario base» de los ingresos, que es lo del período (la mitad en una quincena).
+   */
+  salarioMensual?: string | null;
   /** Pares [concepto, importe formateado], en el orden en que se imprimen. */
   ingresos: Array<[string, string]>;
   deducciones: Array<[string, string]>;
@@ -78,9 +83,11 @@ export function lineasDeMembrete(d: DatosBoleta): string[] {
 export function filasDelTrabajador(d: DatosBoleta): Array<Array<[string, string]>> {
   const grupos: Array<Array<[string, string | null | undefined]>> = [
     [["Código", d.codigoEmpleado], ["Identidad", d.identidad]],
+    // El sueldo mensual bajo la identidad, en la línea de los días trabajados (pedido del 2026-11-24).
+    [["Días trabajados", d.diasTrabajados], ["Sueldo mensual", d.salarioMensual]],
     // La división ya va en el membrete (como sucursal o división): aquí, el puesto.
     [["Puesto", d.puesto], ["Departamento", d.departamento]],
-    [["Días trabajados", d.diasTrabajados], ["Horas extra", Number(d.horasExtra) > 0 ? d.horasExtra : null]],
+    [["Horas extra", Number(d.horasExtra) > 0 ? d.horasExtra : null]],
   ];
   const filas = grupos
     .map((g) => g.filter((f): f is [string, string] => !!f[1]))
@@ -89,6 +96,21 @@ export function filasDelTrabajador(d: DatosBoleta): Array<Array<[string, string]
   const [a, b] = filas.slice(-2);
   if (filas.length >= 2 && a.length === 1 && b.length === 1) filas.splice(-2, 2, [...a, ...b]);
   return filas;
+}
+
+/**
+ * Los mismos datos en la cuadrícula de cuatro columnas del PDF (el comprobante impreso).
+ * Fija, no por orden de llegada, para que cada dato caiga siempre en su lugar: el sueldo
+ * mensual bajo la identidad y en la línea de los días trabajados (pedido del 2026-11-24).
+ * Cuatro y no tres para seguir en dos filas: una tercera no cabe en media hoja con todas
+ * las deducciones. Un dato que no aplica deja su celda en blanco.
+ */
+export function cuadriculaDelTrabajador(d: DatosBoleta): Array<Array<[string, string] | null>> {
+  const dato = (etiqueta: string, valor: string | null | undefined): [string, string] | null => (valor ? [etiqueta, valor] : null);
+  return [
+    [dato("Código", d.codigoEmpleado), dato("Identidad", d.identidad), dato("Puesto", d.puesto), dato("Departamento", d.departamento)],
+    [dato("Días trabajados", d.diasTrabajados), dato("Sueldo mensual", d.salarioMensual), dato("Horas extra", Number(d.horasExtra) > 0 ? d.horasExtra : null), null],
+  ].filter((fila) => fila.some(Boolean));
 }
 
 export const PIE_COMPROBANTE = "Si encuentra una diferencia, consulte a Recursos Humanos.";

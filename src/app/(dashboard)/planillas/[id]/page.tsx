@@ -15,6 +15,7 @@ import VistaPlanillaControles from "@/components/payroll/VistaPlanillaControles"
 import OrdenDeducciones from "@/components/payroll/OrdenDeducciones";
 import { nombresEnOrden } from "@/lib/deducciones/orden-columnas";
 import PlanillaActions from "@/components/payroll/PlanillaActions";
+import { BotonComprobantes } from "@/components/payroll/ComprobantesLote";
 import ComprobanteAcciones from "@/components/payroll/ComprobanteAcciones";
 import SapEstadoPlanilla from "@/components/payroll/SapEstadoPlanilla";
 import ArchivoBanco from "@/components/payroll/ArchivoBanco";
@@ -281,6 +282,8 @@ export default async function DetallePlanillaPage({
         actions={
           <>
             {planilla.estado === "ANULADA" && <EstadoBadge valor={planilla.estado} className="mr-2 text-sm" />}
+            {/* Todos los de la planilla, por correo (aprobada o pagada) o impresos: reemplaza a «Enviar comprobantes por correo». */}
+            {planilla.estado !== "ANULADA" && <BotonComprobantes planillaId={planilla.id} puedeEnviar={puede(usuario, "planillas.boletas")} />}
             {!parcial && <PlanillaActions
               planillaId={planilla.id}
               estado={planilla.estado}
@@ -290,7 +293,6 @@ export default async function DetallePlanillaPage({
               puedeAnular={puede(usuario, "planillas.anular")}
               puedeReabrir={puede(usuario, "planillas.reabrir")}
               puedeAnularPagada={puede(usuario, "planillas.anular_pagada")}
-              puedeEnviar={puedeEnviar}
               empleados={totalLineas}
               neto={formatCurrency(planilla.totalNeto)}
               revision={revision ? resumenDeRevision(revision) : undefined}

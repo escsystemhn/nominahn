@@ -9,6 +9,8 @@ import { configSmtpVigente, sendEmail } from "@/lib/email/send";
 import { correoDeComprobantes } from "@/lib/email/destinatario";
 import { audit, getClientInfo } from "@/lib/audit";
 import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, sucursalDeBoleta, UBICACION_BOLETA } from "@/lib/payroll/boleta";
+import { claveDeLinea, cobradasSinDetalle } from "@/lib/payroll/deducciones-de-linea-bd";
+import { nombresEnOrden } from "@/lib/deducciones/orden-columnas";
 import { adjuntoDelLogo, CID_LOGO, comprobanteHtml } from "@/lib/payroll/comprobante-html";
 import { logosDeSucursales } from "@/lib/organizacion/logo-bd";
 import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
@@ -91,6 +93,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const ubicacionDe = (d: (typeof planilla.detalles)[number]) => ({ sucursal: d.sucursal, division: d.division, departamento: d.departamento, puesto: d.puesto });
   const jerarquia = await jerarquiaNominaHabilitada(prisma);
   const logos = await logosDeSucursales(prisma, planilla.detalles.flatMap((d) => sucursalDeBoleta(ubicacionDe(d), d.empleado)?.id ?? []));
+  // Cada deducción con su nombre, en el orden de las columnas de la planilla.
+  const [ordenDeducciones, cobradas] = await Promise.all([nombresEnOrden(prisma), cobradasSinDetalle(prisma, planilla.detalles)]);
 
   let enviados = 0;
   let errores = 0;
@@ -106,7 +110,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     try {
       const ubicacion = ubicacionDe(detalle);
-      const datos = construirBoleta(detalle, { empresa: planilla.empresa, empleado: detalle.empleado, planilla, ubicacion, jerarquia });
+      const datos = construirBoleta(detalle, { empresa: planilla.empresa, empleado: detalle.empleado, planilla, ubicacion, jerarquia, ordenDeducciones, cobradas: cobradas.get(claveDeLinea(detalle)) });
       const sucursalId = sucursalDeBoleta(ubicacion, detalle.empleado)?.id;
       const logo = sucursalId ? logos.get(sucursalId) : undefined;
 

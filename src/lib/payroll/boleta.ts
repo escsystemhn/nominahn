@@ -12,6 +12,7 @@
 
 import { money, aNumero, type MoneyInput } from "./money";
 import type { DatosBoleta } from "./comprobante";
+import { columnasDeDeducciones, deduccionesPorNombre } from "./deducciones-de-linea";
 import { montoALetras } from "@/lib/documentos/numero-letras";
 import { formatCurrency, formatDate, formatDateTime, nombreCompleto } from "@/lib/utils";
 
@@ -42,6 +43,8 @@ export interface DetalleBoleta {
   horasExtra: MoneyInput;
   /** El IHSS del empleado es su monto fijo pactado. Opcional: planillas viejas no lo traen. */
   ihssFijo?: boolean;
+  /** Lo cobrado de cada tipo de deducción (`PlanillaDetalle.deducciones`, JSON). */
+  deducciones?: unknown;
 }
 
 interface SucursalBoleta {
@@ -74,6 +77,9 @@ export interface ContextoBoleta {
     sucursal?: SucursalBoleta | null;
     departamento?: { nombre: string } | null;
     puesto?: { nombre: string } | null;
+    /** Mensual, el de hoy. Con `historialSalarios` se sabe el que regía en el período. */
+    salarioBase?: MoneyInput | null;
+    historialSalarios?: Array<{ fechaCambio: Date; salarioAnterior: MoneyInput }>;
   };
   planilla: { tipo: string; fechaInicio: Date; fechaFin: Date; fechaPago?: Date | null; estado?: string };
   /** La de la línea de planilla: un período cerrado no cambia si la persona se traslada. */
@@ -85,6 +91,13 @@ export interface ContextoBoleta {
   jerarquia?: boolean;
   /** Sólo para probar: por omisión, ahora. */
   emitido?: Date;
+  /**
+   * Los tipos de deducción en el orden de la empresa (`nombresEnOrden`): el comprobante los
+   * lista igual que las columnas de la planilla. Sin él, por nombre.
+   */
+  ordenDeducciones?: readonly string[];
+  /** Para una línea que no guardó su detalle por tipo: lo cobrado (`cobradasSinDetalle`). */
+  cobradas?: ReadonlyArray<{ nombre: string; monto: MoneyInput }>;
 }
 
 /** Lo que la boleta consulta de la sucursal. */
@@ -105,7 +118,23 @@ export const EMPLEADO_BOLETA = {
   departamento: { select: { nombre: true } },
   // Sólo para líneas que no guardaron el puesto (anteriores al 2026-11-14).
   puesto: { select: { nombre: true } },
+  // El sueldo mensual del comprobante: el de hoy y los cambios, para saber el de aquel período.
+  salarioBase: true,
+  historialSalarios: { select: { fechaCambio: true, salarioAnterior: true }, orderBy: { fechaCambio: "asc" } },
 } as const;
+
+/**
+ * El sueldo mensual que regía al cierre del período: si después cambió, el anterior al
+ * primer cambio posterior; si no, el de hoy. Así un comprobante viejo no muestra el
+ * sueldo de ahora. Sin el sueldo del empleado, `null` (el comprobante no lo imprime).
+ */
+export function sueldoMensualAlPeriodo(empleado: ContextoBoleta["empleado"], fechaFin: Date) {
+  if (empleado.salarioBase === undefined || empleado.salarioBase === null) return null;
+  const posterior = (empleado.historialSalarios ?? [])
+    .filter((h) => h.fechaCambio.getTime() > fechaFin.getTime())
+    .sort((a, b) => a.fechaCambio.getTime() - b.fechaCambio.getTime())[0];
+  return money(posterior ? posterior.salarioAnterior : empleado.salarioBase);
+}
 
 export const EMPRESA_BOLETA = { select: { nombre: true, rtn: true, direccion: true, telefono: true } } as const;
 
@@ -156,6 +185,16 @@ export function sucursalDeBoleta(ubicacion: UbicacionBoleta | undefined, emplead
   return ubicacion?.sucursal ?? empleado.sucursal ?? null;
 }
 
+/**
+ * Las deducciones del empleado por tipo, con la misma regla que las columnas de la planilla
+ * (`deduccionesPorNombre`): lo guardado en la línea; si es de antes, lo cobrado registrado
+ * que cuadre; y si tampoco, las categorías de siempre. La AFP va aquí, como un tipo más.
+ */
+function deduccionesDelEmpleado(detalle: DetalleBoleta, ctx: ContextoBoleta): Array<[string, string]> {
+  const porTipo = deduccionesPorNombre(detalle, ctx.cobradas?.map((c) => ({ nombre: c.nombre, monto: c.monto })));
+  return columnasDeDeducciones([porTipo], ctx.ordenDeducciones ?? []).flatMap((nombre) => linea(nombre, porTipo.get(nombre)!));
+}
+
 export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): DatosBoleta {
   // El IHSS se guarda como total EM+IVM; en la boleta se muestra desglosado
   // porque son dos regímenes distintos y el trabajador los ve así en su cuenta.
@@ -202,6 +241,7 @@ export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): Da
     fechaPago: ctx.planilla.fechaPago ? formatDate(ctx.planilla.fechaPago) : null,
     diasTrabajados: cantidad(detalle.diasTrabajados),
     horasExtra: cantidad(detalle.horasExtra),
+    salarioMensual: ((s) => (s ? formatCurrency(s) : null))(sueldoMensualAlPeriodo(ctx.empleado, ctx.planilla.fechaFin)),
 
     ingresos: [
       ...linea("Salario base", detalle.salarioBase),
@@ -210,18 +250,18 @@ export function construirBoleta(detalle: DetalleBoleta, ctx: ContextoBoleta): Da
       ...linea("Otros ingresos", detalle.otrosIngresos),
     ],
 
+    // Como las columnas de la planilla (pedido de Edbin, 2026-11-24): las de ley, luego cada
+    // deducción del empleado con su nombre («Cooperativa Audi», «Préstamo RAP», «AFP
+    // Atlántida») en el orden de la empresa, y al final ausencias e incapacidad. Antes se
+    // agrupaban en «Cooperativa», «Préstamos», «Adelantos» y «Otras deducciones».
     deducciones: [
       ...lineasIHSS,
       ...linea("RAP", detalle.rapEmpleado),
-      ...linea("AFP", detalle.afpEmpleado),
       ...linea("ISR retenido", detalle.isr),
       ...linea("Impuesto vecinal", detalle.impuestoVecinal),
-      ...linea("Cooperativa", detalle.cooperativa),
-      ...linea("Préstamos", detalle.prestamos),
-      ...linea("Adelantos", detalle.adelantos),
+      ...deduccionesDelEmpleado(detalle, ctx),
       ...linea("Ausencias", detalle.ausencias),
       ...linea(detalle.diasIncapacidadIhss ? `Incapacidad IHSS (${detalle.diasIncapacidadIhss} ${detalle.diasIncapacidadIhss === 1 ? "día" : "días"})` : "Incapacidad IHSS", detalle.incapacidad ?? 0),
-      ...linea("Otras deducciones", detalle.otrosDeducciones),
     ],
 
     totalBruto: formatCurrency(aNumero(detalle.totalBruto)),

@@ -15,7 +15,7 @@ export default async function BiometricoPage() {
       // Explícito y no la fila entera: incluye `passwordCifrado`, y una
       // credencial de un terminal de control de acceso no baja al navegador.
       select: {
-        id: true, nombre: true, marca: true, ip: true, puerto: true,
+        id: true, nombre: true, marca: true, ip: true, puerto: true, usuario: true,
         sucursalId: true, activo: true, ultimaSync: true, createdAt: true,
       },
       orderBy: { createdAt: "asc" },

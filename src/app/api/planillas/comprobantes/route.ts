@@ -4,7 +4,9 @@
  * media carta, ordenados por sucursal, división y departamento y, dentro, en el orden que
  * la persona eligió para ver la planilla.
  *
- *   GET ?ids=a,b,c&contar=1            → { empleados, sinCorreo, sinAprobar, planillas }
+ *   GET ?ids=a,b,c&contar=1            → { empleados, sinCorreo, sinAprobar, planillas, detalle }
+ *     `detalle`: por planilla, su nombre, estado, cuántos empleados y cuántos con correo, para
+ *     enviarlas por correo una tras otra (`/api/planillas/[id]/email`, 2026-11-24).
  *   GET ?ids=a,b,c[&solo=sin-correo][&modo=ver]  → el PDF
  *
  * Sólo las personas del alcance de quien lo pide; las planillas anuladas no cuentan.
@@ -16,6 +18,8 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { audit, getClientInfo } from "@/lib/audit";
 import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, sucursalDeBoleta, UBICACION_BOLETA } from "@/lib/payroll/boleta";
+import { claveDeLinea, cobradasSinDetalle } from "@/lib/payroll/deducciones-de-linea-bd";
+import { nombresEnOrden } from "@/lib/deducciones/orden-columnas";
 import { pdfComprobantes } from "@/lib/payroll/comprobante-pdf";
 import { logosDeSucursales } from "@/lib/organizacion/logo-bd";
 import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
@@ -47,7 +51,12 @@ export async function GET(req: NextRequest) {
           emailPersonal: true, emailCorporativo: true, user: { select: { email: true } },
         },
       },
-      planilla: { select: { id: true, tipo: true, fechaInicio: true, fechaFin: true, fechaPago: true, estado: true, empresa: EMPRESA_BOLETA } },
+      planilla: {
+        select: {
+          id: true, tipo: true, fechaInicio: true, fechaFin: true, fechaPago: true, estado: true, empresa: EMPRESA_BOLETA,
+          sucursal: { select: { id: true, nombre: true } }, division: { select: { nombre: true } }, departamento: { select: { nombre: true } },
+        },
+      },
     },
     take: MAX_COMPROBANTES + 1,
   });
@@ -57,11 +66,28 @@ export async function GET(req: NextRequest) {
 
   const sinCorreo = detalles.filter((d) => !correoDeComprobantes(d.empleado));
   if (sp.get("contar") === "1") {
+    // Por planilla, para enviarlas por correo una tras otra y decir cuántos van en cada una.
+    const porPlanilla = new Map<string, (typeof detalles)[number][]>();
+    for (const d of detalles) porPlanilla.set(d.planillaId, [...(porPlanilla.get(d.planillaId) ?? []), d]);
+    const planillas = [...porPlanilla.values()].map((ds) => ds[0].planilla);
+    const unGrupo = new Set(planillas.map((p) => p.sucursal?.id ?? "")).size <= 1;
+    const unPeriodo = new Set(planillas.map((p) => `${p.tipo}|${dia(p.fechaInicio)}|${dia(p.fechaFin)}`)).size <= 1;
+    const nombreDe = (p: (typeof planillas)[number]) => {
+      const partes = p.sucursal ? [p.sucursal.nombre, p.division?.nombre, p.departamento?.nombre].filter(Boolean) as string[] : ["Toda la empresa"];
+      const unidad = unGrupo && partes.length > 1 ? partes.slice(1).join(" / ") : partes.join(" / ");
+      return unPeriodo ? unidad : `${unidad} (${corta(dia(p.fechaInicio))} al ${corta(dia(p.fechaFin))})`;
+    };
     return NextResponse.json({
       empleados: detalles.length,
       sinCorreo: sinCorreo.length,
       sinAprobar: detalles.filter((d) => !["APROBADA", "PAGADA"].includes(d.planilla.estado)).length,
-      planillas: new Set(detalles.map((d) => d.planillaId)).size,
+      planillas: porPlanilla.size,
+      detalle: [...porPlanilla.entries()]
+        .map(([id, ds]) => ({
+          id, nombre: nombreDe(ds[0].planilla), estado: ds[0].planilla.estado,
+          empleados: ds.length, conCorreo: ds.filter((d) => !!correoDeComprobantes(d.empleado)).length,
+        }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { numeric: true })),
     });
   }
 
@@ -90,9 +116,11 @@ export async function GET(req: NextRequest) {
   });
 
   const jerarquia = await jerarquiaNominaHabilitada(prisma);
+  // Cada deducción con su nombre, en el orden de las columnas de la planilla.
+  const [ordenDeducciones, cobradas] = await Promise.all([nombresEnOrden(prisma), cobradasSinDetalle(prisma, ordenados)]);
   const lista = ordenados.map((d) => {
     const ubicacion = { sucursal: d.sucursal, division: d.division, departamento: d.departamento, puesto: d.puesto };
-    return { d, ubicacion, datos: construirBoleta(d, { empresa: d.planilla.empresa, empleado: d.empleado, planilla: d.planilla, ubicacion, jerarquia }) };
+    return { d, ubicacion, datos: construirBoleta(d, { empresa: d.planilla.empresa, empleado: d.empleado, planilla: d.planilla, ubicacion, jerarquia, ordenDeducciones, cobradas: cobradas.get(claveDeLinea(d)) }) };
   });
   const sucursales = [...new Set(lista.map((x) => sucursalDeBoleta(x.ubicacion, x.d.empleado)?.id).filter((x): x is string => !!x))];
   const logos = await logosDeSucursales(prisma, sucursales);

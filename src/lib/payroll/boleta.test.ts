@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { construirBoleta, entidadLegal, nombreArchivoComprobante, sucursalDeBoleta, type DetalleBoleta } from "./boleta";
+import { construirBoleta, entidadLegal, nombreArchivoComprobante, sucursalDeBoleta, sueldoMensualAlPeriodo, type DetalleBoleta } from "./boleta";
+import { formatCurrency } from "@/lib/utils";
 import { remitenteFormateado } from "@/lib/email/send";
 
 const detalle = (over: Partial<DetalleBoleta> = {}): DetalleBoleta => ({
@@ -51,6 +52,71 @@ describe("boleta — lo que identifica el documento", () => {
     expect(construirBoleta(detalle(), ctx).fechaPago).toBeNull();
     const conFecha = { ...ctx, planilla: { ...ctx.planilla, fechaPago: new Date("2026-08-31T00:00:00Z") } };
     expect(construirBoleta(detalle(), conFecha).fechaPago).toBe("31/08/2026");
+  });
+});
+
+describe("boleta — cada deducción como en la planilla (2026-11-24)", () => {
+  // Como la fila de Juan Carlos Boquin en la captura de Edbin: ISR, Cooperativa Audi, AFP Atlántida, Préstamo RAP, Retención seguro.
+  const guardadas = [
+    { codigo: "PRE-RAP", nombre: "Préstamo RAP", monto: "1548.56" },
+    { codigo: "COOP-AUDI", nombre: "Cooperativa Audi", monto: "5868.00" },
+    { codigo: "SEG-MED", nombre: "Retencion Seguro Medico", monto: "1100.00" },
+    { codigo: "AFP-ATL", nombre: "AFP Atlántida", monto: "380.00" },
+  ];
+  const linea = detalle({ isr: 1650, cooperativa: 5868, prestamos: 1548.56, afpEmpleado: 380, otrosDeducciones: 1100, ihssEmpleado: 0, ivmEmpleado: 0, deducciones: guardadas });
+  const orden = ["Cooperativa Audi", "Cooperativa ELGA", "CXC Préstamo", "Préstamo Atlantida", "AFP Atlántida", "Préstamo RAP", "Retencion Seguro Medico"];
+
+  it("cada tipo con su nombre, en el orden de la empresa, sin agrupar", () => {
+    const b = construirBoleta(linea, { ...ctx, ordenDeducciones: orden });
+    expect(b.deducciones).toEqual([
+      ["ISR retenido", formatCurrency(1650)],
+      ["Cooperativa Audi", formatCurrency(5868)],
+      ["AFP Atlántida", formatCurrency(380)],
+      ["Préstamo RAP", formatCurrency(1548.56)],
+      ["Retencion Seguro Medico", formatCurrency(1100)],
+    ]);
+  });
+
+  it("sin orden guardado, por nombre; y nunca las categorías de antes junto a los tipos", () => {
+    const nombres = construirBoleta(linea, ctx).deducciones.map(([n]) => n);
+    expect(nombres).toEqual(["ISR retenido", "AFP Atlántida", "Cooperativa Audi", "Préstamo RAP", "Retencion Seguro Medico"]);
+    expect(nombres).not.toContain("Cooperativa");
+    expect(nombres).not.toContain("Otras deducciones");
+  });
+
+  it("una línea de antes sin detalle: lo cobrado registrado, si cuadra", () => {
+    const vieja = detalle({ cooperativa: 300, prestamos: 200, ihssEmpleado: 0, ivmEmpleado: 0 });
+    const cobradas = [{ nombre: "Cooperativa ELGA", monto: 300 }, { nombre: "CXC Préstamo", monto: 200 }];
+    expect(construirBoleta(vieja, { ...ctx, cobradas, ordenDeducciones: orden }).deducciones.map(([n]) => n)).toEqual(["Cooperativa ELGA", "CXC Préstamo"]);
+  });
+
+  it("y si no hay cómo saber el tipo, las categorías de siempre, en el orden de la pantalla", () => {
+    const vieja = detalle({ cooperativa: 300, prestamos: 200, afpEmpleado: 50, ihssEmpleado: 0, ivmEmpleado: 0 });
+    expect(construirBoleta(vieja, ctx).deducciones.map(([n]) => n)).toEqual(["AFP", "Cooperativa", "Préstamos"]);
+  });
+});
+
+describe("boleta — sueldo mensual (2026-11-24)", () => {
+  const d = (s: Date) => s;
+  const con = (empleado: Record<string, unknown>) => construirBoleta(detalle(), { ...ctx, empleado: { ...ctx.empleado, ...empleado } }).salarioMensual;
+
+  it("el de la ficha, mensual, no el salario base del período", () => {
+    expect(con({ salarioBase: 20000 })).toBe(formatCurrency(20000));
+  });
+
+  it("si cambió después del período, el que regía entonces", () => {
+    const historialSalarios = [
+      { fechaCambio: d(new Date("2026-03-01T00:00:00Z")), salarioAnterior: 15000 },
+      { fechaCambio: d(new Date("2026-09-01T00:00:00Z")), salarioAnterior: 18000 },
+      { fechaCambio: d(new Date("2026-10-01T00:00:00Z")), salarioAnterior: 19000 },
+    ];
+    expect(con({ salarioBase: 20000, historialSalarios })).toBe(formatCurrency(18000));
+    expect(sueldoMensualAlPeriodo({ ...ctx.empleado, salarioBase: 20000, historialSalarios }, new Date("2026-09-15T00:00:00Z"))?.toFixed(2)).toBe("19000.00");
+    expect(sueldoMensualAlPeriodo({ ...ctx.empleado, salarioBase: 20000, historialSalarios }, new Date("2026-10-15T00:00:00Z"))?.toFixed(2)).toBe("20000.00");
+  });
+
+  it("sin el sueldo del empleado no se imprime", () => {
+    expect(con({})).toBeNull();
   });
 });
 

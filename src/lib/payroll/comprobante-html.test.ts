@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { adjuntoDelLogo, CID_LOGO, comprobanteHtml } from "./comprobante-html";
-import { filasDelTrabajador, type DatosBoleta } from "./comprobante";
+import { cuadriculaDelTrabajador, filasDelTrabajador, type DatosBoleta } from "./comprobante";
 
 const datos: DatosBoleta = {
   empresa: "NominaHN S. de R.L.",
@@ -146,20 +146,30 @@ describe("comprobanteHtml: maquetación", () => {
 describe("filasDelTrabajador", () => {
   const filas = (over: Partial<DatosBoleta>) => filasDelTrabajador({ ...datos, ...over }).map((f) => f.map(([e]) => e));
 
-  it("días y horas extra van juntos, y el departamento no los separa", () => {
-    expect(filas({ departamento: "Ventas" })).toEqual([["Código", "Identidad"], ["Departamento"], ["Días trabajados", "Horas extra"]]);
+  it("el sueldo mensual va bajo la identidad, en la línea de los días trabajados (2026-11-24)", () => {
+    expect(filas({ departamento: "Ventas", puesto: "Cajera", salarioMensual: "L 25,000.00" })).toEqual([
+      ["Código", "Identidad"], ["Días trabajados", "Sueldo mensual"], ["Puesto", "Departamento"], ["Horas extra"],
+    ]);
   });
 
   it("el puesto va junto al departamento; la división ya no (va en el membrete)", () => {
-    expect(filas({ departamento: "Ventas", division: "Mayoreo", puesto: "Cajera" })).toEqual([["Código", "Identidad"], ["Puesto", "Departamento"], ["Días trabajados", "Horas extra"]]);
+    expect(filas({ departamento: "Ventas", division: "Mayoreo", puesto: "Cajera", horasExtra: "0", salarioMensual: "L 1.00" })).toEqual([
+      ["Código", "Identidad"], ["Días trabajados", "Sueldo mensual"], ["Puesto", "Departamento"],
+    ]);
   });
 
   it("dos filas de un dato se juntan en una", () => {
-    expect(filas({ departamento: "Ventas", horasExtra: "0" })).toEqual([["Código", "Identidad"], ["Departamento", "Días trabajados"]]);
+    expect(filas({ departamento: "Ventas", salarioMensual: "L 1.00" })).toEqual([["Código", "Identidad"], ["Días trabajados", "Sueldo mensual"], ["Departamento", "Horas extra"]]);
   });
 
-  it("sin departamento quedan sólo las que aplican", () => {
+  it("sin sueldo ni departamento quedan sólo las que aplican", () => {
     expect(filas({ departamento: null, horasExtra: "0" })).toEqual([["Código", "Identidad"], ["Días trabajados"]]);
+  });
+
+  it("en el PDF, cuatro columnas fijas en dos filas: el sueldo bajo la identidad, en la línea de los días", () => {
+    const celdas = cuadriculaDelTrabajador({ ...datos, puesto: "Cajera", departamento: "Ventas", salarioMensual: "L 25,000.00" }).map((f) => f.map((x) => x?.[0] ?? null));
+    expect(celdas).toEqual([["Código", "Identidad", "Puesto", "Departamento"], ["Días trabajados", "Sueldo mensual", "Horas extra", null]]);
+    expect(cuadriculaDelTrabajador({ ...datos, horasExtra: "0" }).length).toBe(2);
   });
 });
 

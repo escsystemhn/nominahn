@@ -17,7 +17,8 @@ const schema = z.object({
   /** Vacía significa «no la cambies», no «bórrala». */
   password: z.string().max(200).optional(),
   offsetMinutos: z.coerce.number().int().min(-840).max(840).optional(),
-  sucursalId: zId.nullable().optional(),
+  /** «» (Todos los grupos) = sin grupo; sin mandarlo, no se toca. */
+  sucursalId: z.union([z.literal(""), zId]).nullable().optional(),
   activo: z.boolean().optional(),
 });
 

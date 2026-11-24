@@ -4,6 +4,8 @@ import { alcanzaEmpleado } from "@/lib/auth/alcance";
 import { prisma } from "@/lib/prisma";
 import { requerirSesion, puede } from "@/lib/auth/guard";
 import { construirBoleta, EMPLEADO_BOLETA, EMPRESA_BOLETA, nombreArchivoComprobante, sucursalDeBoleta, UBICACION_BOLETA } from "@/lib/payroll/boleta";
+import { claveDeLinea, cobradasSinDetalle } from "@/lib/payroll/deducciones-de-linea-bd";
+import { nombresEnOrden } from "@/lib/deducciones/orden-columnas";
 import { comprobanteHtml } from "@/lib/payroll/comprobante-html";
 import { pdfComprobante } from "@/lib/payroll/comprobante-pdf";
 import { logosDeSucursales, pngComoDataUri } from "@/lib/organizacion/logo-bd";
@@ -59,6 +61,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     planilla: detalle.planilla,
     ubicacion,
     jerarquia: await jerarquiaNominaHabilitada(prisma),
+    // Cada deducción con su nombre, en el orden de las columnas de la planilla.
+    ordenDeducciones: await nombresEnOrden(prisma),
+    cobradas: (await cobradasSinDetalle(prisma, [detalle])).get(claveDeLinea(detalle)),
   });
   const sucursalId = sucursalDeBoleta(ubicacion, detalle.empleado)?.id;
   const logo = sucursalId ? (await logosDeSucursales(prisma, [sucursalId])).get(sucursalId) : null;

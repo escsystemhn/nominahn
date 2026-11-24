@@ -22,6 +22,8 @@
  */
 
 import type { DispositivoBiometrico } from "@prisma/client";
+import { descifrar } from "@/lib/seguridad/cifrado";
+import { DriverHikvision } from "./hikvision";
 
 /** Una marcación tal como la reporta el equipo, antes de normalizar. */
 export interface EventoCrudo {
@@ -108,16 +110,28 @@ class DriverPendiente implements Driver {
 /**
  * Devuelve el driver que corresponde a la marca del dispositivo.
  *
- * Los concretos llegan en su fase: Hikvision primero, porque es HTTP con JSON,
- * se prueba con `curl` y no arrastra una dependencia binaria de terceros.
+ * Hikvision ya habla (ISAPI, 2026-11-24, ver `hikvision.ts`); ZKTeco sigue pendiente:
+ * necesita `node-zklib` y el modelo del equipo.
  */
 export function driverPara(dispositivo: DispositivoBiometrico): Driver {
   switch (dispositivo.marca) {
-    case "HIKVISION":
-      return new DriverPendiente(
-        "HIKVISION",
-        "Requiere ISAPI sobre HTTP Digest contra /ISAPI/AccessControl/AcsEvent."
-      );
+    case "HIKVISION": {
+      let password: string | null = null;
+      if (dispositivo.passwordCifrado) {
+        try {
+          password = descifrar(dispositivo.passwordCifrado);
+        } catch (e) {
+          throw new Error(`No se pudo leer la contraseña guardada del reloj (${e instanceof Error ? e.message : "error al descifrar"}). Vuelva a escribirla en «Editar».`);
+        }
+      }
+      return new DriverHikvision({
+        ip: dispositivo.ip,
+        puerto: dispositivo.puerto,
+        usuario: dispositivo.usuario,
+        password,
+        offsetMinutos: dispositivo.offsetMinutos,
+      });
+    }
     case "ZKTECO":
       return new DriverPendiente(
         "ZKTECO",

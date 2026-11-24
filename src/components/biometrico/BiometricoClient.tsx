@@ -22,9 +22,20 @@ interface Dispositivo {
   marca: Marca;
   ip: string;
   puerto: number;
+  usuario: string | null;
   sucursalId: string | null;
   activo: boolean;
   ultimaSync: string | null;
+}
+
+const CAMPO: Record<string, string> = { nombre: "nombre", marca: "marca", ip: "dirección IP", puerto: "puerto", usuario: "usuario", password: "contraseña", sucursalId: "grupo" };
+
+/** El motivo que da el servidor (antes se cambiaba siempre por «Intente nuevamente», y no se sabía qué corregir). */
+async function motivo(res: Response, porOmision: string): Promise<string> {
+  const d = await res.json().catch(() => ({}));
+  const campos = d.detalles ? Object.keys(d.detalles).map((k) => CAMPO[k] ?? k) : [];
+  if (d.error && campos.length) return `${d.error}: revise ${campos.join(", ")}.`;
+  return d.error ?? porOmision;
 }
 
 /** Puerto por defecto de cada marca: ZKTeco usa 4370; Hikvision habla ISAPI sobre HTTP. */
@@ -85,7 +96,8 @@ export default function BiometricoClient({
       marca: d.marca,
       ip: d.ip,
       puerto: String(d.puerto),
-      usuario: "",
+      // Antes llegaba en blanco y, al guardar, borraba el usuario del equipo.
+      usuario: d.usuario ?? "",
       // Nunca llega del servidor: se deja en blanco y sólo se envía si la
       // reescriben. En blanco significa «no la cambies».
       password: "",
@@ -114,11 +126,11 @@ export default function BiometricoClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(await motivo(res, "No se pudo guardar el dispositivo."));
       setModal(null);
       router.refresh();
-    } catch {
-      avisar.error("No se pudo guardar el dispositivo. Intente nuevamente.");
+    } catch (e) {
+      avisar.error(e instanceof Error && e.message ? e.message : "No se pudo conectar con el servidor. Intente nuevamente.");
     } finally {
       setLoading(false);
     }
@@ -131,10 +143,10 @@ export default function BiometricoClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ activo: !d.activo }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(await motivo(res, "No se pudo cambiar el estado."));
       router.refresh();
-    } catch {
-      avisar.error("No se pudo cambiar el estado. Intente nuevamente.");
+    } catch (e) {
+      avisar.error(e instanceof Error && e.message ? e.message : "No se pudo conectar con el servidor. Intente nuevamente.");
     }
   }
 
@@ -142,10 +154,10 @@ export default function BiometricoClient({
     if (!(await confirmar({ titulo: "¿Eliminar este dispositivo?", accion: "Eliminar", peligro: true }))) return;
     try {
       const res = await fetch(`/api/biometrico/dispositivos/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(await motivo(res, "No se pudo eliminar."));
       router.refresh();
-    } catch {
-      avisar.error("No se pudo eliminar. Intente nuevamente.");
+    } catch (e) {
+      avisar.error(e instanceof Error && e.message ? e.message : "No se pudo conectar con el servidor. Intente nuevamente.");
     }
   }
 
@@ -271,12 +283,13 @@ export default function BiometricoClient({
       <>
       {/* Aviso: falta conectar con el equipo */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        <p className="mb-1 font-medium">Falta conectar con el equipo</p>
+        <p className="mb-1 font-medium">Hikvision ya se conecta; ZKTeco todavía no</p>
         <p>
-          Todo lo demás ya funciona: el registro de las marcas sin duplicarlas, las marcas con PIN
-          sin asignar, el reparto de la jornada y el paso a Asistencia. Lo que falta es la parte que
-          habla con cada marca de reloj (Hikvision y ZKTeco), y para escribirla hace falta el modelo
-          exacto del equipo. Hasta entonces, &laquo;Sincronizar&raquo; responde diciendo qué falta.
+          Con un reloj Hikvision, pulse &laquo;Probar conexión&raquo;: dice si el equipo contesta, si acepta el
+          usuario y la contraseña y si entrega el historial de marcas. Después, &laquo;Sincronizar&raquo; trae las
+          marcas: la primera vez, las del último mes. Una contraseña equivocada no se reintenta, porque
+          el reloj bloquea la conexión tras varios intentos fallidos. Para ZKTeco falta la parte que habla
+          con el equipo; hasta entonces responde diciendo qué falta.
         </p>
       </div>
 
@@ -378,7 +391,7 @@ export default function BiometricoClient({
             ["1", "Conecte el reloj a la misma red local que el servidor donde corre el sistema."],
             ["2", "Anote la IP del equipo: en ZKTeco, Menú, Comunicación, Ethernet; en Hikvision, Red, TCP/IP."],
             ["3", "Agregue el dispositivo aquí eligiendo su marca. Hikvision pide además usuario y contraseña del equipo."],
-            ["4", 'Presione "Sincronizar" para traer las marcaciones.'],
+            ["4", "Presione «Probar conexión»: si el reloj contesta y acepta el usuario, «Sincronizar» trae las marcaciones (la primera vez, las del último mes)."],
             ["5", "Los PIN que el reloj reporte y no estén asignados quedan en cuarentena: asígnelos a su empleado y las marcas anteriores se procesan solas."],
             ["6", "Para que sea automático, pida a quien administra el servidor que programe una llamada periódica a POST /api/cron/biometrico con el encabezado x-cron-secret."],
           ].map(([n, text]) => (
@@ -395,8 +408,8 @@ export default function BiometricoClient({
       {/* Modal crear/editar */}
       {modal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="panel shadow-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="font-semibold text-gray-900 text-lg">
+          <div className="panel shadow-2xl p-6 w-full max-w-md space-y-4" role="dialog" aria-modal="true" aria-labelledby="dispositivo-titulo">
+            <h3 id="dispositivo-titulo" className="font-semibold text-gray-900 text-lg">
               {modal === "crear" ? "Agregar dispositivo" : "Editar dispositivo"}
             </h3>
 

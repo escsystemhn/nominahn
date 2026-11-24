@@ -18,7 +18,7 @@ import type { Content, TDocumentDefinitions } from "pdfmake/interfaces";
 import { pdfmakeListo } from "@/lib/reportes/salida";
 import { PRODUCTO } from "@/lib/marca";
 import type { LogoDocumento } from "@/lib/organizacion/logo-bd";
-import { avisoDeEstado, filasDelTrabajador, lineasDeMembrete, PIE_COMPROBANTE, seFirma, type DatosBoleta } from "./comprobante";
+import { avisoDeEstado, cuadriculaDelTrabajador, lineasDeMembrete, PIE_COMPROBANTE, seFirma, type DatosBoleta } from "./comprobante";
 
 const TINTA = "#0D2B38";
 const TEXTO = "#1B2A31";
@@ -37,6 +37,12 @@ const ALTO_COPIA = MEDIA_HOJA - 2 * MARGEN_Y + 6;
 const ANCHO_DERECHA = 160;
 const SEPARACION = 20;
 const ANCHO_LISTA = (ANCHO_UTIL - SEPARACION) / 2;
+/** Las cuatro columnas de datos: código y días, identidad y sueldo, y lo que queda para puesto y departamento. */
+const ANCHO_DATOS = ANCHO_UTIL - ANCHO_DERECHA - SEPARACION; // 360
+const ANCHOS_DATOS: readonly number[] = Object.freeze([60, 80, (ANCHO_DATOS - 140) / 2, (ANCHO_DATOS - 140) / 2]);
+const MARGEN_DATO = 6;
+/** Renglones que ocupa un valor de 8 pt en su columna (Helvetica: ~4.4 pt por carácter, por arriba). */
+const renglones = (texto: string, ancho: number) => Math.max(1, Math.ceil((texto.length * 4.4) / (ancho - MARGEN_DATO)));
 const ANCHO_FECHA = 130;
 const LOGO_MAX: [number, number] = [110, 38];
 const GROSOR_FILETE_SUAVE = 0.4;
@@ -79,16 +85,10 @@ function membrete(d: DatosBoleta, logo: LogoDocumento | null | undefined, copia:
 function trabajadorYNeto(d: DatosBoleta): Content {
   const celda = ([etiqueta, valor]: [string, string]) => ({
     stack: [{ text: etiqueta, fontSize: 6.5, color: TENUE }, { text: valor, fontSize: 8, color: TEXTO, margin: [0, 1, 0, 0] }],
-    margin: [0, 3, 6, 0],
+    margin: [0, 3, MARGEN_DATO, 0],
   });
-  // Los datos de dos en dos, como en pantalla, pero en tres columnas: ahorra una fila.
-  const datos = filasDelTrabajador(d).flat();
-  const filas: Content[][] = [];
-  for (let i = 0; i < datos.length; i += 3) {
-    const fila = datos.slice(i, i + 3).map(celda) as Content[];
-    while (fila.length < 3) fila.push({ text: "" });
-    filas.push(fila);
-  }
+  // En cuatro columnas, cada dato en su lugar fijo (ver `cuadriculaDelTrabajador`).
+  const filas: Content[][] = cuadriculaDelTrabajador(d).map((fila) => fila.map((x) => (x ? celda(x) : { text: "" })) as Content[]);
 
   return cuadro({
     columns: [
@@ -96,7 +96,8 @@ function trabajadorYNeto(d: DatosBoleta): Content {
         width: "*",
         stack: [
           { text: d.nombreEmpleado, fontSize: 10.5, bold: true, color: TINTA },
-          filas.length ? { table: { widths: ["*", "*", "*"], body: filas }, layout: "noBorders" } : { text: "" },
+          // Una copia: pdfmake reescribe en su lugar el arreglo de anchos que recibe.
+          filas.length ? { table: { widths: [...ANCHOS_DATOS], body: filas }, layout: "noBorders" } : { text: "" },
         ],
       },
       {
@@ -176,8 +177,12 @@ export function altoEstimadoCopia(d: DatosBoleta, conLogo: boolean): number {
   const izquierda = lh(10.5) + lineasMembrete * (lh(7.5) + 1.5);
   const derecha = lh(6.5) + 2 + lh(10.5) + 3 * (lh(7.5) + 1.5);
   const membrete = Math.max(izquierda, derecha, conLogo ? LOGO_MAX[1] : 0);
-  const datos = Math.ceil(filasDelTrabajador(d).flat().length / 3);
-  const trabajador = Math.max(lh(10.5) + datos * (3 + lh(6.5) + 1 + lh(8)), lh(7.5) + 1 + lh(16) + 3) + 13;
+  // Cada fila mide lo que su valor más largo: un puesto largo se parte en dos renglones.
+  const datos = cuadriculaDelTrabajador(d).reduce((suma, fila) => {
+    const alto = Math.max(...fila.map((x, i) => (x ? renglones(x[1], ANCHOS_DATOS[i]) : 1)));
+    return suma + 3 + lh(6.5) + 1 + alto * lh(8);
+  }, 0);
+  const trabajador = Math.max(lh(10.5) + datos, lh(7.5) + 1 + lh(16) + 3) + 13;
   const listas = lh(8) + 2.5 + filas * (lh(fuente) + 2 * relleno + GROSOR_FILETE_SUAVE) + 3 + lh(8) + 2;
   const aviso = avisoDeEstado(d.estado) ? lh(8) + 6 + 8 : 0;
   const letras = d.netoEnLetras ? lh(7.5) * (d.netoEnLetras.length > 120 ? 2 : 1) + 6 : 0;

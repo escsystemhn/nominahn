@@ -222,7 +222,7 @@ export default async function PlanillasPage({
     ].filter(Boolean).join(" / ") || null
     : null;
   // Lo que cada cuenta puede hacer por lote (la ruta de cada planilla lo vuelve a comprobar).
-  const permisosLote = (["planillas.calcular", "planillas.aprobar", "planillas.pagar"] as const).filter((x) => puede(usuario, x));
+  const permisosLote = (["planillas.calcular", "planillas.aprobar", "planillas.pagar", "planillas.boletas"] as const).filter((x) => puede(usuario, x));
 
   // Enlaces que conservan filtros y orden.
   const consulta = (cambios: Record<string, string | undefined>) => {

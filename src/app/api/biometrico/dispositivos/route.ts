@@ -3,7 +3,7 @@ import { alcanzaDispositivo, filtroDispositivos } from "@/lib/biometrico/alcance
 import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { z } from "zod";
-import { parsearBody, zId } from "@/lib/http/validar";
+import { parsearBody, zIdOpcional } from "@/lib/http/validar";
 import { cifrar, cifradoDisponible } from "@/lib/seguridad/cifrado";
 
 const zPuerto = z.coerce.number().int().min(1).max(65535);
@@ -20,7 +20,8 @@ const schema = z.object({
   password: z.string().max(200).optional().nullable(),
   /// Minutos respecto a UTC. Honduras es −360 y no cambia con la estación.
   offsetMinutos: z.coerce.number().int().min(-840).max(840).optional(),
-  sucursalId: zId.optional().nullable(),
+  /// «Todos los grupos» llega como «»: igual que no mandarlo (antes, un 400 que la pantalla callaba).
+  sucursalId: zIdOpcional,
 });
 
 /**

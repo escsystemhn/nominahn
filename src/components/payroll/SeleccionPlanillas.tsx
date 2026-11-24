@@ -4,7 +4,7 @@
  * Lo marcado en la lista de Planillas por período y lo que se hace con ello.
  * Fase 1 (2026-11-24): imprimir las planillas o sus comprobantes en un solo PDF.
  * Fase 2 (2026-11-24): recalcular, confirmar, aprobar y marcar pagadas varias a la vez, y
- * un solo archivo del banco. La barra ofrece sólo lo que tiene algo que hacer con lo
+ * un solo archivo del banco. Los comprobantes, por correo o impresos (`ComprobantesLote`). La barra ofrece sólo lo que tiene algo que hacer con lo
  * marcado y lo que la cuenta puede hacer, con cuántas entran.
  *
  * Las casillas y los botones los dibuja el servidor (`PlanillasPorPeriodo`):
@@ -13,17 +13,17 @@
  * escuchan.
  */
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/ModalForm";
 import ArchivoBanco from "@/components/payroll/ArchivoBanco";
+import ComprobantesLote from "@/components/payroll/ComprobantesLote";
 import { ListaProceso, PieProceso, VentanaLote, resumenProceso, useProcesoLote, type Paso, type Resultado } from "@/components/payroll/ProcesoLote";
 import { ACCIONES_LOTE, accionesDisponibles, repartirLote, type AccionLote } from "@/lib/payroll/lote-planillas";
 import type { EstadoLista } from "@/lib/payroll/planillas-por-periodo";
 import { formatCurrency } from "@/lib/utils";
 
 type Lote = { tipo: "imprimir" | "comprobantes"; ids: string[]; nombre: string };
-interface Conteo { empleados: number; sinCorreo: number; sinAprobar: number; planillas: number }
 interface Marcada { id: string; neto: number; estado: EstadoLista; nombre: string; periodo: string }
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
@@ -66,60 +66,6 @@ function DialogoImprimir({ lote, orden, dir, onCerrar }: { lote: Lote; orden: st
         </select>
       </label>
       <p className="text-xs text-gray-500">Las planillas en borrador salen marcadas así, para que nadie las tome por definitivas.</p>
-    </Modal>
-  );
-}
-
-function DialogoComprobantes({ lote, onCerrar }: { lote: Lote; onCerrar: () => void }) {
-  const [conteo, setConteo] = useState<Conteo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [soloSinCorreo, setSoloSinCorreo] = useState(true);
-  useEffect(() => {
-    let vivo = true;
-    void (async () => {
-      try {
-        const r = await fetch(`/api/planillas/comprobantes?${new URLSearchParams({ ids: lote.ids.join(","), contar: "1" })}`, { cache: "no-store" });
-        const d = await r.json().catch(() => ({}));
-        if (!vivo) return;
-        if (!r.ok) throw new Error(d.error ?? "No se pudieron contar los comprobantes.");
-        setConteo(d as Conteo);
-        setSoloSinCorreo((d as Conteo).sinCorreo > 0);
-      } catch (e) {
-        if (vivo) setError(e instanceof Error ? e.message : "No se pudieron contar los comprobantes.");
-      }
-    })();
-    return () => { vivo = false; };
-  }, [lote.ids]);
-  function aceptar() {
-    const q = new URLSearchParams({ ids: lote.ids.join(","), modo: "ver", ...(soloSinCorreo ? { solo: "sin-correo" } : {}) });
-    abrir(`/api/planillas/comprobantes?${q.toString()}`);
-    onCerrar();
-  }
-  const cuantos = conteo ? (soloSinCorreo ? conteo.sinCorreo : conteo.empleados) : 0;
-  return (
-    <Modal titulo={`Comprobantes de ${lote.nombre}`} error={error} cargando={false} puedeGuardar={!!conteo && cuantos > 0}
-      textoGuardar={conteo ? `Abrir el PDF (${plural(cuantos, "comprobante", "comprobantes")})` : "Abrir el PDF"} onCerrar={onCerrar} onGuardar={aceptar}>
-      <p className="text-sm text-gray-600">Un solo PDF: cada empleado en su hoja, con las dos copias de media carta (empleado y empresa), por sucursal y departamento.</p>
-      {!conteo && !error && <p className="text-sm text-gray-500">Contando…</p>}
-      {conteo && (
-        <fieldset className="space-y-2" data-opciones-comprobantes>
-          <legend className="sr-only">Cuáles</legend>
-          <label className="flex items-start gap-2.5 rounded-lg border border-gray-200 p-3 text-sm">
-            <input type="radio" name="comprobantes-cuales" className="mt-0.5" checked={soloSinCorreo} disabled={conteo.sinCorreo === 0} onChange={() => setSoloSinCorreo(true)} />
-            <span><span className="font-medium text-gray-900">Sólo quienes no tienen correo ({conteo.sinCorreo})</span>
-              <span className="block text-xs text-gray-500">Son los que hay que imprimir: a los demás se les puede enviar desde cada planilla.</span></span>
-          </label>
-          <label className="flex items-start gap-2.5 rounded-lg border border-gray-200 p-3 text-sm">
-            <input type="radio" name="comprobantes-cuales" className="mt-0.5" checked={!soloSinCorreo} onChange={() => setSoloSinCorreo(false)} />
-            <span><span className="font-medium text-gray-900">Todos ({conteo.empleados})</span></span>
-          </label>
-        </fieldset>
-      )}
-      {conteo && conteo.sinAprobar > 0 && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {plural(conteo.sinAprobar, "comprobante es de una planilla sin aprobar", "comprobantes son de planillas sin aprobar")}: salen con el aviso en rojo y sin línea de firma.
-        </p>
-      )}
     </Modal>
   );
 }
@@ -308,7 +254,10 @@ export default function SeleccionPlanillas({ children, puedeImprimir, permisos, 
         </div>
       )}
       {lote?.tipo === "imprimir" && <DialogoImprimir lote={lote} orden={orden} dir={dir} onCerrar={() => setLote(null)} />}
-      {lote?.tipo === "comprobantes" && <DialogoComprobantes lote={lote} onCerrar={() => setLote(null)} />}
+      {lote?.tipo === "comprobantes" && (
+        <ComprobantesLote ids={lote.ids} nombre={lote.nombre} puedeEnviar={permisos.includes("planillas.boletas")}
+          onCerrar={(cambio) => { setLote(null); if (cambio) router.refresh(); }} />
+      )}
       {accion && <DialogoAccion accion={accion} marcadas={lista} onCerrar={alTerminar} />}
       {banco && <DialogoBanco ids={banco} onCerrar={() => setBanco(null)} />}
     </div>
