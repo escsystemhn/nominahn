@@ -93,6 +93,8 @@ interface Props {
   navegacion: { anterior: DestinoFlecha | null; siguiente: DestinoFlecha | null; posicion: number; total: number } | null;
   /** Marca de la foto actual (updatedAt en ms); null = sin foto. */
   fotoVersion?: number | null;
+  /** Con `empleados.crear`: «Guardar y registrar otro» lleva al alta tras guardar (pedido de Edbin, 2026-11-18). */
+  puedeCrear?: boolean;
 }
 
 const TIPOS_CONTRATO: Record<FormData["tipoContrato"], string> = {
@@ -119,8 +121,8 @@ function mensajeDeError(body: unknown, status: number): string {
 /**
  * Edición del expediente.
  *
- * A diferencia del alta, aquí sólo se envían los campos que el usuario TOCÓ
- * (`dirtyFields`): `PUT /api/empleados/[id]` aplica una actualización parcial
+ * A diferencia del alta, aquí sólo se envían los campos que CAMBIARON respecto de lo
+ * que se cargó (`cambio` en `onSubmit`): `PUT /api/empleados/[id]` aplica una actualización parcial
  * sobre un allowlist, y mandar el formulario entero reescribiría columnas que
  * nadie modificó — incluidas las que otro usuario pudo cambiar mientras esta
  * pantalla estaba abierta.
@@ -139,6 +141,7 @@ export default function EditarEmpleadoForm({
   niveles = etiquetasNiveles(false),
   navegacion,
   fotoVersion = null,
+  puedeCrear = false,
 }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -195,21 +198,33 @@ export default function EditarEmpleadoForm({
   };
   const salarioCambio = Number(salarioBase) !== Number(valoresIniciales.salarioBase);
 
-  async function onSubmit(data: FormData) {
+  async function onSubmit(data: FormData, evento?: React.BaseSyntheticEvent) {
+    // Qué botón se pulsó: «Guardar y registrar otro» abre el alta en vez de volver a la ficha.
+    const registrarOtro = !!(evento?.nativeEvent as SubmitEvent | undefined)?.submitter?.hasAttribute("data-registrar-otro");
+    const destino = registrarOtro ? "/empleados/nuevo" : volverA;
+    // Qué cambió: cada valor contra el que se cargó. El registro de campos «tocados» del
+    // formulario no siempre se enteraba: el departamento cambiado a un empleado sin puesto
+    // no viajaba y la ficha volvía como guardada, sin el cambio (Edbin, 2026-11-23).
+    const cambio = (clave: keyof FormData) => {
+      const a = data[clave];
+      const b = valoresIniciales[clave];
+      return typeof a === "boolean" || typeof b === "boolean" ? a !== b : String(a ?? "") !== String(b ?? "");
+    };
+
     // Sólo al dar de baja: un registro antiguo sin fecha debe poder seguir
     // corrigiéndose. El API comprueba lo mismo.
-    if (data.estado === "INACTIVO" && !data.fechaSalida && (dirtyFields.estado || dirtyFields.fechaSalida)) {
+    if (data.estado === "INACTIVO" && !data.fechaSalida && (cambio("estado") || cambio("fechaSalida"))) {
       setError("fechaSalida", { message: "Indique la fecha de salida: sin ella no se le pagarían los días trabajados del último período." });
       setTab("laboral");
       setTimeout(() => setFocus("fechaSalida"), 0);
       return;
     }
 
-    // Sólo los campos tocados. El API responde 400 "Sin cambios" con un body
+    // Sólo los campos que cambiaron. El API responde 400 "Sin cambios" con un body
     // vacío, así que ese caso se resuelve aquí sin ir al servidor.
     const cambios: Record<string, unknown> = {};
-    for (const clave of Object.keys(dirtyFields) as Array<keyof FormData>) {
-      if (clave === "motivo") continue; // no es columna; se añade abajo
+    for (const clave of Object.keys(data) as Array<keyof FormData>) {
+      if (clave === "motivo" || !cambio(clave)) continue; // el motivo no es columna; se añade abajo
       const valor = data[clave];
       const vacio = valor === "" || valor === undefined;
       if (vacio && CAMPOS_ANULABLES.includes(clave)) {
@@ -222,7 +237,7 @@ export default function EditarEmpleadoForm({
     }
 
     if (Object.keys(cambios).length === 0) {
-      router.push(volverA);
+      router.push(destino);
       return;
     }
 
@@ -245,8 +260,8 @@ export default function EditarEmpleadoForm({
         setErrorApi(mensajeDeError(body, res.status));
         return;
       }
-      avisar.exito("Cambios guardados.");
-      router.push(volverA);
+      avisar.exito(registrarOtro ? "Cambios guardados. Ya puede registrar al nuevo empleado." : "Cambios guardados.");
+      router.push(destino);
       router.refresh();
     } catch {
       setErrorApi("No se pudo conectar con el servidor. Intente nuevamente.");
@@ -568,6 +583,16 @@ export default function EditarEmpleadoForm({
               >
                 Cancelar
               </Link>
+              {puedeCrear && (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  data-registrar-otro
+                  className="px-5 py-2 border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Guardar y registrar otro
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={loading}

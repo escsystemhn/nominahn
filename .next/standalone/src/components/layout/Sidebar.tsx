@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { tieneAlguno, type Permiso } from "@/lib/auth/permisos";
 import { DESARROLLADOR, PRODUCTO, SITIO_DESARROLLADOR } from "@/lib/marca";
 import { VERSION } from "@/lib/inicio-sesion";
+import TipoDispositivo from "./TipoDispositivo";
 
 interface NavItem {
   href: string;
@@ -360,7 +361,7 @@ export default function Sidebar({
   /** Sin empleado vinculado, Mi espacio no tiene nada que mostrar. */
   conEmpleado: boolean;
   jerarquiaNomina: boolean;
-  /** En pantalla angosta el menú se desliza; desde 1024 px siempre está. */
+  /** Hasta las tabletas el menú se desliza; desde 1280 px siempre está. */
   abierto: boolean;
   refCerrar: React.RefObject<HTMLButtonElement | null>;
   onCerrar: () => void;
@@ -418,12 +419,12 @@ export default function Sidebar({
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex h-dvh w-64 shrink-0 flex-col bg-blue-900 text-white shadow-xl lg:static lg:z-auto lg:h-full lg:w-60 lg:translate-x-0 lg:shadow-none",
+        "fixed inset-y-0 left-0 z-40 flex h-dvh w-64 shrink-0 flex-col bg-blue-900 text-white shadow-xl xl:static xl:z-auto xl:h-full xl:w-60 xl:translate-x-0 xl:shadow-none",
         // Cerrado debe quedar fuera del recorrido con el teclado, no sólo fuera de la vista.
         // Al abrir, visibility cambia de inmediato para poder recibir el foco; al cerrar, espera a que termine de salir.
         abierto
           ? "translate-x-0 [transition:transform_200ms]"
-          : "-translate-x-full max-lg:invisible [transition:transform_200ms,visibility_0s_200ms]"
+          : "-translate-x-full max-xl:invisible [transition:transform_200ms,visibility_0s_200ms]"
       )}
     >
       {/* Marca: el símbolo va sobre blanco porque sus azules no se leen sobre la tinta. */}
@@ -442,7 +443,7 @@ export default function Sidebar({
           type="button"
           onClick={onCerrar}
           aria-label="Cerrar menú"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white xl:hidden"
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeWidth={1.75} d="M6 6l12 12M18 6L6 18" />
@@ -468,7 +469,7 @@ export default function Sidebar({
                   aria-expanded={abierta}
                   aria-controls={panelId}
                   className={cn(
-                    "flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors lg:h-9",
+                    "flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors xl:h-9",
                     conActivo && !abierta
                       ? "bg-white/10 text-white"
                       : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -491,7 +492,7 @@ export default function Sidebar({
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "relative flex h-11 items-center rounded-md px-3 text-sm transition-colors lg:h-8",
+                          "relative flex h-11 items-center rounded-md px-3 text-sm transition-colors xl:h-8",
                           active
                             ? "bg-white/10 font-medium text-white before:absolute before:-left-[9px] before:top-1.5 before:h-5 before:w-0.5 before:rounded-full before:bg-blue-500"
                             : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -513,7 +514,7 @@ export default function Sidebar({
               href={entry.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors lg:h-9",
+                "relative flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors xl:h-9",
                 active
                   ? "bg-white/10 text-white before:absolute before:-left-3 before:top-2 before:h-5 before:w-0.5 before:rounded-full before:bg-blue-500"
                   : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -526,7 +527,7 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* Pie: producto, versión y quién lo desarrolla. */}
+      {/* Pie: producto, versión, quién lo desarrolla y en qué equipo se está usando. */}
       <div className="border-t border-white/10 px-5 py-4 text-xs leading-5">
         <p className="font-medium text-white/80">{PRODUCTO} {VERSION}</p>
         <a
@@ -537,6 +538,7 @@ export default function Sidebar({
         >
           Desarrollado por {DESARROLLADOR}
         </a>
+        <TipoDispositivo />
       </div>
     </aside>
   );

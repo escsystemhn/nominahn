@@ -785,6 +785,12 @@
       "namedRegex": "^/api/configuracion/estructura(?:/)?$"
     },
     {
+      "page": "/api/configuracion/limpiar-pruebas",
+      "regex": "^/api/configuracion/limpiar\\-pruebas(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/limpiar\\-pruebas(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/parametros",
       "regex": "^/api/configuracion/parametros(?:/)?$",
       "routeKeys": {},
@@ -825,6 +831,12 @@
       "regex": "^/api/configuracion/parametros/vecinal(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/configuracion/parametros/vecinal(?:/)?$"
+    },
+    {
+      "page": "/api/configuracion/parametros/vecinal-anual",
+      "regex": "^/api/configuracion/parametros/vecinal\\-anual(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/parametros/vecinal\\-anual(?:/)?$"
     },
     {
       "page": "/api/configuracion/puestos",
@@ -947,6 +959,12 @@
       "namedRegex": "^/api/deducciones(?:/)?$"
     },
     {
+      "page": "/api/deducciones/columnas",
+      "regex": "^/api/deducciones/columnas(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/deducciones/columnas(?:/)?$"
+    },
+    {
       "page": "/api/deducciones/empleados",
       "regex": "^/api/deducciones/empleados(?:/)?$",
       "routeKeys": {},
@@ -957,6 +975,12 @@
       "regex": "^/api/deducciones/masiva(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/deducciones/masiva(?:/)?$"
+    },
+    {
+      "page": "/api/deducciones/orden",
+      "regex": "^/api/deducciones/orden(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/deducciones/orden(?:/)?$"
     },
     {
       "page": "/api/deducciones/tipos",
@@ -1037,10 +1061,22 @@
       "namedRegex": "^/api/exportar/deducciones(?:/)?$"
     },
     {
+      "page": "/api/exportar/deducciones/formato",
+      "regex": "^/api/exportar/deducciones/formato(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/exportar/deducciones/formato(?:/)?$"
+    },
+    {
       "page": "/api/exportar/empleados",
       "regex": "^/api/exportar/empleados(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/exportar/empleados(?:/)?$"
+    },
+    {
+      "page": "/api/exportar/estructura",
+      "regex": "^/api/exportar/estructura(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/exportar/estructura(?:/)?$"
     },
     {
       "page": "/api/exportar/horarios",
@@ -1385,6 +1421,12 @@
       "namedRegex": "^/api/usuarios(?:/)?$"
     },
     {
+      "page": "/api/usuarios/empleados-vinculables",
+      "regex": "^/api/usuarios/empleados\\-vinculables(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/usuarios/empleados\\-vinculables(?:/)?$"
+    },
+    {
       "page": "/asistencia",
       "regex": "^/asistencia(?:/)?$",
       "routeKeys": {},
@@ -1521,6 +1563,12 @@
       "regex": "^/login(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/manifest.webmanifest",
+      "regex": "^/manifest\\.webmanifest(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manifest\\.webmanifest(?:/)?$"
     },
     {
       "page": "/mi-cuenta",

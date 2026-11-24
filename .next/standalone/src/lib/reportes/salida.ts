@@ -16,10 +16,10 @@ import * as pdfmakeModulo from "pdfmake";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
 // La lectura de celdas y filas tiene una sola definición, compartida con el
 // visor del navegador (que no puede importar este archivo por exceljs y pdfmake).
-import { valorCelda, columnasNumericas, metaFila, contarDetalles, PAPELES, papelPorOmision, type HojaReporte, type Papel, type TipoCelda, type MetaFila } from "./salida-celdas";
+import { valorCelda, columnasNumericas, metaFila, contarDetalles, conCifras, PAPELES, papelPorOmision, type HojaReporte, type Papel, type TipoCelda, type MetaFila } from "./salida-celdas";
 import { PRODUCTO } from "@/lib/marca";
 
-export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles, PAPELES, leerPapel, papelPorOmision } from "./salida-celdas";
+export { valorCelda, esFilaTotal, columnasNumericas, metaFila, contarDetalles, conCifras, PAPELES, leerPapel, papelPorOmision } from "./salida-celdas";
 export type { HojaReporte, Papel, TipoCelda, TipoFila, MetaFila } from "./salida-celdas";
 
 /**
@@ -267,10 +267,18 @@ function tablaPdf(t: Pick<ReporteTabla, "cabeceras" | "datos" | "filas">, tamano
   const cuerpo: TableCell[][] = t.datos.map((fila, f) => {
     const m = metaFila(fila, t.filas?.[f]);
     const sangria = t.filas ? m.nivel * 10 : 0;
+    const fondoGrupo = FONDO_GRUPO_PDF[Math.min(m.nivel, FONDO_GRUPO_PDF.length - 1)];
+    if (m.tipo === "grupo" && conCifras(fila)) {
+      // Un encabezado con sus propios totales (la estructura organizacional) los lleva en sus columnas.
+      return t.cabeceras.map((_, i) => ({
+        text: String(fila[i] ?? ""), bold: true, color: TINTA, fontSize: tamano, fillColor: fondoGrupo,
+        alignment: numericas[i] ? "right" : "left", margin: [4 + (i === 0 ? sangria : 0), 0, 4, 0],
+      }));
+    }
     if (m.tipo === "grupo") {
       // El encabezado de un grupo ocupa la fila entera: un nombre largo no
       // queda apretado en la primera columna.
-      const fondo = FONDO_GRUPO_PDF[Math.min(m.nivel, FONDO_GRUPO_PDF.length - 1)];
+      const fondo = fondoGrupo;
       return [
         { text: String(fila[0] ?? ""), colSpan: t.cabeceras.length, bold: true, color: TINTA, fontSize: tamano, fillColor: fondo, margin: [4 + sangria, 0, 4, 0] },
         ...t.cabeceras.slice(1).map(() => ({})),

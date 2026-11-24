@@ -5,9 +5,11 @@
  */
 
 import { agruparPorEstructura, aplanarEstructura, etiquetasNiveles, type GrupoEstructura, type NivelesEstructura, type Ubicacion, type Unidad } from "@/lib/organizacion/estructura";
-import { aNumero, sumarPor, type Money } from "@/lib/payroll/money";
+import { aNumero, CERO, sumarPor, type Money } from "@/lib/payroll/money";
+import { columnasDeDeducciones } from "@/lib/payroll/deducciones-de-linea";
 import { formatCurrency } from "@/lib/utils";
 import type { HojaReporte, MetaFila } from "./salida-celdas";
+import { compararPorAntiguedad } from "@/lib/empleados/antiguedad";
 
 /**
  * Una línea de planilla ya resumida para el reporte. Lo devengado y lo deducido van
@@ -18,6 +20,13 @@ import type { HojaReporte, MetaFila } from "./salida-celdas";
 export interface LineaPlanilla {
   empleadoId: string;
   nombre: string;
+  /** Para ordenar por antigüedad (`compararPorAntiguedad`); sin ella, va al final del departamento. */
+  fechaIngreso?: Date | null;
+  /**
+   * Puesto en el orden que eligió quien imprime (el de la pantalla de la planilla). Sin él,
+   * por antigüedad.
+   */
+  posicion?: number;
   ubicacion: Ubicacion;
   /** Días efectivamente trabajados (sin ausencias ni incapacidad a cargo del IHSS). */
   dias: number;
@@ -29,19 +38,20 @@ export interface LineaPlanilla {
   devengado: Money;
   ihss: Money;
   rap: Money;
-  afp: Money;
   isr: Money;
   vecinal: Money;
-  /** Cooperativa, préstamos, adelantos y demás deducciones por empleado. */
-  otras: Money;
-  /** Descuento por ausencias y por los días de incapacidad que paga el IHSS. */
+  /** Las deducciones por empleado, por nombre de tipo, AFP incluida (`deduccionesPorNombre`). */
+  porTipo: Map<string, Money>;
+  /** Descuento por ausencias. */
   ausencias: Money;
+  /** Los días de incapacidad que paga el IHSS. */
+  incapacidad: Money;
   deducciones: Money;
   neto: Money;
   patronal: Money;
 }
 
-const SUMABLES = ["salario", "horasExtra", "otrosIngresos", "devengado", "ihss", "rap", "afp", "isr", "vecinal", "otras", "ausencias", "deducciones", "neto", "patronal"] as const;
+const SUMABLES = ["salario", "horasExtra", "otrosIngresos", "devengado", "ihss", "rap", "isr", "vecinal", "ausencias", "incapacidad", "deducciones", "neto", "patronal"] as const;
 
 /**
  * Una fila por persona y lugar: si el reporte abarca varias planillas (las dos
@@ -55,9 +65,10 @@ export function consolidarPorEmpleado(lineas: readonly LineaPlanilla[]): LineaPl
     const u = l.ubicacion;
     const clave = [l.empleadoId, u.sucursal.id, u.division?.id ?? "", u.departamento.id].join("|");
     const actual = porClave.get(clave);
-    if (!actual) { porClave.set(clave, { ...l }); continue; }
+    if (!actual) { porClave.set(clave, { ...l, porTipo: new Map(l.porTipo) }); continue; }
     actual.dias += l.dias;
     for (const k of SUMABLES) actual[k] = actual[k].plus(l[k]);
+    for (const [nombre, monto] of l.porTipo) actual.porTipo.set(nombre, (actual.porTipo.get(nombre) ?? CERO).plus(monto));
   }
   return [...porClave.values()];
 }
@@ -99,22 +110,41 @@ const agrupar = (lineas: LineaPlanilla[], niveles: NivelesEstructura) => agrupar
 const L = (m: Money) => formatCurrency(aNumero(m));
 const personas = (lineas: LineaPlanilla[]) => new Set(lineas.map((l) => l.empleadoId)).size;
 
+/** Una columna de montos de la planilla detallada. */
+export interface ColumnaDetalle {
+  titulo: string;
+  valor: (l: LineaPlanilla) => Money;
+}
+
 /**
- * Columnas de la planilla detallada. Sin período: cada fila es una persona (ver
+ * Columnas de la planilla detallada, según lo que traen las líneas: cada deducción por su
+ * tipo (como en la planilla de la empresa), el vecinal sólo si alguien lo paga, y ausencias
+ * e incapacidad sólo si alguien las tiene. Sin período: cada fila es una persona (ver
  * `consolidarPorEmpleado`) y el período va en el subtítulo del reporte.
  */
-export const CABECERAS_DETALLE = [
-  "Empleado", "Días trab.", "Salario", "Horas extra", "Otros ingresos", "Total devengado",
-  "IHSS", "RAP", "AFP", "ISR", "Imp. vecinal", "Otras ded.", "Ausencias e incap.", "Total deducciones", "Neto a pagar",
-];
+export function columnasDetalle(lineas: readonly LineaPlanilla[], ordenTipos: readonly string[] = []): ColumnaDetalle[] {
+  const hay = (f: (l: LineaPlanilla) => Money) => lineas.some((l) => !f(l).isZero());
+  return [
+    { titulo: "Salario", valor: (l) => l.salario },
+    { titulo: "Horas extra", valor: (l) => l.horasExtra },
+    { titulo: "Otros ingresos", valor: (l) => l.otrosIngresos },
+    { titulo: "Total devengado", valor: (l) => l.devengado },
+    { titulo: "IHSS", valor: (l) => l.ihss },
+    { titulo: "RAP", valor: (l) => l.rap },
+    { titulo: "ISR", valor: (l) => l.isr },
+    ...(hay((l) => l.vecinal) ? [{ titulo: "Imp. vecinal", valor: (l: LineaPlanilla) => l.vecinal }] : []),
+    ...columnasDeDeducciones(lineas.map((l) => l.porTipo), ordenTipos).map((nombre) => ({ titulo: nombre, valor: (l: LineaPlanilla) => l.porTipo.get(nombre) ?? CERO })),
+    ...(hay((l) => l.ausencias) ? [{ titulo: "Ausencias", valor: (l: LineaPlanilla) => l.ausencias }] : []),
+    ...(hay((l) => l.incapacidad) ? [{ titulo: "Incapacidad", valor: (l: LineaPlanilla) => l.incapacidad }] : []),
+    { titulo: "Total deducciones", valor: (l) => l.deducciones },
+    { titulo: "Neto a pagar", valor: (l) => l.neto },
+  ];
+}
 
-const montosDetalle = (ls: LineaPlanilla[]) => [
-  L(sumarPor(ls, (l) => l.salario)), L(sumarPor(ls, (l) => l.horasExtra)), L(sumarPor(ls, (l) => l.otrosIngresos)),
-  L(sumarPor(ls, (l) => l.devengado)),
-  L(sumarPor(ls, (l) => l.ihss)), L(sumarPor(ls, (l) => l.rap)), L(sumarPor(ls, (l) => l.afp)), L(sumarPor(ls, (l) => l.isr)),
-  L(sumarPor(ls, (l) => l.vecinal)), L(sumarPor(ls, (l) => l.otras)), L(sumarPor(ls, (l) => l.ausencias)),
-  L(sumarPor(ls, (l) => l.deducciones)), L(sumarPor(ls, (l) => l.neto)),
-];
+export const cabecerasDetalle = (cols: readonly ColumnaDetalle[]) => ["Empleado", "Días trab.", ...cols.map((c) => c.titulo)];
+
+const montosDetalle = (ls: LineaPlanilla[], cols: readonly ColumnaDetalle[]) => cols.map((c) => L(sumarPor(ls, c.valor)));
+const vacias = (cols: readonly ColumnaDetalle[]) => cols.map(() => "");
 
 /** «15», «14.5»: los días pueden traer medio día. */
 const dias = (n: number) => String(Math.round(n * 100) / 100);
@@ -123,31 +153,33 @@ const cuantos = (ls: LineaPlanilla[]) => {
   return `${n} ${n === 1 ? "empleado" : "empleados"}`;
 };
 
-const porNombre = (lineas: LineaPlanilla[]) => [...lineas].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+/** Dentro de cada departamento, en el orden de la pantalla de la planilla (`posicion`) o, si no lo trae, por antigüedad. */
+const porNombre = (lineas: LineaPlanilla[]) =>
+  [...lineas].sort((a, b) => (a.posicion ?? Number.MAX_SAFE_INTEGER) - (b.posicion ?? Number.MAX_SAFE_INTEGER) || compararPorAntiguedad(a, b));
 
 /**
  * Las filas de unos grupos, con encabezado y subtotal en cada uno, y su total al final.
  * Cuántos empleados va en el rótulo del subtotal: la columna de días queda sólo con
  * números, para que el Excel la pueda sumar.
  */
-function tablaDetalle(grupos: GrupoEstructura<LineaPlanilla>[], lineas: LineaPlanilla[], rotuloTotal: string): TablaAgrupada {
+function tablaDetalle(grupos: GrupoEstructura<LineaPlanilla>[], lineas: LineaPlanilla[], rotuloTotal: string, cols: readonly ColumnaDetalle[]): TablaAgrupada {
   const datos: string[][] = [];
   const filas: MetaFila[] = [];
   for (const e of aplanarEstructura(grupos)) {
     if (e.tipo === "grupo") {
-      datos.push([e.grupo.nombre, ...CABECERAS_DETALLE.slice(1).map(() => "")]);
+      datos.push([e.grupo.nombre, "", ...vacias(cols)]);
     } else if (e.tipo === "detalle") {
-      datos.push([e.item.nombre, dias(e.item.dias), ...montosDetalle([e.item])]);
+      datos.push([e.item.nombre, dias(e.item.dias), ...montosDetalle([e.item], cols)]);
     } else {
-      datos.push([`Subtotal ${e.grupo.nombre} (${cuantos(e.grupo.items)})`, "", ...montosDetalle(e.grupo.items)]);
+      datos.push([`Subtotal ${e.grupo.nombre} (${cuantos(e.grupo.items)})`, "", ...montosDetalle(e.grupo.items, cols)]);
     }
     filas.push({ tipo: e.tipo, nivel: e.nivel });
   }
   if (lineas.length) {
-    datos.push([`${rotuloTotal} (${cuantos(lineas)})`, "", ...montosDetalle(lineas)]);
+    datos.push([`${rotuloTotal} (${cuantos(lineas)})`, "", ...montosDetalle(lineas, cols)]);
     filas.push({ tipo: "total", nivel: 0 });
   }
-  return { cabeceras: CABECERAS_DETALLE, datos, filas };
+  return { cabeceras: cabecerasDetalle(cols), datos, filas };
 }
 
 const tieneEmpresas = (g: GrupoEstructura<LineaPlanilla>) => g.hijos.some((h) => h.nivel === "DIVISION");
@@ -158,14 +190,14 @@ const tieneEmpresas = (g: GrupoEstructura<LineaPlanilla>) => g.hijos.some((h) =>
  * el resumen de la última página. Un grupo sin empresas conserva su subtotal: ahí él
  * es la empresa.
  */
-function filasDetalle(grupos: GrupoEstructura<LineaPlanilla>[]): Omit<TablaAgrupada, "cabeceras"> {
+function filasDetalle(grupos: GrupoEstructura<LineaPlanilla>[], cols: readonly ColumnaDetalle[]): Omit<TablaAgrupada, "cabeceras"> {
   const datos: string[][] = [];
   const filas: MetaFila[] = [];
   for (const e of aplanarEstructura(grupos)) {
     if (e.tipo === "subtotal" && e.grupo.nivel === "SUCURSAL" && tieneEmpresas(e.grupo)) continue;
-    if (e.tipo === "grupo") datos.push([e.grupo.nombre, ...CABECERAS_DETALLE.slice(1).map(() => "")]);
-    else if (e.tipo === "detalle") datos.push([e.item.nombre, dias(e.item.dias), ...montosDetalle([e.item])]);
-    else datos.push([`Subtotal ${e.grupo.nombre} (${cuantos(e.grupo.items)})`, "", ...montosDetalle(e.grupo.items)]);
+    if (e.tipo === "grupo") datos.push([e.grupo.nombre, "", ...vacias(cols)]);
+    else if (e.tipo === "detalle") datos.push([e.item.nombre, dias(e.item.dias), ...montosDetalle([e.item], cols)]);
+    else datos.push([`Subtotal ${e.grupo.nombre} (${cuantos(e.grupo.items)})`, "", ...montosDetalle(e.grupo.items, cols)]);
     filas.push({ tipo: e.tipo, nivel: e.nivel });
   }
   return { datos, filas };
@@ -176,33 +208,34 @@ function filasDetalle(grupos: GrupoEstructura<LineaPlanilla>[]): Omit<TablaAgrup
  * con su total, el subtotal de su grupo y el total general. Un grupo sin empresas es
  * una sola fila.
  */
-export function tablaResumenPorEmpresa(lineas: LineaPlanilla[], niveles: NivelesEstructura = NIVELES_BASE): TablaAgrupada {
+export function tablaResumenPorEmpresa(lineas: LineaPlanilla[], niveles: NivelesEstructura = NIVELES_BASE, columnas?: readonly ColumnaDetalle[]): TablaAgrupada {
   const consolidadas = consolidarPorEmpleado(lineas);
+  const cols = columnas ?? columnasDetalle(consolidadas);
   const datos: string[][] = [];
   const filas: MetaFila[] = [];
   for (const g of agrupar(porNombre(consolidadas), niveles)) {
     // Cada fila del resumen es un total, no un registro: así no se cuentan como empleados.
     if (!tieneEmpresas(g)) {
-      datos.push([`${g.nombre} (${cuantos(g.items)})`, "", ...montosDetalle(g.items)]);
+      datos.push([`${g.nombre} (${cuantos(g.items)})`, "", ...montosDetalle(g.items, cols)]);
       filas.push({ tipo: "subtotal", nivel: 0 });
       continue;
     }
-    datos.push([g.nombre, ...CABECERAS_DETALLE.slice(1).map(() => "")]);
+    datos.push([g.nombre, "", ...vacias(cols)]);
     filas.push({ tipo: "grupo", nivel: 0 });
     for (const empresa of g.hijos) {
-      datos.push([`${empresa.nombre} (${cuantos(empresa.items)})`, "", ...montosDetalle(empresa.items)]);
+      datos.push([`${empresa.nombre} (${cuantos(empresa.items)})`, "", ...montosDetalle(empresa.items, cols)]);
       filas.push({ tipo: "subtotal", nivel: 1 });
     }
-    datos.push([`Subtotal ${g.nombre} (${cuantos(g.items)})`, "", ...montosDetalle(g.items)]);
+    datos.push([`Subtotal ${g.nombre} (${cuantos(g.items)})`, "", ...montosDetalle(g.items, cols)]);
     filas.push({ tipo: "subtotal", nivel: 0 });
   }
   if (consolidadas.length) {
-    datos.push([`TOTAL GENERAL (${cuantos(consolidadas)})`, "", ...montosDetalle(consolidadas)]);
+    datos.push([`TOTAL GENERAL (${cuantos(consolidadas)})`, "", ...montosDetalle(consolidadas, cols)]);
     filas.push({ tipo: "total", nivel: 0 });
   }
   // Las filas son grupos y empresas, no empleados: la primera columna lo dice.
   const primera = agrupar(consolidadas, niveles).some(tieneEmpresas) ? `${niveles.sucursalCorta} / ${niveles.division}` : niveles.sucursalCorta;
-  return { cabeceras: [primera, ...CABECERAS_DETALLE.slice(1)], datos, filas };
+  return { cabeceras: [primera, ...cabecerasDetalle(cols).slice(1)], datos, filas };
 }
 
 /** «2 empresas, 10 empleados»: lo que dice el resumen debajo del título, en vez de contar registros. */
@@ -220,24 +253,28 @@ function descripcionResumen(lineas: LineaPlanilla[], niveles: NivelesEstructura)
  * Para imprimir (PDF y Excel) se usa `hojasPlanillaDetallada`, que pone el resumen en
  * su propia página.
  */
-export function tablaPlanillaDetallada(lineas: LineaPlanilla[], niveles: NivelesEstructura = NIVELES_BASE): TablaAgrupada {
-  const detalle = filasDetalle(agrupar(porNombre(consolidarPorEmpleado(lineas)), niveles));
-  if (!lineas.length) return { cabeceras: CABECERAS_DETALLE, ...detalle };
-  const resumen = tablaResumenPorEmpresa(lineas, niveles);
+export function tablaPlanillaDetallada(lineas: LineaPlanilla[], niveles: NivelesEstructura = NIVELES_BASE, ordenTipos: readonly string[] = []): TablaAgrupada {
+  const consolidadas = consolidarPorEmpleado(lineas);
+  const cols = columnasDetalle(consolidadas, ordenTipos);
+  const detalle = filasDetalle(agrupar(porNombre(consolidadas), niveles), cols);
+  if (!lineas.length) return { cabeceras: cabecerasDetalle(cols), ...detalle };
+  const resumen = tablaResumenPorEmpresa(lineas, niveles, cols);
   return {
-    cabeceras: CABECERAS_DETALLE,
-    datos: [...detalle.datos, ["RESUMEN DE LA PLANILLA", ...CABECERAS_DETALLE.slice(1).map(() => "")], ...resumen.datos],
+    cabeceras: cabecerasDetalle(cols),
+    datos: [...detalle.datos, ["RESUMEN DE LA PLANILLA", "", ...vacias(cols)], ...resumen.datos],
     filas: [...detalle.filas, { tipo: "grupo", nivel: 0 }, ...resumen.filas],
   };
 }
 
 /** Para imprimir: el detalle hasta el total de cada empresa y, en la última página, el resumen. */
-export function hojasPlanillaDetallada(lineas: LineaPlanilla[], niveles: NivelesEstructura = NIVELES_BASE): HojaReporte[] {
+export function hojasPlanillaDetallada(lineas: LineaPlanilla[], niveles: NivelesEstructura = NIVELES_BASE, ordenTipos: readonly string[] = []): HojaReporte[] {
   if (!lineas.length) return [];
-  const detalle = filasDetalle(agrupar(porNombre(consolidarPorEmpleado(lineas)), niveles));
+  const consolidadas = consolidarPorEmpleado(lineas);
+  const cols = columnasDetalle(consolidadas, ordenTipos);
+  const detalle = filasDetalle(agrupar(porNombre(consolidadas), niveles), cols);
   return [
-    { nombre: "", pestana: "Detalle", cabeceras: CABECERAS_DETALLE, ...detalle },
-    { nombre: "Resumen de la planilla", pestana: "Resumen", descripcion: descripcionResumen(lineas, niveles), ...tablaResumenPorEmpresa(lineas, niveles) },
+    { nombre: "", pestana: "Detalle", cabeceras: cabecerasDetalle(cols), ...detalle },
+    { nombre: "Resumen de la planilla", pestana: "Resumen", descripcion: descripcionResumen(lineas, niveles), ...tablaResumenPorEmpresa(lineas, niveles, cols) },
   ];
 }
 
@@ -251,13 +288,17 @@ export function hojasPlanillaDetallada(lineas: LineaPlanilla[], niveles: Niveles
 export function hojasPorDivision(
   lineas: LineaPlanilla[],
   niveles: NivelesEstructura = NIVELES_BASE,
-  rtns: ReadonlyMap<string, string> = new Map()
+  rtns: ReadonlyMap<string, string> = new Map(),
+  ordenTipos: readonly string[] = []
 ): HojaReporte[] {
   const hojas: HojaReporte[] = [];
-  for (const sucursal of agrupar(porNombre(consolidarPorEmpleado(lineas)), niveles)) {
+  const consolidadas = consolidarPorEmpleado(lineas);
+  // Las mismas columnas en todas las hojas, para que se puedan comparar.
+  const cols = columnasDetalle(consolidadas, ordenTipos);
+  for (const sucursal of agrupar(porNombre(consolidadas), niveles)) {
     const conDivisiones = sucursal.hijos.some((h) => h.nivel === "DIVISION");
     if (!conDivisiones) {
-      hojas.push({ nombre: sucursal.nombre, pestana: sucursal.nombre, ...tablaDetalle(sucursal.hijos, sucursal.items, `TOTAL ${sucursal.nombre}`) });
+      hojas.push({ nombre: sucursal.nombre, pestana: sucursal.nombre, ...tablaDetalle(sucursal.hijos, sucursal.items, `TOTAL ${sucursal.nombre}`, cols) });
       continue;
     }
     for (const division of sucursal.hijos) {
@@ -265,13 +306,13 @@ export function hojasPorDivision(
       hojas.push({
         nombre: `${sucursal.nombre} / ${division.nombre}${rtn ? `, RTN ${rtn}` : ""}`,
         pestana: division.nombre,
-        ...tablaDetalle(division.hijos, division.items, `TOTAL ${division.nombre}`),
+        ...tablaDetalle(division.hijos, division.items, `TOTAL ${division.nombre}`, cols),
       });
     }
   }
   // El total general sólo en la última página: cada hoja cierra con el total de su empresa.
   if (hojas.length > 1) {
-    hojas.push({ nombre: "Resumen de toda la planilla", pestana: "Resumen", descripcion: descripcionResumen(lineas, niveles), ...tablaResumenPorEmpresa(lineas, niveles) });
+    hojas.push({ nombre: "Resumen de toda la planilla", pestana: "Resumen", descripcion: descripcionResumen(lineas, niveles), ...tablaResumenPorEmpresa(lineas, niveles, cols) });
   }
   return hojas;
 }

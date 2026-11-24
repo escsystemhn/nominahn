@@ -225,7 +225,14 @@ export default function MiEspacioClient({ nombre, empleadoId, fotoVersion = null
         title={empleadoId ? <span className="flex items-center gap-3"><FotoAvatar empleadoId={empleadoId} version={fotoVersion} nombre={nombre} tamano="md" />Mi espacio</span> : "Mi espacio"}
         description={`${nombre}${puesto ? `, ${puesto}` : ""}`}
       >
-        <div className="-mb-5 flex gap-1 overflow-x-auto">
+        {/* En el celular sólo cabían 3 de las 7 pestañas, sin pista de las demás. */}
+        <label className="block sm:hidden">
+          <span className="sr-only">Sección de Mi espacio</span>
+          <select className="input" value={tab} onChange={(e) => setTab(e.target.value as Tab)}>
+            {tabs.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
+        <div className="-mb-5 hidden gap-1 overflow-x-auto sm:flex">
           {tabs.map(([key, label]) => (
             <button
               key={key}

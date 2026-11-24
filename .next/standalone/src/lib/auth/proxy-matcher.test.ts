@@ -53,6 +53,10 @@ describe("matcher del proxy de autenticación", () => {
       "/logo-escsystem-icono.png",
       "/next.svg",
       "/favicon.ico",
+      // El manifiesto para instalar la aplicación: el teléfono lo pide sin sesión.
+      "/manifest.webmanifest",
+      "/icono-192.png",
+      "/icono-maskable-512.png",
     ]) {
       expect(pasaPorElMiddleware(ruta), ruta).toBe(false);
     }

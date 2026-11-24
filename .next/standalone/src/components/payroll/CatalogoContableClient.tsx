@@ -184,7 +184,7 @@ export default function CatalogoContableClient({ cuentas, puedeEditar: puedeEdit
           <td className="whitespace-nowrap" style={{ paddingLeft: `${16 + n.nivel * 20}px` }}>
             <div className="flex items-center gap-1.5">
               {tieneHijos ? (
-                <button type="button" onClick={() => alternar(n.codigo)} className="text-gray-500 hover:text-gray-700" aria-label={abierta ? "Contraer" : "Expandir"}>
+                <button type="button" data-toque onClick={() => alternar(n.codigo)} className="text-gray-500 hover:text-gray-700" aria-label={abierta ? "Contraer" : "Expandir"}>
                   <IconoFlecha abierta={abierta} />
                 </button>
               ) : (

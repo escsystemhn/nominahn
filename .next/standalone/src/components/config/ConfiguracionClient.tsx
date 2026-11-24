@@ -22,6 +22,7 @@ import EstructuraOrganizacional, { type DepartamentoEstructura, type DivisionEst
 import EmpresaConfig from "./EmpresaConfig";
 import SeguridadConfig from "./SeguridadConfig";
 import RespaldosConfig from "./RespaldosConfig";
+import LimpiarPruebasConfig from "./LimpiarPruebasConfig";
 import IconoSeccion from "./IconoSeccion";
 import { useMenuCompacto } from "./menu-compacto";
 
@@ -86,16 +87,18 @@ interface Props {
   minutosInactividad: number;
   /** `configuracion.respaldos`: un respaldo es la base entera. */
   puedeRespaldos: boolean;
+  /** Respaldos + calcular planillas con alcance total: borra planillas de prueba de cualquiera. */
+  puedeLimpiarPruebas?: boolean;
   /** `?seccion=` de la dirección; si no existe o no se puede ver, la primera permitida. */
   seccionInicial?: string;
 }
 
-type Seccion = "empresa" | "estructura" | "parametros" | "salarios" | "asistencia" | "correo" | "sap" | "banco" | "seguridad" | "respaldos" | "valores";
+type Seccion = "empresa" | "estructura" | "parametros" | "salarios" | "asistencia" | "correo" | "sap" | "banco" | "seguridad" | "respaldos" | "pruebas" | "valores";
 
 export default function ConfiguracionClient({
   empresa, sucursales, divisiones, departamentos, puestos, divisionesHabilitadas, jerarquiaHabilitada, salarioMinimo, configs,
   puedeVer, puedeEditar, puedeEditarEmpresa, puedeCorreo, puedeParametros, puedeSap, puedeBanco, puedeSeguridad, minutosInactividad, puedeRespaldos,
-  seccionInicial,
+  puedeLimpiarPruebas = false, seccionInicial,
 }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
@@ -121,6 +124,7 @@ export default function ConfiguracionClient({
       // Política de sesión de todas las cuentas: quien administra los usuarios.
       { key: "seguridad", label: "Seguridad", ve: puedeSeguridad },
       { key: "respaldos", label: "Respaldos", ve: puedeRespaldos },
+      { key: "pruebas", label: "Limpiar pruebas", ve: puedeLimpiarPruebas },
       { key: "valores", label: "Valores internos", ve: puedeVer },
     ] },
   ];
@@ -319,6 +323,7 @@ export default function ConfiguracionClient({
       {/* Sistema */}
       {tab === "seguridad" && puedeSeguridad && <SeguridadConfig minutosInactividad={minutosInactividad} />}
       {tab === "respaldos" && puedeRespaldos && <RespaldosConfig />}
+      {tab === "pruebas" && puedeLimpiarPruebas && <LimpiarPruebasConfig />}
 
       {tab === "valores" && (
         <div className="panel overflow-hidden">

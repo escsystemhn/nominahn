@@ -15,7 +15,7 @@ R.c("server/chunks/[root-of-the-server]__08i6a6jdippi0._.js")
 R.c("server/chunks/src_lib_payroll_0ijwips_2fo-6._.js")
 R.c("server/chunks/src_lib_0gbgogbc7aum1._.js")
 R.c("server/chunks/_0k4eq_opi1l9u._.js")
-R.c("server/chunks/_0i0znmcs-d6nk._.js")
+R.c("server/chunks/_00uz_ptafs46n._.js")
 R.c("server/chunks/_next-internal_server_app_api_planillas_[id]_email_route_actions_01tdj35p2-1zi.js")
 R.m(77220)
 module.exports=R.m(77220).exports

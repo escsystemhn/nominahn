@@ -63,7 +63,7 @@ export default function BuscadorGlobal({ permisos, conEmpleado, jerarquiaNomina 
       >
         <IconoBuscar className="h-5 w-5 shrink-0 md:h-4 md:w-4" />
         <span className="hidden flex-1 truncate text-left md:block">Buscar empleado, planilla o pantalla</span>
-        <kbd className="hidden rounded border border-gray-200 px-1.5 text-xs font-sans text-gray-500 lg:block">Ctrl K</kbd>
+        <kbd data-atajo className="hidden rounded border border-gray-200 px-1.5 text-xs font-sans text-gray-500 lg:block">Ctrl K</kbd>
       </button>
       {/* Se monta al abrir: cada búsqueda empieza limpia. */}
       {abierto && <Paleta permisos={permisos} conEmpleado={conEmpleado} jerarquiaNomina={jerarquiaNomina} onCerrar={cerrar} />}

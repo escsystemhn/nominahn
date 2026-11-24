@@ -1,6 +1,6 @@
 {
   "name": "nominahn",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "private": true,
   "engines": {
     "node": ">=22.12.0 <25"
@@ -91,6 +91,7 @@
     "eslint": "^9",
     "eslint-config-next": "^16.4.6",
     "prisma": "^7.9.1",
+    "qrcode-generator": "2.0.4",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",

@@ -1,0 +1,3 @@
+module.exports=[55744,e=>{"use strict";var i=e.i(62810);e.s(["z",0,i])},59244,e=>{"use strict";var i=e.i(9937);async function a(e){let a=await e.configuracionSistema.findUnique({where:{clave:i.j}});return(0,i.L)(a?.valor??null)}async function n(e,a){let n=JSON.stringify(a);await e.configuracionSistema.upsert({where:{clave:i.j},update:{valor:n},create:{clave:i.j,valor:n,descripcion:"Planilla quincenal: IHSS, RAP e impuesto vecinal divididos en las dos quincenas o completos en la segunda."}})}e.s(["T",0,n,"g",0,a])},13937,e=>{"use strict";let i=["ACTIVO","VACACIONES","PERMISO"];e.s(["e",0,i,"Q",0,function(e){return{OR:[{estado:{in:[...i]}},{estado:"INACTIVO",fechaSalida:{gte:e}}]}}])}];
+
+//# sourceMappingURL=_1tamed__gbm0h._.js.map

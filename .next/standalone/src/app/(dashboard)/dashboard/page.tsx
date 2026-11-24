@@ -279,7 +279,7 @@ export default async function DashboardPage() {
           <section>
             <div className="flex items-baseline justify-between">
               <h2 className="text-base font-semibold text-gray-900">Últimas planillas</h2>
-              <Link href="/planillas" className="text-sm text-blue-600 hover:underline">
+              <Link href="/planillas" data-toque className="text-sm text-blue-600 hover:underline">
                 Ver todas
               </Link>
             </div>

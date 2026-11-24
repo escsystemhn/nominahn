@@ -33,6 +33,7 @@ import {
   estadosDelPeriodo,
   notasMatriz,
 } from "@/lib/importacion/montos-periodo";
+import { CODIGO_ISR_FIJO } from "@/lib/payroll/deducciones";
 import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import {
   TIPOS_PLANILLA,
@@ -126,7 +127,7 @@ async function responderMatriz(
 
   const archivo = filas.length ? nombreArchivoPeriodo(periodo) : `plantilla_${nombreArchivoPeriodo(periodo)}`;
   if (salida.excel) {
-    const xlsx = await plantillaXlsx(columnas, filas, { notas: notasMatriz(periodo, baseRap), fijarColumnas: 2 });
+    const xlsx = await plantillaXlsx(columnas, filas, { notas: notasMatriz(periodo, baseRap, tipos.some((t) => t.codigo === CODIGO_ISR_FIJO)), fijarColumnas: 2 });
     return new NextResponse(new Uint8Array(xlsx), { headers: cabecerasXlsx(`${archivo}.xlsx`) });
   }
   return new NextResponse(generarCsv(etiquetas(columnas), filas, salida.delimitador), { headers: cabecerasDescarga(`${archivo}.csv`) });

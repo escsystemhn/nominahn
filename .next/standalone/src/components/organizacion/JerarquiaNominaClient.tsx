@@ -64,7 +64,12 @@ function personasDe(nodo: NodoNomina): FilaPersona[] {
 const clavesConHijos = (nodo: NodoNomina): string[] =>
   nodo.hijos.length ? [nodo.clave, ...nodo.hijos.flatMap(clavesConHijos)] : [];
 
-export default function JerarquiaNominaClient({ frecuencias, conSalarios }: { frecuencias: FrecuenciaNomina[]; conSalarios: boolean }) {
+export default function JerarquiaNominaClient({ frecuencias, conSalarios, exportar }: {
+  frecuencias: FrecuenciaNomina[];
+  conSalarios: boolean;
+  /** «Exportar estructura», si la persona puede exportar. */
+  exportar?: React.ReactNode;
+}) {
   const [tipo, setTipo] = useState(() => (frecuencias.find((f) => f.raiz.cantidad > 0) ?? frecuencias[0]).tipo);
   const actual = frecuencias.find((f) => f.tipo === tipo) ?? frecuencias[0];
   const claveRaiz = actual.raiz.clave;
@@ -149,6 +154,7 @@ export default function JerarquiaNominaClient({ frecuencias, conSalarios }: { fr
           <>
             <button type="button" className="btn btn-secondary" onClick={() => setAbiertos(new Set(frecuencias.flatMap((f) => clavesConHijos(f.raiz))))}>Desplegar todo</button>
             <button type="button" className="btn btn-secondary" onClick={() => setAbiertos(new Set(frecuencias.map((f) => f.raiz.clave)))}>Plegar todo</button>
+            {exportar}
           </>
         }
       >

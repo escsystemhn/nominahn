@@ -1,0 +1,3 @@
+module.exports=[21720,a=>{"use strict";var b=a.i(29099);a.s(["X",0,"ISR-FIJO","V",0,function(a){if(null!==a.saldo?(0,b.z)(a.saldo).lessThanOrEqualTo(0):null!==a.cuotasMeses&&a.cuotasPagadas>=a.cuotasMeses)return b.l;let c=(0,b.z)(a.monto);if(c.lessThanOrEqualTo(0))return b.l;if(null===a.saldo)return c;let d=(0,b.z)(a.saldo),e=null===a.cuotasMeses?1:Math.max(1,a.cuotasMeses-a.cuotasPagadas),f=0===a.cuotasPagadas?c.equals(d):c.greaterThan(d);return e>1&&f?(0,b.i)(d.div(e)):(0,b.$)(c,d)},"T",0,function(a){return null!==a.fechaFin&&(a.observacion??"").startsWith("Monto del período")}])}];
+
+//# sourceMappingURL=src_lib_payroll_deducciones_ts_1ut45huyzqxmt._.js.map

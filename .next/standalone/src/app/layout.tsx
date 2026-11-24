@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AvisosProvider } from "@/components/ui/Avisos";
@@ -32,8 +32,15 @@ export const metadata: Metadata = {
   applicationName: PRODUCTO,
   icons: {
     icon: "/gestion360-icono.png",
-    apple: "/gestion360-icono.png",
+    apple: "/icono-192.png",
   },
+  // En el iPhone, «Agregar a inicio» la abre a pantalla completa, con este nombre.
+  appleWebApp: { capable: true, title: "Gestión360", statusBarStyle: "default" },
+};
+
+/** La barra del sistema del color de la barra superior. */
+export const viewport: Viewport = {
+  themeColor: "#FFFFFF",
 };
 
 export default function RootLayout({

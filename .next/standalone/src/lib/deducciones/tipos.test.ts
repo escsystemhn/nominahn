@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  CATEGORIAS, esCategoriaAsignable, etiquetaCategoria, leerCategoria, noEsDeduccionPorEmpleado, normalizarCodigo,
-  partirCabecera, sugerirCategoria, sugerirCodigo,
+  CATEGORIAS, esCategoriaAsignable, esColumnaIsr, etiquetaCategoria, leerCategoria, noEsDeduccionPorEmpleado, nombreComparable,
+  normalizarCodigo, partirCabecera, sugerirCategoria, sugerirCodigo,
 } from "@/lib/deducciones/tipos";
 import { leerDatosTipo, leerMontoHabitual } from "@/lib/deducciones/tipos-bd";
 
@@ -78,5 +78,30 @@ describe("datos de un tipo nuevo", () => {
     expect(leerDatosTipo({ nombre: "", codigo: "X", tipo: "OTRO" })).toMatchObject({ ok: false, error: expect.stringMatching(/nombre/) });
     expect(leerDatosTipo({ nombre: "Coop", codigo: "", tipo: "OTRO" })).toMatchObject({ ok: false, error: expect.stringMatching(/código/) });
     expect(leerDatosTipo({ nombre: "Coop", codigo: "C1", tipo: "LEGAL" })).toMatchObject({ ok: false, error: expect.stringMatching(/categoría/) });
+  });
+});
+
+describe("las columnas de una planilla hecha a mano", () => {
+  it("las abreviaturas dan el mismo nombre que el tipo", () => {
+    expect(nombreComparable("Ptamo. BANCATLAN")).toBe(nombreComparable("Préstamo BANCATLAN"));
+    expect(nombreComparable("Ptamo. RAP")).toBe(nombreComparable("PTMO-RAP"));
+    expect(nombreComparable("Ret. Seg.Med.")).toBe(nombreComparable("Retención seguro médico"));
+    expect(nombreComparable("Coop. AUDI")).toBe(nombreComparable("Cooperativa AUDI"));
+  });
+  it("pero no confunde descuentos distintos", () => {
+    expect(nombreComparable("Ptamo. RAP")).not.toBe(nombreComparable("Préstamo BANCATLAN"));
+    expect(nombreComparable("Ret. Plan Pensiones")).not.toBe(nombreComparable("AFP Atlántida"));
+  });
+  it("reconoce la columna del ISR por cualquiera de sus nombres", () => {
+    for (const c of ["Retención en la Fuente", "ISR", "Ret. ISR", "Impuesto sobre la renta", "ISR del período (ISR-FIJO)", "Retención de ISR fija por período"]) {
+      expect(esColumnaIsr(c), c).toBe(true);
+    }
+    for (const c of ["Ptamo. RAP", "Ret. Seg.Med.", "Coop. AUDI", "CxC ISR pendiente", "Vales"]) expect(esColumnaIsr(c), c).toBe(false);
+  });
+  it("nunca propone crear el ISR como un descuento más, y «Ptamo. RAP» sí es un descuento", () => {
+    expect(noEsDeduccionPorEmpleado("Retención en la Fuente")).toMatch(/ISR/);
+    expect(noEsDeduccionPorEmpleado("Ptamo. RAP")).toBeNull();
+    expect(sugerirCategoria("Ptamo. RAP")).toBe("VOLUNTARIA");
+    expect(sugerirCategoria("Ptamo. empresa")).toBe("PRESTAMO");
   });
 });

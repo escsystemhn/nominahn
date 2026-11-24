@@ -117,8 +117,24 @@ export interface ResultadoDeducciones {
   /** Suma de las cuatro categorías no-AFP: lo que entra al motor como `otrosDeducciones`. */
   total: Money;
   amortizaciones: Amortizacion[];
-  /** Cuotas que no se cobraron completas por los topes de los Arts. 371 y 372. */
+  /** Cuotas que no se cobraron completas: no alcanzó lo disponible (el neto quedaría negativo). */
   recortadas: CuotaRecortada[];
+  /**
+   * Cada deducción que tocaba cobrar, también las que no llevan plazo ni saldo y las que
+   * el tope dejó en cero: el detalle por tipo de la línea y sus avisos.
+   */
+  cobradas: CobroDeDeduccion[];
+}
+
+/** Lo que pasó con una deducción en el período. */
+export interface CobroDeDeduccion {
+  id: string;
+  /** Lo cobrado (puede ser cero si no alcanzó). */
+  monto: Money;
+  /** Lo que tocaba cobrar: la cuota del período. */
+  cuota: Money;
+  /** Hasta dónde llegaban los topes de los Arts. 371 y 372: si es menor que `monto`, se avisa. */
+  tope: Money;
 }
 
 /**
@@ -156,7 +172,9 @@ export function cuotaDelPeriodo(d: Pick<DeduccionVigente, "monto" | "saldo" | "c
 }
 
 /**
- * Topes del período para las deducciones que no son de ley (Código del Trabajo):
+ * Topes del período para las deducciones que no son de ley (Código del Trabajo).
+ * Sólo `disponible` corta; los otros dos se calculan para AVISAR en el borrador: el
+ * cliente decidió (2026-11-21) cobrar lo que asigna aunque pase la cuarta parte.
  *
  *  · `disponible`: lo que queda del salario tras IHSS, RAP, ISR, vecinal, AFP,
  *    ausencias e incapacidad. Ninguna deducción lo pasa: el neto nunca es negativo.
@@ -194,20 +212,22 @@ export interface CuotaRecortada {
 
 /**
  * Reparte las deducciones vigentes por categoría y produce las instrucciones de
- * amortización correspondientes.
+ * amortización correspondientes. Cada cuota se cobra completa mientras el neto no
+ * quede negativo; lo que pase de los topes de ley queda en `cobradas[].tope` para avisar.
  *
  * Sólo amortizan las deducciones con plazo o saldo definido. Una recurrente
  * indefinida (cuota sindical, seguro voluntario) se cobra cada período y no
  * lleva contador.
  *
- * Con `topes`, cada cuota se cobra en orden de prioridad y hasta donde alcancen
- * (ver `TopesDeducciones`). Lo que no se cobra sigue en el saldo y se cobra en
- * los períodos siguientes. La AFP no lleva tope: es un aporte de pensión que ya
+ * Con `topes`, cada cuota se cobra en orden de prioridad hasta donde alcance lo
+ * disponible (ver `TopesDeducciones`). Lo que no se cobra de un préstamo sigue en el
+ * saldo y se cobra en los períodos siguientes. La AFP no lleva tope: es un aporte de pensión que ya
  * está restado de lo disponible.
  */
 export function aplicarDeducciones(deducciones: DeduccionVigente[], topes?: TopesDeducciones): ResultadoDeducciones {
   let prestamos = CERO, adelantos = CERO, cooperativa = CERO, afp = CERO, otros = CERO;
   const amortizaciones: Amortizacion[] = [];
+  const cobradas: CobroDeDeduccion[] = [];
   const recortadas: CuotaRecortada[] = [];
 
   let disponible = topes ? maximo(money(topes.disponible), 0) : null;
@@ -224,16 +244,21 @@ export function aplicarDeducciones(deducciones: DeduccionVigente[], topes?: Tope
     if (cuota.lessThanOrEqualTo(0)) continue;
 
     let aplicado = cuota;
+    let tope = cuota;
     if (disponible !== null && d.tipo !== "AFP") {
-      aplicado = minimo(aplicado, disponible);
-      if (d.tipo === "PENSION_ALIMENTICIA") aplicado = minimo(aplicado, alimentos!);
-      if (d.tipo === "EMBARGO" || d.tipo === "PRESTAMO") aplicado = minimo(aplicado, embargable!);
-      aplicado = maximo(redondear(aplicado), 0);
+      // Sólo se corta para que el neto no quede negativo (decisión del cliente, 2026-11-21).
+      aplicado = maximo(redondear(minimo(cuota, disponible)), 0);
+      // Los topes de ley no cortan: se calculan para avisar en el borrador.
+      tope = aplicado;
+      if (d.tipo === "PENSION_ALIMENTICIA") tope = minimo(tope, alimentos!);
+      if (d.tipo === "EMBARGO" || d.tipo === "PRESTAMO") tope = minimo(tope, embargable!);
+      tope = maximo(redondear(tope), 0);
       disponible = disponible.minus(aplicado);
-      if (d.tipo === "PENSION_ALIMENTICIA") alimentos = alimentos!.minus(aplicado);
-      if (d.tipo === "EMBARGO" || d.tipo === "PRESTAMO") embargable = embargable!.minus(aplicado);
+      if (d.tipo === "PENSION_ALIMENTICIA") alimentos = maximo(alimentos!.minus(aplicado), 0);
+      if (d.tipo === "EMBARGO" || d.tipo === "PRESTAMO") embargable = maximo(embargable!.minus(aplicado), 0);
       if (aplicado.lessThan(cuota)) recortadas.push({ id: d.id, tipo: d.tipo, cuota, aplicado });
     }
+    cobradas.push({ id: d.id, monto: aplicado, cuota, tope });
     if (aplicado.lessThanOrEqualTo(0)) continue;
 
     if (d.tipo === "PRESTAMO") prestamos = prestamos.plus(aplicado);
@@ -269,6 +294,7 @@ export function aplicarDeducciones(deducciones: DeduccionVigente[], topes?: Tope
     // porque se resta de la base del ISR antes de aplicar la tabla.
     total: sumar(prestamos, adelantos, cooperativa, otros),
     amortizaciones,
+    cobradas,
     recortadas,
   };
 }

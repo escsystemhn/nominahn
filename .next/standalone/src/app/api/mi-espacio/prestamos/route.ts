@@ -1,6 +1,6 @@
 /**
  * Préstamos y anticipos del empleado autenticado.
- *   GET  → lo que se le descuenta hoy, sus solicitudes y su límite de descuento
+ *   GET  → lo que se le descuenta hoy y sus solicitudes (el monto es libre: RRHH lo analiza)
  *   POST → nueva solicitud { tipo, monto, cuotas, motivo? }
  */
 
@@ -13,7 +13,7 @@ import { parsearBody, zMontoPositivo } from "@/lib/http/validar";
 import { cuotaDelPeriodo } from "@/lib/payroll/deducciones";
 import { aNumero } from "@/lib/payroll/money";
 import { evaluarSolicitud } from "@/lib/payroll/prestamos";
-import { limiteDeEmpleado, tipoDeduccionPara } from "@/lib/payroll/prestamos-bd";
+import { tipoDeduccionPara } from "@/lib/payroll/prestamos-bd";
 import { hoyHN } from "@/lib/utils";
 
 const schema = z.object({
@@ -29,9 +29,9 @@ export async function GET() {
   const g = await requerirSesion();
   if (!g.ok) return g.response;
   const empleadoId = g.usuario.empleadoId ?? null;
-  if (!empleadoId) return NextResponse.json({ vigentes: [], solicitudes: [], limite: null, tipos: { PRESTAMO: false, ADELANTO: false } });
+  if (!empleadoId) return NextResponse.json({ vigentes: [], solicitudes: [], tipos: { PRESTAMO: false, ADELANTO: false } });
 
-  const [vigentes, solicitudes, lim, tPrestamo, tAdelanto] = await Promise.all([
+  const [vigentes, solicitudes, emp, tPrestamo, tAdelanto] = await Promise.all([
     prisma.deduccionEmpleado.findMany({
       where: { empleadoId, activo: true, tipoDeduccion: { tipo: { in: ["PRESTAMO", "ADELANTO", "COOPERATIVA"] } }, OR: [{ fechaFin: null }, { fechaFin: { gte: hoyHN() } }] },
       select: {
@@ -44,9 +44,9 @@ export async function GET() {
       where: { empleadoId },
       orderBy: { createdAt: "desc" },
       take: 20,
-      select: { id: true, tipo: true, monto: true, cuotas: true, cuotaPeriodo: true, estado: true, excedeLimite: true, motivo: true, observacion: true, createdAt: true, resueltoAt: true },
+      select: { id: true, tipo: true, monto: true, cuotas: true, cuotaPeriodo: true, estado: true, motivo: true, observacion: true, createdAt: true, resueltoAt: true },
     }),
-    limiteDeEmpleado(prisma, empleadoId),
+    prisma.empleado.findUnique({ where: { id: empleadoId }, select: { tipoPlanilla: true } }),
     tipoDeduccionPara(prisma, "PRESTAMO"),
     tipoDeduccionPara(prisma, "ADELANTO"),
   ]);
@@ -54,8 +54,7 @@ export async function GET() {
   return NextResponse.json({
     vigentes: vigentes.map((v) => ({ ...v, cuota: aNumero(cuotaDelPeriodo(v)) })),
     solicitudes,
-    limite: lim.limite,
-    tipoPlanilla: lim.tipoPlanilla,
+    tipoPlanilla: emp?.tipoPlanilla ?? "MENSUAL",
     tipos: { PRESTAMO: !!tPrestamo, ADELANTO: !!tAdelanto },
   });
 }
@@ -78,8 +77,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Ya tiene ${pendientes} solicitudes pendientes. Espere a que se resuelvan.` }, { status: 409 });
   }
 
-  const { limite } = await limiteDeEmpleado(prisma, empleadoId);
-  const ev = evaluarSolicitud({ tipo: d.tipo, monto: d.monto, cuotas: d.cuotas, limite });
+  const ev = evaluarSolicitud({ tipo: d.tipo, monto: d.monto, cuotas: d.cuotas });
   if (ev.errores.length) return NextResponse.json({ error: ev.errores.join(" ") }, { status: 422 });
 
   const s = await prisma.solicitudPrestamo.create({
@@ -90,12 +88,10 @@ export async function POST(req: NextRequest) {
       cuotas: d.cuotas,
       cuotaPeriodo: ev.cuotaPeriodo,
       motivo: d.motivo || null,
-      limiteCuotaPeriodo: limite?.disponiblePeriodo ?? null,
-      excedeLimite: ev.excedeLimite,
     },
   });
 
   const { ip, userAgent } = getClientInfo(req);
-  await audit({ accion: "CREATE", tabla: "SolicitudPrestamo", registroId: s.id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined, valorNuevo: { tipo: d.tipo, monto: d.monto, cuotas: d.cuotas, excedeLimite: ev.excedeLimite }, ip, userAgent });
-  return NextResponse.json({ ...s, aviso: ev.aviso }, { status: 201 });
+  await audit({ accion: "CREATE", tabla: "SolicitudPrestamo", registroId: s.id, usuarioId: g.usuario.id, usuarioEmail: g.usuario.email ?? undefined, valorNuevo: { tipo: d.tipo, monto: d.monto, cuotas: d.cuotas }, ip, userAgent });
+  return NextResponse.json(s, { status: 201 });
 }

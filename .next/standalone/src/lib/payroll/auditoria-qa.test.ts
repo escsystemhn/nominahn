@@ -50,27 +50,38 @@ describe("deducciones legales de un mes completo (verificadas)", () => {
   });
 });
 
-describe("fallo 2: el neto nunca es negativo (Arts. 371 y 372)", () => {
+describe("fallo 2: el neto nunca es negativo; los topes de los Arts. 371 y 372 sólo avisan", () => {
   const prestamo = (monto: number, o: Partial<DeduccionVigente> = {}): DeduccionVigente =>
     ({ id: "p", monto, saldo: monto, cuotasMeses: 1, cuotasPagadas: 0, tipo: "PRESTAMO", ...o });
 
-  it("un préstamo de 15,000 sobre 12,000 se cobra sólo hasta la cuarta parte del excedente del mínimo", () => {
-    // Neto de ley de 11,000 con mínimo de 11,903.13: no hay excedente, no se cobra nada.
-    const sinExcedente = aplicarDeducciones([prestamo(15000)], topesDelPeriodo(11000, 11903.13));
-    expect(n(sinExcedente.total)).toBe(0);
-    // Neto de ley de 20,000: excedente 8,096.87 → cuarta parte 2,024.22. El resto queda en el saldo.
+  it("un préstamo se cobra completo aunque pase la cuarta parte; el tope queda para el aviso (decisión del cliente, 2026-11-21)", () => {
+    // Neto de ley de 20,000: excedente 8,096.87 → cuarta parte 2,024.22. Se cobran los 15,000.
     const r = aplicarDeducciones([prestamo(15000)], topesDelPeriodo(20000, 11903.13));
-    expect(n(r.prestamos)).toBeCloseTo(2024.22, 2);
-    expect(n(r.amortizaciones[0].saldo!)).toBeCloseTo(15000 - 2024.22, 2);
-    expect(r.amortizaciones[0].desactivar).toBe(false);
-    expect(r.recortadas).toHaveLength(1);
+    expect(n(r.prestamos)).toBeCloseTo(15000, 2);
+    expect(r.amortizaciones[0].desactivar).toBe(true);
+    expect(r.recortadas).toHaveLength(0);
+    expect(n(r.cobradas[0].tope)).toBeCloseTo(2024.22, 2);
+    // Sin excedente sobre el mínimo, el tope es cero y aun así se cobra.
+    const sinExcedente = aplicarDeducciones([prestamo(5000)], topesDelPeriodo(11000, 11903.13));
+    expect(n(sinExcedente.total)).toBeCloseTo(5000, 2);
+    expect(n(sinExcedente.cobradas[0].tope)).toBe(0);
   });
 
-  it("la pensión alimenticia va primero y llega hasta el 50 %, incluso del salario mínimo", () => {
+  it("sólo corta lo que dejaría el neto negativo, y lo que falta del préstamo queda en el saldo", () => {
+    const r = aplicarDeducciones([prestamo(15000)], topesDelPeriodo(12000, 11903.13));
+    expect(n(r.prestamos)).toBeCloseTo(12000, 2);
+    expect(n(r.amortizaciones[0].saldo!)).toBeCloseTo(3000, 2);
+    expect(r.amortizaciones[0].desactivar).toBe(false);
+    expect(r.recortadas).toHaveLength(1);
+    expect(n(r.cobradas[0].cuota)).toBeCloseTo(15000, 2);
+  });
+
+  it("la pensión alimenticia va primero; la que pasa del 50 % se cobra y queda el aviso", () => {
     const pension = prestamo(8000, { id: "a", tipo: "PENSION_ALIMENTICIA", saldo: null, cuotasMeses: null });
     const r = aplicarDeducciones([prestamo(1000), pension], topesDelPeriodo(10000, 11903.13));
-    expect(n(r.otros)).toBeCloseTo(5000, 2);
-    expect(n(r.prestamos)).toBe(0);
+    expect(n(r.otros)).toBeCloseTo(8000, 2);
+    expect(n(r.prestamos)).toBeCloseTo(1000, 2);
+    expect(n(r.cobradas.find((c) => c.id === "a")!.tope)).toBeCloseTo(5000, 2);
   });
 
   it("anticipos y cooperativa no tienen la cuarta parte, sólo lo disponible", () => {

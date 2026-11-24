@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { filtroPorEmpleado } from "@/lib/auth/alcance";
 import { accesoAPlanilla } from "@/lib/payroll/alcance-planilla";
@@ -7,7 +8,12 @@ import BarraEstadoPlanilla from "@/components/payroll/BarraEstadoPlanilla";
 import RevisionPlanilla from "@/components/payroll/RevisionPlanilla";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { formatCurrency, formatDate, nombreCompleto } from "@/lib/utils";
+import { formatCurrency, formatDate, formatMonto, nombreCompleto } from "@/lib/utils";
+import { textoAntiguedad } from "@/lib/empleados/antiguedad";
+import { COOKIE_VISTA_PLANILLA, comparadorPlanilla, describirOrden, leerVista, type FilaOrdenable } from "@/lib/payroll/vista-planilla";
+import VistaPlanillaControles from "@/components/payroll/VistaPlanillaControles";
+import OrdenDeducciones from "@/components/payroll/OrdenDeducciones";
+import { nombresEnOrden } from "@/lib/deducciones/orden-columnas";
 import PlanillaActions from "@/components/payroll/PlanillaActions";
 import ComprobanteAcciones from "@/components/payroll/ComprobanteAcciones";
 import SapEstadoPlanilla from "@/components/payroll/SapEstadoPlanilla";
@@ -22,8 +28,10 @@ import FiltroEstructura from "@/components/organizacion/FiltroEstructura";
 import { aplanarEstructura, agruparPorEstructura, describirAlcance, etiquetasNiveles, filtroDetallesOrg, normalizarAlcance } from "@/lib/organizacion/estructura";
 import { cargarOpcionesEstructura } from "@/lib/organizacion/estructura-bd";
 import { ubicacionDeLinea } from "@/lib/reportes/planilla-estructura";
-import { sumarPor } from "@/lib/payroll/money";
+import { CERO, money, sumarPor, type Money } from "@/lib/payroll/money";
+import { avisosDeDeducciones, columnasDeDeducciones, deduccionesPorNombre, leerDeduccionesGuardadas } from "@/lib/payroll/deducciones-de-linea";
 import type { DetalleIsrPersonalizado } from "@/lib/payroll/isr-personalizado";
+import { isrEsManual } from "@/lib/payroll/isr-personalizado-bd";
 import { cn } from "@/lib/utils";
 
 export default async function DetallePlanillaPage({
@@ -88,6 +96,8 @@ export default async function DetallePlanillaPage({
   // Se revisa mientras todavía se puede hacer algo al respecto: antes de confirmar y antes de aprobar.
   const enRevision = !parcial && (planilla.estado === "BORRADOR" || planilla.estado === "CALCULADA");
   const { revision, anterior } = enRevision ? await cargarRevision(prisma, planilla) : { revision: null, anterior: null };
+  // Con el ISR en manual, quien revisa debe saber que la planilla no lo calcula.
+  const isrManual = enRevision && (await isrEsManual(prisma));
   const totalLineas = hayFiltro ? await prisma.planillaDetalle.count({ where: { planillaId: id, ...enAlcance } }) : planilla.detalles.length;
 
   // Enviar sólo tiene sentido con la planilla cerrada: antes de aprobarla, el
@@ -105,21 +115,114 @@ export default async function DetallePlanillaPage({
   const puedeArchivoBanco = !parcial && ["APROBADA", "PAGADA"].includes(planilla.estado) && puede(usuario, "planillas.pagar");
 
   type Detalle = NonNullable<typeof planilla>["detalles"][number];
-  const otrasDeducciones = (d: Detalle) => sumarPor([d.cooperativa, d.prestamos, d.adelantos, d.otrosDeducciones], (x) => x);
+
+  // Cada deducción por su tipo, como en la planilla de la empresa: lo guardado al calcular.
+  // Una línea de antes se arma con lo cobrado registrado (si la planilla se confirmó) o por categoría.
+  const sinTipos = planilla.detalles.some((d) => leerDeduccionesGuardadas(d.deducciones) === null);
+  const cobradas = sinTipos
+    ? await prisma.amortizacionPlanilla.findMany({
+      where: { planillaId: id },
+      select: { montoAplicado: true, deduccion: { select: { empleadoId: true, tipoDeduccion: { select: { nombre: true } } } } },
+    })
+    : [];
+  const cobradasDe = new Map<string, { nombre: string; monto: Money }[]>();
+  for (const c of cobradas) {
+    const lista = cobradasDe.get(c.deduccion.empleadoId) ?? [];
+    lista.push({ nombre: c.deduccion.tipoDeduccion.nombre, monto: money(c.montoAplicado) });
+    cobradasDe.set(c.deduccion.empleadoId, lista);
+  }
+  const porTipo = new Map(planilla.detalles.map((d) => [d.id, deduccionesPorNombre(d, cobradasDe.get(d.empleadoId))]));
+  // En el orden que eligió la empresa (Orden de las deducciones): el mismo que al imprimir.
+  const tipos = columnasDeDeducciones(porTipo.values(), await nombresEnOrden(prisma));
+  const hayAlguno = (f: (d: Detalle) => unknown) => planilla.detalles.some((d) => !money(f(d) as number).isZero());
+
+  // Cómo la quiere ver esta persona (cookie): el orden y si ingresos y deducciones van con
+  // todas sus columnas o resumidos en su total (pedido de Edbin, 2026-11-23).
+  const vista = leerVista((await cookies()).get(COOKIE_VISTA_PLANILLA)?.value);
+  const detalleIngresos = vista.ingresos === "todo";
+  const detalleDeducciones = vista.deducciones === "todo";
+
+  // Las columnas de montos, en grupos con su rótulo encima: con 20 columnas, el grupo dice
+  // dónde se está. Una columna que nadie tiene no se muestra (sólo ruido de ceros).
+  type GrupoColumna = "ingresos" | "ley" | "empleado" | "deducciones" | "totales";
+  interface ColumnaMonto { titulo: string; grupo: GrupoColumna; valor: (d: Detalle) => Money | number | string | { toString(): string }; fuerte?: boolean; total?: boolean }
+  const siHay = (titulo: string, grupo: GrupoColumna, valor: (d: Detalle) => Money | number | string | { toString(): string }): ColumnaMonto[] =>
+    hayAlguno(valor) ? [{ titulo, grupo, valor }] : [];
+  const columnas: ColumnaMonto[] = [
+    // Ingresos: con detalle, sus partes (salario + horas extra + bonificaciones + otros = bruto).
+    ...(detalleIngresos
+      ? [
+          ...siHay("Salario", "ingresos", (d) => d.salarioBase),
+          ...siHay("Monto h. extra", "ingresos", (d) => d.montoHorasExtra),
+          ...siHay("Bonificaciones", "ingresos", (d) => d.bonificaciones),
+          ...siHay("Otros ingresos", "ingresos", (d) => d.otrosIngresos),
+        ]
+      : []),
+    { titulo: "Bruto", grupo: "ingresos", valor: (d) => d.totalBruto, total: detalleIngresos },
+    // Deducciones: con detalle, las de ley y cada tipo; resumidas, sólo su total.
+    ...(detalleDeducciones
+      ? [
+          ...siHay("IHSS", "ley", (d) => d.ihssEmpleado),
+          ...siHay("RAP", "ley", (d) => d.rapEmpleado),
+          ...siHay("ISR", "ley", (d) => d.isr),
+          ...siHay("Vecinal", "ley", (d) => d.impuestoVecinal),
+          ...tipos.map((nombre) => ({ titulo: nombre, grupo: "empleado" as const, valor: (d: Detalle) => porTipo.get(d.id)?.get(nombre) ?? CERO })),
+          ...siHay("Ausencias", "empleado", (d) => d.ausencias),
+          ...siHay("Incapacidad", "empleado", (d) => d.incapacidad),
+          { titulo: "Total ded.", grupo: "totales" as const, valor: (d: Detalle) => d.totalDeducciones, total: true },
+        ]
+      : [{ titulo: "Total ded.", grupo: "deducciones" as const, valor: (d: Detalle) => d.totalDeducciones, total: true }]),
+    { titulo: "Neto", grupo: "totales", valor: (d) => d.salarioNeto, fuerte: true },
+  ];
+  const conHorasExtra = detalleIngresos && planilla.detalles.some((d) => Number(d.horasExtra) !== 0);
+  // Una línea divisoria donde empieza cada grupo (Días y H. extra van con los ingresos).
+  const empiezaGrupo = columnas.map((c, j) => c.grupo !== (j === 0 ? "ingresos" : columnas[j - 1].grupo));
+  const ROTULOS: Record<GrupoColumna, string> = { ingresos: "Ingresos", ley: "De ley", empleado: "Deducciones del empleado", deducciones: "Deducciones", totales: "Totales" };
+  const gruposDeColumnas = (["ingresos", "ley", "empleado", "deducciones", "totales"] as const)
+    .map((g) => ({ g, titulo: ROTULOS[g], span: columnas.filter((c) => c.grupo === g).length + (g === "ingresos" ? 1 + Number(conHorasExtra) : 0) }))
+    .filter((x) => x.span > 0);
+  // Hay líneas que todavía muestran las deducciones por categoría: recalcular el borrador las pone por tipo.
+  const porCategoria = sinTipos && planilla.detalles.some((d) => leerDeduccionesGuardadas(d.deducciones) === null && (cobradasDe.get(d.empleadoId)?.length ?? 0) === 0
+    && !money(d.cooperativa).plus(money(d.prestamos)).plus(money(d.adelantos)).plus(money(d.afpEmpleado)).plus(money(d.otrosDeducciones)).isZero());
+
+  // En borrador: lo que pasa del tope de ley (se cobra igual) y lo que no se cobró completo
+  // porque el salario quedaría en negativo. Se revisa antes de confirmar.
+  const avisos = planilla.estado === "BORRADOR"
+    ? planilla.detalles.map((d) => ({ d, ...avisosDeDeducciones(d.deducciones) })).filter((a) => a.sobreTope.length || a.incompletas.length)
+    : [];
+  const avisoDe = new Map(avisos.map((a) => [a.d.id, a]));
+  const sobreTope = avisos.flatMap((a) => a.sobreTope.map((x) => ({ id: a.d.id, empleado: nombreCompleto(a.d.empleado), ...x })));
+  const incompletas = avisos.flatMap((a) => a.incompletas.map((x) => ({ id: a.d.id, empleado: nombreCompleto(a.d.empleado), ...x })));
+  const avisoDeCelda = (d: Detalle, columna: string): string | undefined => {
+    const a = avisoDe.get(d.id);
+    const t = a?.sobreTope.find((x) => x.nombre === columna);
+    if (t) return `Pasa el tope de ley: el tope era ${formatCurrency(t.tope)} y se cobra completo.`;
+    const i = a?.incompletas.find((x) => x.nombre === columna);
+    if (i) return `Se cobró ${formatCurrency(i.monto)} de ${formatCurrency(i.asignado)}: el salario quedaría en negativo.`;
+    return undefined;
+  };
 
   // Sucursal → División → Departamento → Empleado, con subtotal en cada nivel.
   // Sin el nivel División habilitado, Sucursal → Departamento.
-  const entradas = aplanarEstructura(agruparPorEstructura(planilla.detalles, (d) => ubicacionDeLinea(d, opciones.conDivisiones), niveles.sinDivision));
-  const montos = (ds: Detalle[]) => [
-    sumarPor(ds, (d) => d.totalBruto),
-    sumarPor(ds, (d) => d.ihssEmpleado),
-    sumarPor(ds, (d) => d.rapEmpleado),
-    sumarPor(ds, (d) => d.isr),
-    sumarPor(ds, otrasDeducciones),
-    sumarPor(ds, (d) => d.ausencias),
-    sumarPor(ds, (d) => d.salarioNeto),
-  ];
-  const sangria = (nivel: number) => ({ paddingLeft: `${0.75 + nivel * 1.25}rem` });
+  // Dentro de cada departamento, por el campo que eligió esta persona (antigüedad por omisión).
+  const nombres = new Map(planilla.detalles.map((d) => [d.id, nombreCompleto(d.empleado)]));
+  const filas = new Map(planilla.detalles.map((d): [string, FilaOrdenable] => [d.id, {
+    nombre: nombres.get(d.id)!, fechaIngreso: d.empleado.fechaIngreso, codigo: d.empleado.codigo,
+    apellido: [d.empleado.primerApellido, d.empleado.segundoApellido, d.empleado.primerNombre, d.empleado.segundoNombre].filter(Boolean).join(" "),
+    salario: Number(d.salarioBase), bruto: Number(d.totalBruto), deducciones: Number(d.totalDeducciones), neto: Number(d.salarioNeto),
+  }]));
+  const comparar = comparadorPlanilla(vista.orden, vista.dir);
+  const ordenados = [...planilla.detalles].sort((a, b) => comparar(filas.get(a.id)!, filas.get(b.id)!));
+  const entradas = aplanarEstructura(agruparPorEstructura(ordenados, (d) => ubicacionDeLinea(d, opciones.conDivisiones), niveles.sinDivision));
+  const montos = (ds: Detalle[]) => columnas.map((c) => sumarPor(ds, (d) => money(c.valor(d) as number)));
+  // Sangría corta: los empleados se alinean con el nombre de su departamento, y el nombre
+  // completo cabe en una línea.
+  const sangria = (nivel: number) => ({ paddingLeft: `${0.75 + nivel * 0.75}rem` });
+  const sangriaLinea = (nivel: number) => sangria(Math.max(0, nivel - 1));
+  // El cero no es un dato que buscar: un guion tenue, para que salte a la vista lo que sí hay.
+  const celdaMonto = (m: Money) => m.isZero()
+    ? <><span aria-hidden="true" className="text-gray-300">–</span><span className="sr-only">0.00</span></>
+    : formatMonto(m);
   // Cálculo personalizado: de dónde salió el ISR de la línea, al pasar el ratón.
   const explicarIsr = (j: unknown): string | undefined => {
     const x = j as DetalleIsrPersonalizado | null;
@@ -128,7 +231,8 @@ export default async function DetallePlanillaPage({
       ` = ${formatCurrency(x.renta)}; ISR anual ${formatCurrency(x.isrAnual)} menos lo ya retenido ${formatCurrency(x.retenidoPrevio)},` +
       ` entre ${x.periodosRestantes} período(s) que faltan.`;
   };
-  const COLUMNAS = 11;
+  // Empleado, días y horas extra; los montos; y el comprobante.
+  const COLUMNAS = 2 + Number(conHorasExtra) + columnas.length + 1;
 
   // Imprime lo que se está viendo: la misma planilla, con el filtro de arriba si lo hay.
   const urlImprimir = (separar: boolean) => {
@@ -137,6 +241,9 @@ export default async function DetallePlanillaPage({
     if (alcance.divisionId) q.set("divisionId", alcance.divisionId);
     if (alcance.departamentoId) q.set("departamentoId", alcance.departamentoId);
     if (separar) q.set("porDivision", "1");
+    // La impresa, en el mismo orden que la pantalla.
+    q.set("orden", vista.orden);
+    q.set("dir", vista.dir);
     return `/api/reportes?${q.toString()}`;
   };
   const puedeImprimir = planilla.estado !== "ANULADA" && puede(usuario, "reportes.ver");
@@ -220,6 +327,54 @@ export default async function DetallePlanillaPage({
         </div>
       )}
 
+      {(sobreTope.length > 0 || incompletas.length > 0) && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" data-aviso-deducciones>
+          <p className="font-semibold">Revise estas deducciones antes de confirmar.</p>
+          {sobreTope.length > 0 && (
+            <>
+              <p className="mt-2">
+                Pasan el tope de ley (la cuarta parte de lo que el salario excede al mínimo, Arts. 371 y 372 del Código del
+                Trabajo). Se cobran completas, como las asignó:
+              </p>
+              <ul className="mt-1 max-h-48 list-disc space-y-0.5 overflow-y-auto pl-5">
+                {sobreTope.map((x) => (
+                  <li key={`t${x.id}${x.nombre}`} data-aviso-tope>
+                    {x.empleado}, {x.nombre}: {formatCurrency(x.monto)} <span className="text-amber-800">(el tope era {formatCurrency(x.tope)})</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {incompletas.length > 0 && (
+            <>
+              <p className="mt-2">
+                No se cobraron completas porque el salario quedaría en negativo. Lo que falta de un préstamo con saldo queda
+                pendiente; lo de un monto del período no pasa a la siguiente:
+              </p>
+              <ul className="mt-1 max-h-48 list-disc space-y-0.5 overflow-y-auto pl-5">
+                {incompletas.map((x) => (
+                  <li key={`i${x.id}${x.nombre}`} data-aviso-incompleta>
+                    {x.empleado}, {x.nombre}: se cobró {formatCurrency(x.monto)} de {formatCurrency(x.asignado)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
+      {isrManual && (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" data-isr-manual>
+          <p className="font-semibold">El ISR está en manual.</p>
+          <p className="mt-1">
+            Esta planilla no calcula el ISR: retiene lo importado para el período en Deducciones → Importar → Montos del período o, si no
+            hay, la retención fija de la ficha. A quien no tenga ninguna no se le retiene. Si importó el ISR después de calcularla, use
+            Recalcular. Se cambia en{" "}
+            <Link href="/configuracion?seccion=parametros" className="font-medium underline underline-offset-2">Parámetros de ley</Link>.
+          </p>
+        </div>
+      )}
+
       {planilla.estado === "ANULADA" && (
         <div role="status" className="rounded-lg border border-gray-300 bg-gray-50 p-4 text-sm text-gray-800">
           <p className="font-semibold">Esta planilla está anulada.</p>
@@ -267,22 +422,44 @@ export default async function DetallePlanillaPage({
         )}
       </div>
 
+      {porCategoria && (
+        <p className="text-xs text-gray-500" data-por-categoria>
+          Algunas líneas se calcularon antes de guardar cada deducción por su tipo y la muestran por categoría
+          {enRevision ? ": recalcule el borrador para verlas por tipo." : "."}
+        </p>
+      )}
+
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          <VistaPlanillaControles vista={vista} />
+          {puede(usuario, "deducciones.configurar") && <OrdenDeducciones enPlanilla={tipos} />}
+        </div>
+        <p className="text-xs text-gray-500" data-orden-planilla>
+          En cada departamento, {describirOrden(vista)}. Montos en lempiras.
+          {(!detalleIngresos || !detalleDeducciones) && " Con el detalle apagado, el grupo muestra sólo su total."}
+        </p>
+      </div>
+
       <div className="panel overflow-hidden">
-        <div className="tabla-fija overflow-x-auto">
-          <table className="table-base text-xs">
+        <div className="tabla-fija relative overflow-x-auto">
+          <table className="table-base tabla-planilla text-xs">
             <thead>
               <tr>
-                <th className="px-3">Empleado</th>
-                <th className="num px-3">Días</th>
-                <th className="num px-3">H. extra</th>
-                <th className="num px-3">Bruto</th>
-                <th className="num px-3">IHSS</th>
-                <th className="num px-3">RAP</th>
-                <th className="num px-3">ISR</th>
-                <th className="num px-3">Otras ded.</th>
-                <th className="num px-3">Ausencias</th>
-                <th className="num px-3 text-gray-900">Neto</th>
-                <th className="px-3 text-center">Comprobante</th>
+                <th rowSpan={2} className="col-fija px-3 align-bottom">Empleado</th>
+                {gruposDeColumnas.map((x, k) => (
+                  <th key={x.g} colSpan={x.span} scope="colgroup" data-divide={k > 0 ? "" : undefined}
+                    className={cn("h-7 px-3 py-0 font-semibold text-gray-700", k > 0 && "border-l border-gray-200")}>{x.titulo}</th>
+                ))}
+                <th rowSpan={2} data-divide="" className="border-l border-gray-200 px-3 text-center align-bottom">Comprobante</th>
+              </tr>
+              <tr>
+                <th className="num px-3 align-bottom">Días</th>
+                {conHorasExtra && <th className="num px-3 align-bottom">H. extra</th>}
+                {columnas.map((c, j) => (
+                  // Un nombre largo («Préstamo BANCATLAN») se parte en dos líneas en vez de ensanchar la tabla.
+                  <th key={c.titulo} data-divide={empiezaGrupo[j] ? "" : undefined} className={cn("num px-3 align-bottom", empiezaGrupo[j] && "border-l border-gray-200", (c.fuerte || c.total) && "text-gray-900",
+                    !c.fuerte && c.titulo.length > 10 && "min-w-[6.5rem] whitespace-normal")}>{c.titulo}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -294,8 +471,12 @@ export default async function DetallePlanillaPage({
                   return (
                     <tr key={`g${i}`}>
                       <td colSpan={COLUMNAS} style={sangria(e.nivel)}
-                        className={cn("py-2 text-sm font-semibold text-gray-900", e.nivel === 0 ? "bg-blue-50" : e.nivel === 1 ? "bg-gray-100" : "bg-gray-50")}>
-                        {e.grupo.nombre}
+                        className={cn("py-1.5 text-[13px] font-semibold text-gray-900", e.nivel === 0 ? "bg-blue-50" : e.nivel === 1 ? "bg-gray-100" : "bg-gray-50")}>
+                        {/* Fijo al recorrer la tabla de lado: si no, el grupo se pierde de vista. */}
+                        <span className="sticky left-3 inline-flex items-baseline gap-2">
+                          {e.grupo.nombre}
+                          <span className="text-xs font-normal text-gray-500">{e.grupo.items.length === 1 ? "1 empleado" : `${e.grupo.items.length} empleados`}</span>
+                        </span>
                       </td>
                     </tr>
                   );
@@ -304,41 +485,47 @@ export default async function DetallePlanillaPage({
                   const personas = e.grupo.items.length;
                   return (
                     <tr key={`s${i}`} className="font-semibold text-gray-900 [&>td]:border-t [&>td]:border-gray-300">
-                      <td colSpan={3} style={sangria(e.nivel)} className="py-2">
+                      {/* En la columna del nombre, que queda fija: así el rótulo no se pierde al recorrer de lado. */}
+                      <td style={sangria(e.nivel)} className="col-fija py-2">
                         Subtotal {e.grupo.nombre} <span className="font-normal text-gray-500">({personas === 1 ? "1 empleado" : `${personas} empleados`})</span>
                       </td>
+                      <td colSpan={1 + Number(conHorasExtra)} />
                       {montos(e.grupo.items).map((m, j) => (
-                        <td key={j} className="num whitespace-nowrap px-3 py-2">{formatCurrency(m)}</td>
+                        <td key={j} className={cn("num whitespace-nowrap px-3 py-2", empiezaGrupo[j] && "border-l border-gray-200")}>{celdaMonto(m)}</td>
                       ))}
-                      <td />
+                      <td className="border-l border-gray-200" />
                     </tr>
                   );
                 }
                 const d = e.item;
                 return (
-                <tr key={d.id}>
-                  <td className="py-2 pr-3" style={sangria(e.nivel)}>
-                    <div className="font-medium text-gray-900">{nombreCompleto(d.empleado)}</div>
+                <tr key={d.id} data-linea>
+                  <td className="col-fija py-2 pr-4" style={sangriaLinea(e.nivel)}>
+                    {/* El nombre en una línea; debajo, el código y desde cuándo está: es lo que ordena la lista. */}
+                    <div className="text-[13px] font-medium text-gray-900 sm:whitespace-nowrap">{nombres.get(d.id)}</div>
+                    <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-500 sm:flex-nowrap sm:whitespace-nowrap">
+                      <span className="font-mono">{d.empleado.codigo}</span>
+                      <span>Ingreso {formatDate(d.empleado.fechaIngreso)}, {textoAntiguedad(d.empleado.fechaIngreso, planilla.fechaFin)}</span>
+                    </div>
                   </td>
                   <td className="num px-3 py-2">{Number(d.diasTrabajados).toFixed(0)}</td>
-                  <td className="num px-3 py-2">{Number(d.horasExtra).toFixed(1)}</td>
-                  <td className="num whitespace-nowrap px-3 py-2">{formatCurrency(d.totalBruto)}</td>
-                  <td className="num whitespace-nowrap px-3 py-2 text-gray-500">
-                    {formatCurrency(d.ihssEmpleado)}
-                    {d.ihssFijo && (
-                      <span className="block text-xs text-gray-500" title="Monto fijo pactado en la ficha del empleado">
-                        fijo
-                      </span>
-                    )}
-                  </td>
-                  <td className="num whitespace-nowrap px-3 py-2 text-gray-500">{formatCurrency(d.rapEmpleado)}</td>
-                  <td className="num whitespace-nowrap px-3 py-2 text-gray-500" title={explicarIsr(d.isrDetalle)}>{formatCurrency(d.isr)}</td>
-                  <td className="num whitespace-nowrap px-3 py-2 text-gray-500">{formatCurrency(otrasDeducciones(d))}</td>
-                  <td className="num whitespace-nowrap px-3 py-2 text-gray-500">{formatCurrency(d.ausencias)}</td>
-                  <td className="num whitespace-nowrap px-3 py-2 font-semibold text-gray-900">
-                    {formatCurrency(d.salarioNeto)}
-                  </td>
-                  <td className="px-3 py-2">
+                  {conHorasExtra && <td className="num px-3 py-2">{Number(d.horasExtra) === 0 ? celdaMonto(CERO) : Number(d.horasExtra).toFixed(1)}</td>}
+                  {columnas.map((c, j) => {
+                    const aviso = avisoDeCelda(d, c.titulo);
+                    return (
+                    <td key={c.titulo} className={cn("num whitespace-nowrap px-3 py-2", empiezaGrupo[j] && "border-l border-gray-200", c.total && "font-medium text-gray-900",
+                      c.fuerte && "font-semibold text-gray-900", aviso && "bg-amber-50 font-medium text-amber-900")}
+                      title={c.titulo === "ISR" ? explicarIsr(d.isrDetalle) : aviso} data-aviso-celda={aviso ? "" : undefined}>
+                      {celdaMonto(money(c.valor(d) as number))}
+                      {c.titulo === "IHSS" && d.ihssFijo && (
+                        <span className="block text-xs text-gray-500" title="Monto fijo pactado en la ficha del empleado">
+                          fijo
+                        </span>
+                      )}
+                    </td>
+                    );
+                  })}
+                  <td className="border-l border-gray-200 px-3 py-2">
                     <ComprobanteAcciones
                       planillaId={planilla.id}
                       detalleId={d.id}
@@ -354,13 +541,13 @@ export default async function DetallePlanillaPage({
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-300 bg-gray-50 text-sm font-semibold text-gray-900">
-                <td colSpan={3} className="px-3 py-3">
+                <td colSpan={2 + Number(conHorasExtra)} className="px-3 py-3">
                   {hayFiltro ? "Totales del filtro" : "Totales"}
                 </td>
                 {montos(planilla.detalles).map((m, j) => (
-                  <td key={j} className={cn("num whitespace-nowrap px-3 py-3", j === 6 && "text-blue-800")}>{formatCurrency(m)}</td>
+                  <td key={j} className={cn("num whitespace-nowrap px-3 py-3", empiezaGrupo[j] && "border-l border-gray-200", columnas[j].fuerte && "text-blue-800")}>{celdaMonto(m)}</td>
                 ))}
-                <td />
+                <td className="border-l border-gray-200" />
               </tr>
             </tfoot>
           </table>

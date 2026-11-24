@@ -10,7 +10,7 @@ import { useAvisos } from "@/components/ui/Avisos";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { evaluarSolicitud, CUOTAS_MINIMAS_ADELANTO, type LimiteDescuento } from "@/lib/payroll/prestamos";
+import { evaluarSolicitud, CUOTAS_MINIMAS_ADELANTO } from "@/lib/payroll/prestamos";
 
 interface Vigente {
   id: string;
@@ -30,7 +30,6 @@ interface Solicitud {
   cuotas: number;
   cuotaPeriodo: string | number;
   estado: string;
-  excedeLimite: boolean;
   motivo: string | null;
   observacion: string | null;
   createdAt: string;
@@ -39,7 +38,6 @@ interface Solicitud {
 interface Datos {
   vigentes: Vigente[];
   solicitudes: Solicitud[];
-  limite: LimiteDescuento | null;
   tipoPlanilla?: string;
   tipos: { PRESTAMO: boolean; ADELANTO: boolean };
 }
@@ -67,7 +65,7 @@ export default function MisPrestamos() {
 
   const monto = Number(form.monto);
   const cuotas = Number(form.cuotas);
-  const ev = form.monto ? evaluarSolicitud({ tipo: form.tipo, monto, cuotas, limite: datos.limite }) : null;
+  const ev = form.monto ? evaluarSolicitud({ tipo: form.tipo, monto, cuotas }) : null;
   const periodo = PERIODO[datos.tipoPlanilla ?? "MENSUAL"] ?? "período";
   const hayTipo = datos.tipos.PRESTAMO || datos.tipos.ADELANTO;
 
@@ -83,7 +81,7 @@ export default function MisPrestamos() {
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo enviar");
-      setAviso({ ok: true, texto: d.aviso ? `Solicitud enviada. ${d.aviso}` : "Solicitud enviada a Recursos Humanos." });
+      setAviso({ ok: true, texto: "Solicitud enviada a Recursos Humanos." });
       setForm((f) => ({ ...f, monto: "", motivo: "" }));
       await cargar();
     } catch (err) {
@@ -157,13 +155,7 @@ export default function MisPrestamos() {
                 <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="pr-motivo">Motivo (opcional)</label>
                 <textarea id="pr-motivo" rows={2} className="input" value={form.motivo} onChange={(e) => setForm((f) => ({ ...f, motivo: e.target.value }))} />
               </div>
-              {datos.limite && (
-                <p className="text-xs text-gray-500">
-                  Lo máximo que se le puede descontar en préstamos es {formatCurrency(datos.limite.embargablePeriodo)} por {periodo}; ya tiene comprometidos {formatCurrency(datos.limite.comprometidoPeriodo)}.
-                </p>
-              )}
               {ev?.errores.length ? <p className="text-xs text-red-700">{ev.errores.join(" ")}</p> : null}
-              {ev?.aviso && <p className="text-xs text-amber-800">{ev.aviso} Recursos Humanos tendrá que confirmarlo.</p>}
               {aviso && <p className={`text-sm ${aviso.ok ? "text-green-800" : "text-red-700"}`}>{aviso.texto}</p>}
               <button type="submit" className="btn btn-primary" disabled={enviando || !ev || ev.errores.length > 0}>
                 {enviando ? "Enviando…" : "Enviar solicitud"}

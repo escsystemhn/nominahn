@@ -1,242 +1,242 @@
 {
   "app": {
     "[project]/src/app/(auth)/login/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/asistencia/carga-rapida/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/asistencia/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/biometrico/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/capacitaciones/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/centros-costo/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/configuracion/competencias/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/configuracion/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/dashboard/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/deducciones/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/documentos/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/dotaciones/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/empleados/[id]/editar/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/empleados/[id]/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/empleados/nuevo/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/empleados/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/evaluaciones/nine-box/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/evaluaciones/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/evaluaciones/skill-gap/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/horarios/[id]/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/horarios/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/incapacidades/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/jerarquia-nomina/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/mi-cuenta/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/mi-espacio/material/[id]/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/mi-espacio/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/organigrama/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/plan-cuentas/configuracion/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/plan-cuentas/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/planillas/[id]/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/planillas/nueva/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/planillas/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/politicas/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/portal/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/prestaciones/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/reclutamiento/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/reportes/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/tablero/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/talento/competencias/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/turnos/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/usuarios/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/(dashboard)/usuarios/perfiles/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/_not-found/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/empleos/[id]/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/empleos/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/evaluar/[token]/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/licencia/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ],
     "[project]/src/app/page": [
-      "static/media/dd16c64b99082e83-s.p.0pki2uy9ztkxf.woff2",
+      "static/media/48eea41d8317494f-s.p.0wiir8udbzjvx.woff2",
       "static/media/73c8302d2fdfe340-s.p.30xqm3yldpj47.woff2",
       "static/media/9f5be66613d9c872-s.p.27korwsf9c79u.woff2"
     ]

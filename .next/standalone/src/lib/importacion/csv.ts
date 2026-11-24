@@ -25,6 +25,8 @@ export type Delimitador = (typeof DELIMITADORES)[number];
 
 export interface CsvParseado {
   cabeceras: string[];
+  /** Línea REAL de la cabecera (la primera con contenido). */
+  lineaCabecera?: number;
   /** Filas de datos. Cada una conserva su número de línea REAL del archivo. */
   filas: Array<{ linea: number; celdas: string[] }>;
   delimitador: Delimitador;
@@ -202,6 +204,7 @@ export function parsearCsv(texto: string, delimitadorForzado?: Delimitador): Csv
   const [cabecera, ...resto] = registros;
   return {
     cabeceras: cabecera ? cabecera.celdas : [],
+    lineaCabecera: cabecera?.linea ?? 1,
     filas: resto,
     delimitador,
   };

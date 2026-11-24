@@ -97,6 +97,20 @@ export interface InformeValidacion {
   resumen?: string;
   /** Montos del período: columnas que todavía no son tipos de deducción, con lo que se propone para crearlas. */
   tiposNuevos?: TipoSugerido[];
+  /** Montos del período: a qué tipo se asignó cada columna del archivo, y por qué. */
+  columnasLeidas?: ColumnaLeida[];
+  /** Montos del período: los tipos a los que se puede asignar una columna que no se reconoce. */
+  tiposExistentes?: Array<{ codigo: string; etiqueta: string }>;
+}
+
+/** Una columna del archivo de montos que se tomó como un tipo de deducción. */
+export interface ColumnaLeida {
+  cabecera: string;
+  /** «Nombre (CÓDIGO)» del tipo. */
+  tipo: string;
+  codigo: string;
+  /** NOMBRE: por su nombre o código; PARECIDO: con abreviaturas («Ptamo.» = préstamo); RECORDADA: alguien la asignó antes. */
+  por: "NOMBRE" | "PARECIDO" | "RECORDADA";
 }
 
 /** Una columna del archivo de montos que no es un tipo de deducción, y cómo se propone crearlo. */

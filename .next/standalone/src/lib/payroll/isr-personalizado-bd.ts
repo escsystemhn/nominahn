@@ -3,14 +3,21 @@
  * la empresa y con qué deducciones) y el historial del año de cada empleado.
  *
  * La configuración vive en `ConfiguracionSistema`:
- *   ISR_METODO        ESTANDAR (por omisión) | PERSONALIZADO
+ *   ISR_MODO          AUTOMATICO (por omisión) | MANUAL
+ *   ISR_METODO        ESTANDAR (por omisión) | PERSONALIZADO, el cálculo del modo automático
  *   ISR_PERSONALIZADO JSON con las deducciones (ver `ConfigIsrPersonalizado`)
+ *
+ * MANUAL: el sistema no calcula el ISR de nadie. Se retiene lo importado para el período
+ * (columna del ISR en Deducciones → Importar → Montos del período), si no la retención
+ * fija de la ficha y, si no hay ninguna, nada. Sirve mientras el sistema no tiene lo
+ * pagado antes en el año: la planilla anterior ya trae calculada la retención.
  * La edita quien tiene `configuracion.parametros`, en Configuración → Parámetros de ley.
  */
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { money } from "./money";
+import { CODIGO_ISR_FIJO } from "./deducciones";
 import {
   CONFIG_ISR_PERSONALIZADO_DEFAULT,
   mesesDeTipo,
@@ -21,6 +28,7 @@ import {
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+export const CLAVE_MODO_ISR = "ISR_MODO";
 export const CLAVE_METODO_ISR = "ISR_METODO";
 export const CLAVE_CONFIG_ISR = "ISR_PERSONALIZADO";
 
@@ -36,21 +44,28 @@ export const schemaConfigIsr = z.object({
   deducirAfp: z.boolean(),
 });
 
+export type ModoIsr = "AUTOMATICO" | "MANUAL";
+
 export const schemaMetodoIsr = z.object({
+  // Opcional para quien guarde sin conocerlo: se queda en automático.
+  modo: z.enum(["AUTOMATICO", "MANUAL"]).default("AUTOMATICO"),
   metodo: z.enum(["ESTANDAR", "PERSONALIZADO"]),
   personalizado: schemaConfigIsr,
 });
 
 export interface ConfigIsr {
+  /** Quién pone la retención: el sistema (con `metodo`) o la persona, por período. */
+  modo: ModoIsr;
   metodo: MetodoIsr;
   personalizado: ConfigIsrPersonalizado;
 }
 
 export async function leerConfigIsr(db: Db): Promise<ConfigIsr> {
   const filas = await db.configuracionSistema.findMany({
-    where: { clave: { in: [CLAVE_METODO_ISR, CLAVE_CONFIG_ISR] } },
+    where: { clave: { in: [CLAVE_MODO_ISR, CLAVE_METODO_ISR, CLAVE_CONFIG_ISR] } },
     select: { clave: true, valor: true },
   });
+  const modo = filas.find((f) => f.clave === CLAVE_MODO_ISR)?.valor === "MANUAL" ? "MANUAL" : "AUTOMATICO";
   const metodo = filas.find((f) => f.clave === CLAVE_METODO_ISR)?.valor === "PERSONALIZADO" ? "PERSONALIZADO" : "ESTANDAR";
   let personalizado = CONFIG_ISR_PERSONALIZADO_DEFAULT;
   const guardada = filas.find((f) => f.clave === CLAVE_CONFIG_ISR)?.valor;
@@ -62,12 +77,34 @@ export async function leerConfigIsr(db: Db): Promise<ConfigIsr> {
       // Un valor corrupto no debe tumbar la planilla: se usan los valores de la hoja.
     }
   }
-  return { metodo, personalizado };
+  return { modo, metodo, personalizado };
+}
+
+/**
+ * El ISR manual se guarda como monto del período de la retención fija de ISR: ese tipo
+ * tiene que existir. Lo crea la instalación (seed); una base vieja puede no tenerlo.
+ */
+export async function asegurarTipoIsrFijo(db: Db): Promise<void> {
+  await db.tipoDeduccionConfig.upsert({
+    where: { codigo: CODIGO_ISR_FIJO },
+    update: {},
+    create: {
+      nombre: "Retención de ISR fija por período", codigo: CODIGO_ISR_FIJO, tipo: "IMPUESTO", esLegal: false,
+      descripcion: "Reemplaza el ISR calculado por este monto en cada planilla (retención proyectada por el contador)",
+    },
+  });
+}
+
+/** ¿El ISR está en manual? Lo que importa al importar y al exportar el archivo del período. */
+export async function isrEsManual(db: Db): Promise<boolean> {
+  const fila = await db.configuracionSistema.findUnique({ where: { clave: CLAVE_MODO_ISR }, select: { valor: true } });
+  return fila?.valor === "MANUAL";
 }
 
 export async function guardarConfigIsr(db: Db, c: ConfigIsr): Promise<void> {
   const fila = (clave: string, valor: string, descripcion: string) =>
     db.configuracionSistema.upsert({ where: { clave }, update: { valor }, create: { clave, valor, descripcion } });
+  await fila(CLAVE_MODO_ISR, c.modo, "Retención del ISR: AUTOMATICO (la calcula el sistema) o MANUAL (la de cada período se importa o se fija en la ficha)");
   await fila(CLAVE_METODO_ISR, c.metodo, "Método de cálculo del ISR: ESTANDAR o PERSONALIZADO (proyección anual como la hoja de retención)");
   await fila(CLAVE_CONFIG_ISR, JSON.stringify(c.personalizado), "Deducciones del cálculo personalizado del ISR");
 }

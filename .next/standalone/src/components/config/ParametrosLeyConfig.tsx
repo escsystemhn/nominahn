@@ -15,6 +15,7 @@ import { formatCurrency } from "@/lib/utils";
 import { derivarCuotasISR, validarTramosISR, validarTramosVecinal } from "@/lib/payroll/tramos";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import MetodoIsrConfig from "./MetodoIsrConfig";
+import VecinalAnualConfig from "./VecinalAnualConfig";
 import DistribucionQuincenalConfig from "./DistribucionQuincenalConfig";
 import RapMesVencidoConfig from "./RapMesVencidoConfig";
 import { ETIQUETA_MODO_QUINCENAL, type DistribucionQuincenal } from "@/lib/payroll/distribucion-quincenal";
@@ -192,6 +193,7 @@ export default function ParametrosLeyConfig() {
       <TablaISR inicial={datos.isr} onGuardado={recargar} />
       <MetodoIsrConfig />
       <TablaVecinal inicial={datos.vecinal} onGuardado={recargar} />
+      <VecinalAnualConfig />
     </div>
   );
 }

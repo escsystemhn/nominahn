@@ -269,7 +269,7 @@ export default function DeduccionesClient({
                           {esDelSistema(t)
                             ? <span className="text-xs text-gray-500">En Parámetros de ley</span>
                             : (
-                              <button type="button" className="text-sm font-medium text-blue-700 hover:underline" aria-label={`Editar ${t.nombre}`}
+                              <button type="button" data-toque className="text-sm font-medium text-blue-700 hover:underline" aria-label={`Editar ${t.nombre}`}
                                 onClick={() => setEditando({ id: t.id, nombre: t.nombre, codigo: t.codigo, tipo: t.tipo, montoFijo: t.montoFijo, descripcion: t.descripcion, activo: t.activo })}>
                                 Editar
                               </button>

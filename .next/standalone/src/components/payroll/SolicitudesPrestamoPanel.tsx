@@ -6,7 +6,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useAvisos } from "@/components/ui/Avisos";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface Solicitud {
@@ -16,8 +15,6 @@ interface Solicitud {
   cuotas: number;
   cuotaPeriodo: string | number;
   motivo: string | null;
-  excedeLimite: boolean;
-  limiteCuotaPeriodo: string | number | null;
   createdAt: string;
   empleado: {
     codigo: string; primerNombre: string; segundoNombre: string | null; primerApellido: string; segundoApellido: string | null;
@@ -29,7 +26,6 @@ const nombre = (e: Solicitud["empleado"]) => [e.primerNombre, e.segundoNombre, e
 const periodo: Record<string, string> = { MENSUAL: "mes", QUINCENAL: "quincena", SEMANAL: "semana" };
 
 export default function SolicitudesPrestamoPanel() {
-  const { confirmar } = useAvisos();
   const [solicitudes, setSolicitudes] = useState<Solicitud[] | null>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [rechazo, setRechazo] = useState<{ id: string; motivo: string } | null>(null);
@@ -46,21 +42,12 @@ export default function SolicitudesPrestamoPanel() {
   }, [cargar]);
 
   async function resolver(s: Solicitud, accion: "aprobar" | "rechazar", observacion?: string) {
-    let confirmarExceso = false;
-    if (accion === "aprobar" && s.excedeLimite) {
-      confirmarExceso = await confirmar({
-        titulo: "¿Aprobar la solicitud de todos modos?",
-        detalle: `La cuota de ${formatCurrency(Number(s.cuotaPeriodo))} pasa de lo que se puede descontar del salario de ${nombre(s.empleado)} (Arts. 371 y 372 del Código del Trabajo).`,
-        accion: "Aprobar",
-      });
-      if (!confirmarExceso) return;
-    }
     setOcupado(s.id);
     try {
       const res = await fetch(`/api/prestamos/solicitudes/${s.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accion, observacion, confirmarExceso }),
+        body: JSON.stringify({ accion, observacion }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "No se pudo resolver");
@@ -95,11 +82,6 @@ export default function SolicitudesPrestamoPanel() {
                 <span className="text-gray-500"> Salario {formatCurrency(Number(s.empleado.salarioBase))}. Pedido el {formatDate(s.createdAt)}.</span>
               </p>
               {s.motivo && <p className="text-xs text-gray-500">«{s.motivo}»</p>}
-              {s.excedeLimite && (
-                <p className="mt-1 text-xs text-red-700">
-                  Pasa del límite embargable: quedaban {formatCurrency(Number(s.limiteCuotaPeriodo ?? 0))} por período.
-                </p>
-              )}
               {rechazo?.id === s.id && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   <input className="input max-w-sm" placeholder="Motivo del rechazo (lo verá el empleado)" value={rechazo.motivo} onChange={(e) => setRechazo({ id: s.id, motivo: e.target.value })} aria-label="Motivo del rechazo" />

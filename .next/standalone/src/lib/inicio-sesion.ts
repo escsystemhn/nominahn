@@ -8,7 +8,7 @@
  * equivocado es peor que ninguno.
  */
 
-export const VERSION = "2.0";
+export const VERSION = "2.0.2";
 
 /** Contacto verificado en esc-systemhn.com. */
 export const SOPORTE = {
@@ -24,6 +24,85 @@ export interface Novedad {
 }
 
 export const NOVEDADES: Record<string, Novedad[]> = {
+  "2.0.2": [
+    {
+      titulo: "Formato de captura por sucursal",
+      detalle: "En Deducciones → Exportar: los empleados por departamento, como su planilla, con subtotales, para escribir los montos a mano y volver a importarlos.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "Su planilla, tal como viene",
+      detalle: "Montos del período lee encabezados en dos filas, abreviaturas como «Ptamo.» o «Coop.», guiones y totales, y recuerda a qué tipo va cada columna.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "ISR automático o manual",
+      detalle: "En Parámetros de ley. En manual se retiene el ISR que se importa para cada quincena: útil al empezar a mitad de año.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Limpiar pruebas",
+      detalle: "En Configuración → Sistema: quita las planillas de prueba sin aprobar y los montos importados desde una fecha, y devuelve las cuotas que cobraron.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "En el celular y la tablet",
+      detalle: "Menú, tablas y formularios hechos para el dedo, y se puede agregar a la pantalla de inicio como una aplicación.",
+      modulo: "General",
+    },
+    {
+      titulo: "Conectar celulares al servidor",
+      detalle: "La página del certificado trae un código QR y los pasos para Android y iPhone.",
+      modulo: "Instalación",
+    },
+  ],
+  "2.0.1": [
+    {
+      titulo: "Columnas a su medida",
+      detalle: "En Empleados, «Columnas» elige qué datos se ven: identidad, jefe directo, frecuencia, antigüedad, banco, correo y más. Se recuerda en cada navegador.",
+      modulo: "Empleados",
+    },
+    {
+      titulo: "Exportar estructura",
+      detalle: "Grupos, sucursales y departamentos con sus totales, hasta los puestos o cada empleado, en Excel o PDF. También en Reportes y en Jerarquía de nómina.",
+      modulo: "Empleados",
+    },
+    {
+      titulo: "Filtros de sucursal y estado",
+      detalle: "La lista de empleados se filtra también por sucursal y por estado, con «Sin los dados de baja».",
+      modulo: "Empleados",
+    },
+    {
+      titulo: "Dónde trabaja, en la ficha",
+      detalle: "Arriba de la ficha van juntos el grupo, la sucursal y el departamento.",
+      modulo: "Empleados",
+    },
+    {
+      titulo: "Guardar y registrar otro, también al editar",
+      detalle: "Guarda los cambios de un empleado y abre el alta del siguiente.",
+      modulo: "Empleados",
+    },
+    {
+      titulo: "Configuración en un menú",
+      detalle: "Organización, Parametrizaciones, Integraciones y Sistema en un menú lateral, con la opción «Sólo íconos» para pantallas pequeñas.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "Foto del empleado",
+      detalle: "Con la cámara del equipo o desde un archivo, en el alta y en Editar.",
+      modulo: "Empleados",
+    },
+    {
+      titulo: "Descuentos por asistencia",
+      detalle: "Ausencias, séptimo día y permisos sin goce, y llegadas tarde si se encienden, en Configuración → Asistencia.",
+      modulo: "Asistencia",
+    },
+    {
+      titulo: "Identidades y cuentas en Excel",
+      detalle: "Los reportes ya no le quitan el cero inicial a la identidad, al RTN ni a las cuentas bancarias.",
+      modulo: "Reportes",
+    },
+  ],
   "2.0": [
     {
       titulo: "Tablero ejecutivo",

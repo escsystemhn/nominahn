@@ -12,12 +12,15 @@
  *
  * Deducciones se exporta POR EMPLEADO y para un período: se marcan empleados y el
  * archivo trae una columna por tipo de deducción con lo que se descuenta en ese
- * período (`tipoPlanilla`, `desde` y `hasta` van en la lista y en el POST).
+ * período (`tipoPlanilla`, `desde` y `hasta` van en la lista y en el POST). Arranca en el
+ * FORMATO POR SUCURSAL (`FormatoCaptura`): los empleados por departamento, como la planilla de
+ * la empresa, para llenar a mano; la lista de empleados marcados queda como segunda opción.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { Campo, Modal } from "@/components/ui/ModalForm";
 import SelectorPeriodo, { periodoInicial } from "@/components/payroll/SelectorPeriodo";
+import FormatoCaptura from "@/components/payroll/FormatoCaptura";
 import { claveNombre } from "@/lib/organizacion/puestos";
 import { frasePeriodo, errorDePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 import type { RecursoImportacion } from "@/lib/importacion/tipos";
@@ -86,6 +89,10 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
   const [error, setError] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState(() => periodoInicial(tipoPlanilla));
   const errorPeriodo = c.conPeriodo ? errorDePeriodo(periodo) : null;
+  // Deducciones: el formato por sucursal para llenar a mano, o la lista de empleados marcados.
+  const conFormato = recurso === "deducciones";
+  const [variante, setVariante] = useState<"formato" | "lista">(conFormato ? "formato" : "lista");
+  const enFormato = conFormato && variante === "formato";
 
   const q = new URLSearchParams({ lista: "1" });
   for (const [k, v] of Object.entries(filtros ?? {})) if (v) q.set(k, v);
@@ -100,6 +107,8 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
 
   useEffect(() => {
     let vivo = true;
+    // En el formato por sucursal la lista de empleados no hace falta.
+    if (enFormato) return () => { vivo = false; };
     void (async () => {
       try {
         const r = await fetch(`/api/exportar/${recurso}?${consulta}`, { cache: "no-store" });
@@ -114,7 +123,7 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
       }
     })();
     return () => { vivo = false; };
-  }, [consulta, recurso, c.varios, c.todosMarcados]);
+  }, [consulta, recurso, c.varios, c.todosMarcados, enFormato]);
 
   const visibles = useMemo(() => {
     const palabras = claveNombre(busqueda).split(" ").filter(Boolean);
@@ -173,9 +182,30 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
   }
 
   const idGrupo = `exportar-${recurso}`;
+  const selectorVariante = conFormato && (
+    <fieldset className="space-y-2">
+      <legend className="sr-only">Qué archivo</legend>
+      {([
+        ["formato", "Formato por sucursal", "Para llenar a mano: los empleados por departamento, como su planilla, con subtotales."],
+        ["lista", "Lista de empleados", "Los empleados que marque, uno por fila. También en CSV."],
+      ] as const).map(([valor, etiqueta, detalle]) => (
+        <label key={valor} className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${variante === valor ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
+          <input type="radio" name="exportar-variante" className="mt-1" checked={variante === valor} onChange={() => setVariante(valor)} />
+          <span>
+            <span className="block text-sm font-medium text-gray-900">{etiqueta}</span>
+            <span className="block text-xs text-gray-500">{detalle}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+  if (enFormato) {
+    return <FormatoCaptura titulo="Exportar deducciones" periodo={periodo} onPeriodo={cambiarPeriodo} encabezado={selectorVariante} onCerrar={onCerrar} />;
+  }
   return (
-    <Modal titulo={c.titulo} error={error ?? errorPeriodo} cargando={cargando} puedeGuardar={filas !== null && !errorPeriodo} onCerrar={onCerrar} onGuardar={() => void exportar()}
+    <Modal titulo={conFormato ? "Exportar deducciones" : c.titulo} error={error ?? errorPeriodo} cargando={cargando} puedeGuardar={filas !== null && !errorPeriodo} onCerrar={onCerrar} onGuardar={() => void exportar()}
       textoGuardar={n === 0 ? "Descargar sólo encabezados" : n === 1 ? `Exportar 1 ${c.uno}` : `Exportar ${n} ${c.varios}`}>
+      {selectorVariante}
       {c.conPeriodo && (
         <div className="space-y-1" data-periodo={`${periodo.desde}|${periodo.hasta}`}>
           <SelectorPeriodo id={`exportar-${recurso}-periodo`} valor={periodo} onCambio={cambiarPeriodo} />

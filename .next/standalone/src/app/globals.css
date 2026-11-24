@@ -301,6 +301,44 @@
     background: var(--color-gray-50);
     box-shadow: inset 0 1px 0 var(--color-gray-300);
   }
+  /* Con muchas columnas, el nombre se queda a la vista al recorrer la tabla a lo ancho. */
+  .tabla-fija .col-fija {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--color-white);
+    box-shadow: inset -1px 0 0 var(--color-gray-100);
+  }
+  .tabla-fija thead th.col-fija {
+    z-index: 3;
+    background: var(--color-gray-50);
+    box-shadow: inset 0 -1px 0 var(--color-gray-200), inset -1px 0 0 var(--color-gray-200);
+  }
+  .tabla-fija tbody tr:hover td.col-fija {
+    background: var(--color-gray-50);
+  }
+}
+
+/*
+ * En el celular, una tabla ancha se recorre de lado: el nombre se queda a la vista,
+ * angosto. No aplica a una lista que ya se lee en tarjetas.
+ */
+@media (max-width: 639.98px) {
+  .tabla-fija table:not(.tabla-tarjetas) .col-fija {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    max-width: 9rem;
+    white-space: normal;
+    /* La sangría de los grupos le quitaba al nombre la mitad de su espacio. */
+    padding-left: 0.75rem !important;
+    background: var(--color-white);
+    box-shadow: inset -1px 0 0 var(--color-gray-200);
+  }
+  .tabla-fija table:not(.tabla-tarjetas) thead th.col-fija {
+    z-index: 3;
+    background: var(--color-gray-50);
+  }
 }
 
 /*
@@ -308,7 +346,7 @@
  * `relative` porque un título `sr-only` de la tabla, que es absoluto, se escaparía
  * del recuadro y ensancharía la página entera.
  */
-@media (max-width: 1023.98px) {
+@media (max-width: 1279.98px) {
   main :has(> table) {
     position: relative;
     overflow-x: auto;
@@ -331,13 +369,75 @@
     align-items: center;
     min-height: 2.75rem;
   }
-  main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-  main select,
-  main textarea,
-  .fixed.inset-0 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-  .fixed.inset-0 select,
-  .fixed.inset-0 textarea {
+  /* Todos los campos, también los del ingreso, que está fuera de <main>: ahí el
+     iPhone acercaba la pantalla al tocar el correo o la clave. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="hidden"]),
+  select,
+  textarea {
     min-height: 2.75rem;
     font-size: 16px;
   }
+  /* Casillas de 24 px: con 16 el dedo fallaba. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  /* Ordenar por una columna y abrir un detalle. */
+  main th > a {
+    min-height: 2.75rem;
+  }
+  /* Un botón de ícono marcado recibe el dedo en 44 × 44 px sin crecer ni empujar la fila. */
+  [data-toque] {
+    position: relative;
+  }
+  [data-toque]::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
+  }
+  main summary {
+    padding-block: 0.75rem;
+  }
+  /* En una tarjeta, su título es el enlace al detalle. */
+  .tabla-tarjetas td[data-titulo] a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+  /* Acciones en fila, como «Ver  Descargar  Enviar»: 44 px de alto y aire entre una y otra. */
+  [data-acciones] > * {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding-inline: 0.375rem;
+  }
+  /* Sin teclado, «Ctrl K» no dice nada. */
+  [data-atajo] {
+    display: none !important;
+  }
+}
+
+/*
+ * La planilla en pantalla. El encabezado tiene dos filas (los grupos de columnas
+ * encima): la segunda se queda fija justo debajo de la primera, que mide 1.75rem (h-7).
+ * La fila bajo el ratón se pinta de punta a punta, para seguirla hasta el neto; una
+ * celda con aviso conserva su color.
+ */
+@media (min-width: 640px) {
+  /* Un píxel encima de la primera: sin rendija por donde se vea el cuerpo al bajar. */
+  .tabla-fija .tabla-planilla thead tr + tr th {
+    top: calc(1.75rem - 1px);
+  }
+  /* En una celda fija el borde no la acompaña: la línea entre grupos es una sombra. */
+  .tabla-fija .tabla-planilla thead th[data-divide] {
+    box-shadow: inset 1px 0 0 var(--color-gray-200), inset 0 -1px 0 var(--color-gray-200);
+  }
+}
+.tabla-planilla tbody tr[data-linea]:hover td:not([data-aviso-celda]) {
+  background: var(--color-blue-50);
 }

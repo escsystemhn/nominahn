@@ -1,6 +1,7 @@
 /**
- * Método de cálculo del ISR: ESTANDAR (anualiza el mes) o PERSONALIZADO (proyección
- * anual como la hoja «Retención en la fuente»), y las deducciones del personalizado.
+ * Retención del ISR: AUTOMÁTICA o MANUAL (la de cada período se importa), el método de
+ * cálculo del automático —ESTANDAR (anualiza el mes) o PERSONALIZADO (proyección anual
+ * como la hoja «Retención en la fuente»)— y las deducciones del personalizado.
  * Sólo quien tiene `configuracion.parametros`: cambia lo que se retiene a todos.
  */
 
@@ -9,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
-import { CLAVE_METODO_ISR, guardarConfigIsr, leerConfigIsr, schemaMetodoIsr } from "@/lib/payroll/isr-personalizado-bd";
+import { asegurarTipoIsrFijo, CLAVE_METODO_ISR, guardarConfigIsr, leerConfigIsr, schemaMetodoIsr } from "@/lib/payroll/isr-personalizado-bd";
 
 export async function GET() {
   const g = await requerirPermiso("configuracion.parametros");
@@ -35,6 +36,8 @@ export async function PUT(req: NextRequest) {
   if (!parsed.ok) return parsed.response;
 
   const antes = await leerConfigIsr(prisma);
+  // En manual, la retención de cada período se guarda en el tipo de la retención fija.
+  if (parsed.data.modo === "MANUAL") await asegurarTipoIsrFijo(prisma);
   await guardarConfigIsr(prisma, parsed.data);
 
   const { ip, userAgent } = getClientInfo(req);

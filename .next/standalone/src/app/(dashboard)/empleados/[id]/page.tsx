@@ -13,6 +13,8 @@ import SaludFamilia from "@/components/employees/SaludFamilia";
 import ContratosEmpleado from "@/components/employees/ContratosEmpleado";
 import FlechasEmpleado from "@/components/employees/FlechasEmpleado";
 import { leerLista, textoLista, vecinosEmpleado } from "@/lib/empleados/lista";
+import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
+import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 
 
 const TIPO_PERMISO: Record<string, string> = {
@@ -54,11 +56,15 @@ export default async function FichaEmpleadoPage({
     return `/empleados/${otro}${q ? `?${q}` : ""}`;
   };
 
+  const [conDivisiones, conJerarquia] = await Promise.all([divisionesHabilitadas(prisma), jerarquiaNominaHabilitada(prisma)]);
+  const niveles = etiquetasNiveles(conJerarquia);
+
   const emp = await prisma.empleado.findUnique({
     where: { id },
     include: {
       sucursal: true,
-      departamento: true,
+      // Con la jerarquía, la «sucursal» de la persona es la división de su departamento.
+      departamento: { include: { division: { select: { nombre: true } } } },
       puesto: true,
       foto: { select: { updatedAt: true } },
       contratos: { orderBy: { fechaInicio: "desc" } },
@@ -100,8 +106,7 @@ export default async function FichaEmpleadoPage({
         description={
           <>
             <EstadoBadge valor={emp.estado} className="mr-2 align-middle" />
-            {emp.puesto ? `${emp.puesto.nombre}, ` : ""}
-            {emp.departamento.nombre}, {emp.sucursal.nombre}
+            {emp.puesto?.nombre ?? "Sin puesto asignado"}
           </>
         }
         actions={
@@ -127,7 +132,25 @@ export default async function FichaEmpleadoPage({
           </>
         }
       >
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4">
+        {/* Dónde trabaja, nivel por nivel y con su nombre: antes la línea de arriba nombraba el grupo
+            sin decirlo y la sucursal no aparecía (pedido de Edbin, 2026-11-18). */}
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-4" data-ubicacion-empleado>
+          <div>
+            <dt className="text-xs text-gray-500">{niveles.sucursal}</dt>
+            <dd className="mt-0.5 font-medium text-gray-900">{emp.sucursal.nombre}</dd>
+          </div>
+          {conDivisiones && (
+            <div>
+              <dt className="text-xs text-gray-500">{niveles.division}</dt>
+              <dd className="mt-0.5 font-medium text-gray-900">
+                {emp.departamento.division?.nombre ?? <span className="font-normal text-gray-500">{niveles.sinDivision}</span>}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt className="text-xs text-gray-500">Departamento</dt>
+            <dd className="mt-0.5 text-gray-900">{emp.departamento.nombre}</dd>
+          </div>
           <div>
             <dt className="text-xs text-gray-500">Código</dt>
             <dd className="mt-0.5 font-mono text-gray-900">{emp.codigo}</dd>

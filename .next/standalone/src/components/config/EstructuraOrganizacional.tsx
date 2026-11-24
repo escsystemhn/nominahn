@@ -363,7 +363,7 @@ export default function EstructuraOrganizacional({ empresaId, empresaNombre, emp
                           <Fragment key={d.id}>
                             <tr>
                               <td className={g.titulo ? "pl-14" : "pl-8"}>
-                                <button type="button" className="inline-flex items-center gap-1.5 text-left font-medium text-gray-900 hover:text-blue-700" aria-expanded={abierto} onClick={() => alternarAbierto(d.id)}>
+                                <button type="button" data-toque className="inline-flex items-center gap-1.5 text-left font-medium text-gray-900 hover:text-blue-700" aria-expanded={abierto} onClick={() => alternarAbierto(d.id)}>
                                   <svg className={`h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform ${abierto ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="m9 5 7 7-7 7" />
                                   </svg>

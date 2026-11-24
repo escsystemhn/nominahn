@@ -7,7 +7,7 @@ R.c("server/chunks/_0ja606m7k78w9._.js")
 R.c("server/chunks/_160atohuo54ez._.js")
 R.c("server/chunks/[root-of-the-server]__1v1-l-83czzsr._.js")
 R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
-R.c("server/chunks/_0hm8bq0v6utco._.js")
+R.c("server/chunks/_04wns994fk0t7._.js")
 R.c("server/chunks/_next-internal_server_app_api_turnos_[id]_route_actions_0zri5y7jbkown.js")
 R.m(67948)
 module.exports=R.m(67948).exports

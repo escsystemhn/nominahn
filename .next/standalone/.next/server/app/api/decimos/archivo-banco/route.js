@@ -1,5 +1,5 @@
 var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/decimos/archivo-banco/route.js")
-R.c("server/chunks/_1fxuqz4ir8em2._.js")
+R.c("server/chunks/_1kdaw2y0268xe._.js")
 R.c("server/chunks/src_lib_auth_guard_ts_0jr6hl0m1so3k._.js")
 R.c("server/chunks/src_lib_utils_ts_1_h0ll7nqk9if._.js")
 R.c("server/chunks/[root-of-the-server]__1ibt3-z7zcmo4._.js")
