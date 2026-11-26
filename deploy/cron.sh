@@ -3,7 +3,9 @@
 # Gestión360 Nómina — tareas programadas (las mismas que corre el instalador de
 # Windows cada 5 minutos). 03-app.sh lo deja en el crontab del usuario `deploy`:
 #
-#   */5 * * * *  ~/nominahn/deploy/cron.sh biometrico sap respaldos
+#   */5 * * * *  ~/nominahn/deploy/cron.sh biometrico sap
+#   */15 * * * * ~/nominahn/deploy/cron.sh respaldos
+#   0 3 * * 0    ~/nominahn/deploy/probar-restauracion.sh
 #   15 6 * * *   ~/nominahn/deploy/cron.sh evaluaciones
 #
 # Cada ruta decide sola si le toca hacer algo (por ejemplo, Configuración →
@@ -24,7 +26,8 @@ if [[ -z "$CLAVE" ]]; then
 fi
 
 # Un respaldo a la nube puede tardar; mientras corre, la vuelta siguiente no se encima.
-exec 9>"${XDG_RUNTIME_DIR:-/tmp}/gestion360-cron-$(id -u).lock"
+# Un candado por grupo de rutas (2026-11-25): el respaldo largo no frena relojes ni SAP.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/gestion360-cron-$(id -u)-$(IFS=-; echo "$*").lock"
 if command -v flock >/dev/null && ! flock -n 9; then
   registrar "la vuelta anterior sigue en curso: se omite ésta"
   exit 0

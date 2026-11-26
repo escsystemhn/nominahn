@@ -12,6 +12,8 @@ import { sumarPor } from "@/lib/payroll/money";
 import PageHeader from "@/components/ui/PageHeader";
 import { divisionesHabilitadas } from "@/lib/organizacion/estructura-bd";
 import { periodosSinGenerar } from "@/lib/payroll/pendientes-generar-bd";
+import { pendientesDeRespaldos } from "@/lib/respaldos/alertas";
+import { ubicarPostgres } from "@/lib/respaldos/respaldos-bd";
 import { claveDePeriodo, nombreDePeriodo } from "@/lib/payroll/planillas-por-periodo";
 import { ETIQUETA_TIPO_PLANILLA, frasePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 
@@ -75,6 +77,7 @@ export default async function DashboardPage() {
   const pagaPlanillas = puede(usuario, "planillas.pagar");
   const veContratos = puede(usuario, "empleados.pii");
   const enviaSap = puede(usuario, "planillas.sap_enviar");
+  const administraRespaldos = puede(usuario, "configuracion.respaldos");
   // Sin sesión legible no se cuenta nada: es el mismo fallo seguro de `filtroEmpleados`.
   const alcance: UsuarioConAlcance & { role?: string | null } = usuario ?? { alcance: "PROPIO" };
 
@@ -131,6 +134,10 @@ export default async function DashboardPage() {
       // Sucursales a las que ya les toca su planilla y no la tienen (fase 3).
       calculaPlanillas ? periodosSinGenerar(prisma, alcance, dia(hoy), await divisionesHabilitadas(prisma)) : [],
     ]);
+  // Respaldos con error, atrasados, prueba de restauración fallida o automático apagado (2026-11-25).
+  const deRespaldos = administraRespaldos ? await pendientesDeRespaldos(new Date(), !("error" in ubicarPostgres())).catch(() => []) : [];
+  const respaldosApagados = deRespaldos.filter((x) => x.titulo === "Respaldos automáticos apagados");
+  const respaldosGraves = deRespaldos.filter((x) => x.titulo !== "Respaldos automáticos apagados");
 
   // Las planillas de esos períodos, con sus montos (con alcance limitado, la suma de las personas que alcanza).
   const delosPeriodos = periodosRecientes.length === 0 ? [] : await prisma.planilla.findMany({
@@ -184,6 +191,8 @@ export default async function DashboardPage() {
     href: `/planillas?tipo=${x.tipo}&vista=tablero`,
   });
   const pendientes = [
+    // Un respaldo que falla pone en riesgo todo lo demás: arriba.
+    ...respaldosGraves,
     // Un período que ya terminó sin la planilla de alguna sucursal va primero: hay gente sin pagar.
     ...sinGenerar.filter((x) => x.vencido).map(sinPlanilla),
     enviaSap && erroresSap.length > 0 && {
@@ -230,6 +239,7 @@ export default async function DashboardPage() {
       detalle: `${contratos.map((c) => `${nombreCompleto(c.empleado)}, ${formatDate(c.fechaFin as Date)}`).join("; ")}${totalContratos > contratos.length ? `; y ${totalContratos - contratos.length} más` : ""}.`,
       href: totalContratos === 1 ? `/empleados/${contratos[0].empleadoId}?tab=contrato` : "/empleados",
     },
+    ...respaldosApagados,
   ].filter((x): x is Exclude<typeof x, false> => Boolean(x));
 
   const nombrePila = usuario?.name?.split(" ")[0] ?? "";

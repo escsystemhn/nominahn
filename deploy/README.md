@@ -101,9 +101,15 @@ El script, en orden:
    cambio borrara datos, `db push` se niega: se detiene ahí, con el respaldo hecho.
 4. Base vacía: datos iniciales. Con usuarios: sólo pone al día los perfiles de acceso.
 5. Compila, instala el servicio `nominahn` y lo reinicia.
-6. Programa las tareas en el crontab de `deploy` (respaldos, relojes, SAP y
-   evaluaciones, igual que el instalador de Windows) con `deploy/cron.sh`, que lee
-   `CRON_SECRET` de `.env.local` en cada vuelta.
+6. Programa las tareas en el crontab de `deploy` con `deploy/cron.sh`, que lee
+   `CRON_SECRET` de `.env.local` en cada vuelta (igual que el instalador de Windows):
+
+   | Cuándo | Qué |
+   |---|---|
+   | cada 5 min | `cron.sh biometrico sap`: relojes y reintentos de SAP |
+   | cada 15 min | `cron.sh respaldos`: el automático a su hora y los avisos (con candado propio) |
+   | domingo 3:00 | `probar-restauracion.sh`: restaura el último respaldo en una base aparte y la borra |
+   | 6:15 | `cron.sh evaluaciones` |
 7. Comprueba que `/api/estado` responda.
 
 ## 6. HTTPS
@@ -129,8 +135,13 @@ antes o la emisión falla.
       cliente); destino **Nube (S3)** → proveedor *DigitalOcean Spaces*, región `nyc3`, el
       bucket y la Access Key; destino *Disco local* (`/var/backups/gestion360`) como
       segundo; automático diario; «Probar» cada destino y **«Respaldar ahora»**.
+- [ ] Si los respaldos van cifrados, la misma contraseña en `~/.config/gestion360/respaldo-clave`
+      (`install -d -m 700 ~/.config/gestion360`, el archivo con `chmod 600`): la usa la prueba
+      de restauración del domingo.
+- [ ] `~/nominahn/deploy/probar-restauracion.sh` a mano: Configuración → Respaldos muestra
+      «Prueba de restauración correcta».
 - [ ] `journalctl -t gestion360-cron -n 20` muestra las llamadas cada 5 minutos con 200.
-- [ ] **Prueba de restauración** (ver abajo) en un droplet temporal, que después se destruye.
+- [ ] **Restauración completa** (ver abajo) en un droplet temporal, que después se destruye.
 
 ## Operación
 
@@ -138,20 +149,26 @@ antes o la emisión falla.
 sudo systemctl restart nominahn          # reiniciar
 sudo journalctl -u nominahn -n 200       # registro de la aplicación
 journalctl -t gestion360-cron -f         # tareas programadas
+journalctl -t gestion360-respaldos -n 50 # prueba de restauración y restauraciones
 sudo apt update && sudo apt upgrade      # incluye PostgreSQL: las actualizaciones
                                          # automáticas sólo cubren a Ubuntu
 ```
 
 ### Restaurar un respaldo de Configuración → Respaldos
 
+Sólo por comando (no hay botón en la aplicación):
+
 ```bash
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -in ARCHIVO.tar.gz.enc -out r.tar.gz
-mkdir r && tar -xzf r.tar.gz -C r        # manifiesto.json, base/, adjuntos/
-sudo systemctl stop nominahn
-pg_restore --clean --if-exists --no-owner -h localhost -U nomina_app -d nominahn r/base/g360-nomina.dump
-rsync -a r/adjuntos/ /var/uploads/
-sudo systemctl start nominahn
+~/nominahn/deploy/restaurar.sh /var/backups/gestion360/g360-nomina_2026-11-25_013000_automatico.tar.gz.enc
 ```
+
+Respalda la base actual en `~/respaldos-despliegue/antes-de-restaurar-<fecha>.dump`, restaura
+en `nominahn_restaurando` con la aplicación funcionando, detiene el servicio, cambia una base
+por la otra (la anterior queda como `nominahn_anterior_<fecha>`), sincroniza el esquema
+(`db:push` + `db:constraints`; si falla, vuelve a la anterior), devuelve los adjuntos e inicia
+el servicio. Si está cifrado pide la contraseña (o `RESPALDO_CLAVE`, o
+`~/.config/gestion360/respaldo-clave`). Paso a paso, y a mano sin el script:
+[`docs/RESPALDOS.md`](../docs/RESPALDOS.md).
 
 Con el `.env.local` original: la misma `CIFRADO_KEY` (ver paso 4).
 

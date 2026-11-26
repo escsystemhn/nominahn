@@ -1,8 +1,10 @@
 "use client";
 
 /**
- * Configuración → Respaldos: respaldar ahora o automáticamente, a disco local, a una
- * carpeta de red o a la nube (compatible con S3). Ver `lib/respaldos/`.
+ * Configuración → Respaldos: respaldar ahora o automáticamente, a disco local, a un disco
+ * extraíble, a una carpeta de red o a la nube (compatible con S3). Ver `lib/respaldos/`.
+ * 2026-11-25: disco extraíble con «Preparar disco», retención GFS, «Respaldar ahora» en
+ * segundo plano y la prueba de restauración semanal.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -12,6 +14,7 @@ import {
   type ConfigEntrada,
   type ConfigPublica,
   type DestinoPublico,
+  type PruebaRestauracion,
   type ProveedorS3,
 } from "@/lib/respaldos/config";
 
@@ -22,14 +25,14 @@ interface Historial {
 }
 interface Datos {
   config: ConfigPublica;
-  estado: { pgDump: { ok: boolean; mensaje: string }; cifradoDisponible: boolean; windows: boolean; proximo: string | null; carpetaSugerida: string | null };
+  estado: { pgDump: { ok: boolean; mensaje: string }; cifradoDisponible: boolean; windows: boolean; proximo: string | null; carpetaSugerida: string | null; pruebaRestauracion: PruebaRestauracion | null };
   historial: Historial[];
 }
 /** Destino en edición: lo público más la clave que se escriba (vacía = dejar la guardada). */
 type DestinoForm = DestinoPublico & { claveNueva: string };
 
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-const TIPO: Record<string, string> = { LOCAL: "Disco local", RED: "Carpeta de red", NUBE: "Nube (S3)" };
+const TIPO: Record<string, string> = { LOCAL: "Disco local", EXTRAIBLE: "Disco extraíble", RED: "Carpeta de red", NUBE: "Nube (S3)" };
 const ESTADO: Record<string, { texto: string; clase: string }> = {
   OK: { texto: "Correcto", clase: "bg-green-50 text-green-800" },
   PARCIAL: { texto: "Parcial", clase: "bg-amber-50 text-amber-900" },
@@ -46,9 +49,10 @@ function tamano(b: number | null): string {
   return `${(b / 1024 ** 3).toFixed(2)} GB`;
 }
 
-function destinoVacio(tipo: "LOCAL" | "RED" | "NUBE", carpetaSugerida: string | null): DestinoForm {
+function destinoVacio(tipo: "LOCAL" | "EXTRAIBLE" | "RED" | "NUBE", carpetaSugerida: string | null): DestinoForm {
   const base = { id: nuevoId(), activo: true, claveNueva: "" };
   if (tipo === "LOCAL") return { ...base, tipo, nombre: "Disco local", carpeta: carpetaSugerida ?? "" };
+  if (tipo === "EXTRAIBLE") return { ...base, tipo, nombre: "Disco extraíble", carpeta: "" };
   if (tipo === "RED") return { ...base, tipo, nombre: "Carpeta de red", ruta: "", usuario: null, tieneClave: false };
   const p = PROVEEDORES_S3.B2;
   return { ...base, tipo, nombre: "Nube", proveedor: "B2", endpoint: p.endpoint(p.region), region: p.region, bucket: "", prefijo: "nomina/", accessKeyId: "", estiloRuta: p.estiloRuta, tieneClave: false };
@@ -57,7 +61,7 @@ function destinoVacio(tipo: "LOCAL" | "RED" | "NUBE", carpetaSugerida: string | 
 /** Lo que se manda al servidor: una clave vacía es «dejar la guardada». */
 function aEntrada(d: DestinoForm): ConfigEntrada["destinos"][number] {
   const { claveNueva, ...resto } = d;
-  if (resto.tipo === "LOCAL") return { id: resto.id, nombre: resto.nombre, activo: resto.activo, tipo: "LOCAL", carpeta: resto.carpeta };
+  if (resto.tipo === "LOCAL" || resto.tipo === "EXTRAIBLE") return { id: resto.id, nombre: resto.nombre, activo: resto.activo, tipo: resto.tipo, carpeta: resto.carpeta };
   if (resto.tipo === "RED") return { id: resto.id, nombre: resto.nombre, activo: resto.activo, tipo: "RED", ruta: resto.ruta, usuario: resto.usuario || null, clave: claveNueva || null };
   return {
     id: resto.id, nombre: resto.nombre, activo: resto.activo, tipo: "NUBE", proveedor: resto.proveedor, endpoint: resto.endpoint, region: resto.region,
@@ -71,6 +75,7 @@ export default function RespaldosConfig() {
   const [form, setForm] = useState<{ cfg: Omit<ConfigPublica, "destinos">; destinos: DestinoForm[]; clave: string } | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<"guardar" | "respaldar" | null>(null);
+  const [enCurso, setEnCurso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pruebas, setPruebas] = useState<Record<string, { ok: boolean; mensaje: string } | "probando">>({});
   const [cambios, setCambios] = useState(false);
@@ -110,14 +115,15 @@ export default function RespaldosConfig() {
     setForm({ ...form, destinos: form.destinos.map((d) => (d.id === id ? ({ ...d, ...cambio } as DestinoForm) : d)) });
     setCambios(true);
   };
-  const hayNube = form.destinos.some((d) => d.tipo === "NUBE" && d.activo);
+  // La nube y el disco extraíble exigen cifrado (este último, pedido de Edbin del 2026-11-25).
+  const exigeCifrado = form.destinos.some((d) => (d.tipo === "NUBE" || d.tipo === "EXTRAIBLE") && d.activo);
   const ultimo = datos.historial[0];
 
   async function guardar(): Promise<boolean> {
     setOcupado("guardar"); setError(null);
     const cuerpo: ConfigEntrada = {
       automatico: { activo: cfg.automatico.activo, frecuencia: cfg.automatico.frecuencia, hora: cfg.automatico.hora, diaSemana: cfg.automatico.diaSemana },
-      conservar: cfg.conservar, incluirAdjuntos: cfg.incluirAdjuntos, cifrar: cfg.cifrar,
+      retencion: cfg.retencion, incluirAdjuntos: cfg.incluirAdjuntos, cifrar: cfg.cifrar,
       claveCifrado: form!.clave || null,
       destinos: form!.destinos.map(aEntrada),
     };
@@ -140,12 +146,35 @@ export default function RespaldosConfig() {
     if (cambios && !(await guardar())) return;
     setOcupado("respaldar"); setError(null);
     const r = await fetch("/api/configuracion/respaldos/ejecutar", { method: "POST" });
-    const d = await r.json().catch(() => ({}));
-    setOcupado(null);
-    if (r.status === 409 || (!r.ok && !d.estado)) setError(d.error ?? "No se pudo hacer el respaldo.");
-    else if (d.estado === "OK") avisar.exito(`Respaldo listo (${tamano(d.tamano)}) en ${d.destinos.length} destino(s).`);
-    else avisar.error(`El respaldo ${d.estado === "PARCIAL" ? "no llegó a todos los destinos" : "falló"}: ${d.error}`);
+    const inicio = await r.json().catch(() => ({}));
+    if (!r.ok || !inicio.id) {
+      setOcupado(null);
+      setError(inicio.error ?? "No se pudo empezar el respaldo.");
+      return;
+    }
+    // Corre en el servidor: aquí sólo se consulta cómo va (seguiría aunque se cierre la pantalla).
+    setEnCurso(inicio.id);
     await cargar();
+    let d: { estado?: string; tamano?: number | null; destinos?: unknown[] | null; error?: string | null } = {};
+    for (;;) {
+      await new Promise((res) => setTimeout(res, 2000));
+      const e = await fetch(`/api/configuracion/respaldos/${inicio.id}`, { cache: "no-store" });
+      d = await e.json().catch(() => ({}));
+      if (!e.ok || d.estado !== "EN_CURSO") break;
+    }
+    setEnCurso(null);
+    setOcupado(null);
+    if (d.estado === "OK") avisar.exito(`Respaldo listo (${tamano(d.tamano ?? null)}) en ${d.destinos?.length ?? 0} destino(s).`);
+    else avisar.error(`El respaldo ${d.estado === "PARCIAL" ? "no llegó a todos los destinos" : "falló"}: ${d.error ?? "sin detalle"}`);
+    await cargar();
+  }
+
+  async function prepararDisco(d: DestinoForm) {
+    setPruebas((p) => ({ ...p, [d.id]: "probando" }));
+    const r = await fetch("/api/configuracion/respaldos/preparar-disco", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ destino: aEntrada(d) }) });
+    const x = await r.json().catch(() => ({}));
+    const detalle = x.detalles ? Object.values(x.detalles as Record<string, string[]>).flat().join(" ") : "";
+    setPruebas((p) => ({ ...p, [d.id]: r.ok ? x : { ok: false, mensaje: [x.error, detalle].filter(Boolean).join(" ") || "No se pudo preparar el disco." } }));
   }
 
   async function probar(d: DestinoForm) {
@@ -190,6 +219,12 @@ export default function RespaldosConfig() {
             </dd>
           </div>
         </dl>
+        <PruebaDeRestauracion p={datos.estado.pruebaRestauracion} />
+        {enCurso && (
+          <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900" role="status" data-respaldo-en-curso>
+            Armando el respaldo y enviándolo a los destinos. Sigue en el servidor aunque cierre esta pantalla.
+          </p>
+        )}
         {error && <p className="whitespace-pre-line rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{error}</p>}
       </section>
 
@@ -219,11 +254,27 @@ export default function RespaldosConfig() {
             <span className="block text-xs font-medium text-gray-700">Hora (Honduras)</span>
             <input type="time" className="input mt-1 w-32" value={cfg.automatico.hora} onChange={(e) => setAuto({ hora: e.target.value })} disabled={!cfg.automatico.activo} />
           </label>
-          <label className="text-sm">
-            <span className="block text-xs font-medium text-gray-700">Conservar en cada destino</span>
-            <input type="number" min={1} max={365} className="input mt-1 w-28" value={cfg.conservar} onChange={(e) => setCfg({ conservar: Math.max(1, Math.min(365, Number(e.target.value) || 1)) })} />
-          </label>
         </div>
+        <fieldset className="space-y-2" data-retencion>
+          <legend className="text-sm font-medium text-gray-800">Conservar en cada destino</legend>
+          <div className="flex flex-wrap gap-4">
+            {([
+              ["diarios", "Días", 1, 365, "Los automáticos de los últimos días."],
+              ["semanales", "Semanas", 0, 104, "Uno por semana, el último de cada una."],
+              ["mensuales", "Meses", 0, 120, "Uno por mes, el último de cada uno."],
+              ["manuales", "Manuales", 0, 100, "Los de «Respaldar ahora», aparte."],
+            ] as const).map(([k, etiqueta, min, max, ayuda]) => (
+              <div key={k} className="text-sm">
+                <label className="block">
+                  <span className="block text-xs font-medium text-gray-700">{etiqueta}</span>
+                  <input type="number" min={min} max={max} className="input mt-1 w-24" value={cfg.retencion[k]}
+                    onChange={(e) => setCfg({ retencion: { ...cfg.retencion, [k]: Math.max(min, Math.min(max, Math.trunc(Number(e.target.value)) || min)) } })} />
+                </label>
+                <p className="mt-0.5 max-w-[11rem] text-xs text-gray-500">{ayuda}</p>
+              </div>
+            ))}
+          </div>
+        </fieldset>
         <p className="text-xs text-gray-500">
           Si el equipo está apagado a la hora elegida, el respaldo se hace al encenderlo. Si un envío falla, se reintenta
           hasta 3 veces, con una hora entre cada intento.
@@ -235,7 +286,7 @@ export default function RespaldosConfig() {
         <div className="space-y-2 rounded-lg border border-gray-200 p-3">
           <label className="flex items-center gap-2 text-sm font-medium text-gray-800">
             <input type="checkbox" checked={cfg.cifrar} onChange={(e) => setCfg({ cifrar: e.target.checked })} /> Cifrar los respaldos con contraseña
-            {hayNube && <span className="text-xs font-normal text-gray-500">(obligatorio para la nube)</span>}
+            {exigeCifrado && <span className="text-xs font-normal text-gray-500">(obligatorio para la nube y el disco extraíble)</span>}
           </label>
           {cfg.cifrar && (
             <>
@@ -259,7 +310,7 @@ export default function RespaldosConfig() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="resp-destinos" className="font-semibold text-gray-900">Destinos</h2>
           <div className="flex flex-wrap gap-2">
-            {(["LOCAL", "RED", "NUBE"] as const).map((t) => (
+            {(["LOCAL", "EXTRAIBLE", "RED", "NUBE"] as const).map((t) => (
               <button key={t} type="button" className="btn btn-secondary btn-sm" disabled={form.destinos.length >= 6}
                 onClick={() => { const d = destinoVacio(t, datos.estado.carpetaSugerida); setForm({ ...form, destinos: [...form.destinos, d] }); setEditando(d.id); setCambios(true); }}>
                 + {TIPO[t]}
@@ -267,7 +318,7 @@ export default function RespaldosConfig() {
             ))}
           </div>
         </div>
-        {form.destinos.length === 0 && <p className="text-sm text-gray-500">Agregue al menos uno. Lo recomendable es dos: uno en este edificio (disco o red) y otro fuera (nube).</p>}
+        {form.destinos.length === 0 && <p className="text-sm text-gray-500">Agregue al menos uno. Lo recomendable es dos: uno en este edificio (disco extraíble o red) y otro fuera (nube).</p>}
         <ul className="space-y-3">
           {form.destinos.map((d) => {
             const prueba = pruebas[d.id];
@@ -278,10 +329,13 @@ export default function RespaldosConfig() {
                   <div className="min-w-0">
                     <p className="font-medium text-gray-900">{d.nombre} <span className="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-normal text-gray-600">{TIPO[d.tipo]}</span>{!d.activo && <span className="ml-1 text-xs text-gray-500">(inactivo)</span>}</p>
                     <p className="truncate text-xs text-gray-500">
-                      {d.tipo === "LOCAL" ? d.carpeta || "Sin carpeta" : d.tipo === "RED" ? `${d.ruta || "Sin ruta"}${d.usuario ? ` · usuario ${d.usuario}` : ""}` : `${PROVEEDORES_S3[d.proveedor].nombre} · ${d.bucket ? `${d.bucket}/${d.prefijo}` : "sin bucket"}`}
+                      {d.tipo === "LOCAL" || d.tipo === "EXTRAIBLE" ? d.carpeta || "Sin carpeta" : d.tipo === "RED" ? `${d.ruta || "Sin ruta"}${d.usuario ? ` · usuario ${d.usuario}` : ""}` : `${PROVEEDORES_S3[d.proveedor].nombre} · ${d.bucket ? `${d.bucket}/${d.prefijo}` : "sin bucket"}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-1">
+                    {d.tipo === "EXTRAIBLE" && (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => void prepararDisco(d)} disabled={prueba === "probando"} data-preparar-disco>Preparar disco</button>
+                    )}
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => void probar(d)} disabled={prueba === "probando"}>{prueba === "probando" ? "Probando…" : "Probar"}</button>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditando(abierto ? null : d.id)}>{abierto ? "Cerrar" : "Editar"}</button>
                     <button type="button" className="btn btn-ghost btn-sm text-red-700" onClick={() => { setForm({ ...form, destinos: form.destinos.filter((x) => x.id !== d.id) }); setCambios(true); }}>Quitar</button>
@@ -318,7 +372,7 @@ export default function RespaldosConfig() {
                       <td className="whitespace-nowrap">{fechaHN(h.createdAt)}</td>
                       <td>{h.tipo === "AUTOMATICO" ? "Automático" : "Manual"}{h.cifrado ? " · cifrado" : ""}</td>
                       <td><span className={`rounded px-1.5 py-0.5 text-xs ${ESTADO[h.estado]?.clase ?? ""}`}>{ESTADO[h.estado]?.texto ?? h.estado}</span></td>
-                      <td className="num">{tamano(h.tamano)}</td>
+                      <td className="num whitespace-nowrap">{tamano(h.tamano)}</td>
                       <td className="text-xs">
                         {h.destinos?.map((x) => (
                           <span key={x.destinoId} className={`mr-2 inline-block ${x.ok ? "text-green-800" : "text-red-700"}`} title={x.error ?? x.ubicacion}>{x.ok ? "✓" : "✗"} {x.nombre}</span>
@@ -329,7 +383,7 @@ export default function RespaldosConfig() {
                       <td className="whitespace-nowrap text-right">
                         {h.descargable
                           ? <a className="btn btn-ghost btn-sm" href={`/api/configuracion/respaldos/${h.id}/descargar`}>Descargar</a>
-                          : enDisco && <span className="text-xs text-gray-500" title={`Se conservan los ${datos.config.conservar} más recientes en cada destino.`}>Ya no está en disco</span>}
+                          : enDisco && <span className="text-xs text-gray-500" title="Se conservan los de los últimos días, uno por semana y uno por mes, según «Conservar en cada destino». Un disco extraíble desconectado tampoco se puede descargar.">Ya no está en disco</span>}
                       </td>
                     </tr>
                   );
@@ -340,17 +394,30 @@ export default function RespaldosConfig() {
         )}
         <details className="border-t border-gray-100 px-5 py-4 text-sm text-gray-700">
           <summary className="cursor-pointer font-medium text-gray-900">Cómo restaurar un respaldo</summary>
+          <p className="mt-2">Se restaura en el servidor, con un comando: reemplaza toda la base, así que no hay botón en la aplicación.</p>
           <ol className="mt-2 list-decimal space-y-2 pl-5">
-            <li>Si está cifrado (<code>.enc</code>), descífrelo con OpenSSL (viene con Git para Windows):<br />
-              <code className="break-all text-xs">openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -md sha256 -in ARCHIVO.tar.gz.enc -out ARCHIVO.tar.gz</code></li>
-            <li>Ábralo: <code className="text-xs">tar -xzf ARCHIVO.tar.gz</code>. Quedan <code>manifiesto.json</code>, <code>base\g360-nomina.dump</code> y <code>adjuntos\</code>.</li>
-            <li>Con los servicios App y Web detenidos, restaure la base (en la instalación de Windows, como administrador):<br />
-              <code className="break-all text-xs">&quot;C:\Program Files\ESC System\Gestion360 Nomina\pgsql\bin\pg_restore.exe&quot; -h 127.0.0.1 -p 5436 -U postgres -d g360_nomina --clean --if-exists base\g360-nomina.dump</code></li>
-            <li>Copie el contenido de <code>adjuntos\</code> a la carpeta de adjuntos y vuelva a iniciar los servicios.</li>
+            <li>En la instalación de Windows, abra «Símbolo del sistema» <strong>como administrador</strong> y ejecute (si está cifrado, le pide la contraseña de cifrado):<br />
+              <code className="break-all text-xs">&quot;C:\Program Files\ESC System\Gestion360 Nomina\restaurar.cmd&quot; &quot;RUTA\g360-nomina_….tar.gz.enc&quot;</code></li>
+            <li>Antes de tocar nada saca un respaldo de la base actual; detiene el servicio, restaura en una base nueva, la pone en lugar de la actual (la anterior queda guardada con otro nombre), aplica las actualizaciones de la versión instalada, devuelve los adjuntos y vuelve a iniciar.</li>
+            <li>En un servidor Linux: <code className="text-xs">deploy/restaurar.sh ARCHIVO</code> (ver <code>docs/RESPALDOS.md</code>).</li>
           </ol>
+          <p className="mt-2 text-xs text-gray-500">Cada domingo la instalación restaura el último respaldo en una base aparte para comprobar que se puede recuperar, y la borra. El resultado sale arriba.</p>
         </details>
       </section>
     </div>
+  );
+}
+
+/** La última prueba de restauración (la tarea semanal de la instalación): si el último respaldo de verdad se recupera. */
+function PruebaDeRestauracion({ p }: { p: PruebaRestauracion | null }) {
+  if (!p) {
+    return <p className="text-xs text-gray-500" data-prueba-restauracion="ninguna">Prueba de restauración: todavía ninguna. La hace cada domingo la tarea de la instalación (también a mano: <code>probar-restauracion.cmd</code>, como administrador).</p>;
+  }
+  return (
+    <p className={`rounded-md border px-3 py-2 text-sm ${p.ok ? "border-green-200 bg-green-50 text-green-900" : "border-red-200 bg-red-50 text-red-800"}`} data-prueba-restauracion={p.ok ? "ok" : "error"}>
+      <span className="font-medium">Prueba de restauración del {fechaHN(p.fecha)}: {p.ok ? "correcta" : "falló"}.</span>{" "}
+      {p.detalle}
+    </p>
   );
 }
 
@@ -371,6 +438,10 @@ function EditorDestino({ d, windows, onCambio }: { d: DestinoForm; windows: bool
       <label className="flex items-center gap-2 self-end text-sm text-gray-800"><input type="checkbox" checked={d.activo} onChange={(e) => onCambio({ activo: e.target.checked })} /> Activo</label>
       {d.tipo === "LOCAL" && campo("Carpeta", <input className="input" placeholder="D:\Respaldos\Nomina" value={d.carpeta} onChange={(e) => onCambio({ carpeta: e.target.value })} />,
         "Mejor en otro disco que el de la base. En la instalación de Windows, la cuenta «NT SERVICE\\G360NominaApp» debe poder escribir en ella.")}
+      {d.tipo === "EXTRAIBLE" && campo("Carpeta en el disco", <input className="input" placeholder={windows ? "E:\Respaldos" : "/mnt/respaldos"} value={d.carpeta} onChange={(e) => onCambio({ carpeta: e.target.value })} />,
+        windows
+          ? "Un disco USB o externo. Conéctelo y pulse «Preparar disco»: así se reconoce que es el disco de este destino. Si no está conectado, ese día el respaldo queda en los demás destinos. Va siempre cifrado."
+          : "Un disco o una carpeta de red (CIFS o NFS) montados en esta ruta. Con la unidad montada, pulse «Preparar disco»: si un día no está montada, no se escribe en el disco del sistema. Va siempre cifrado.")}
       {d.tipo === "RED" && (
         <>
           {campo("Ruta de red", <input className="input" placeholder="\\servidor\respaldos\nomina" value={d.ruta} onChange={(e) => onCambio({ ruta: e.target.value })} />,

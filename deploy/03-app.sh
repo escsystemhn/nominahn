@@ -147,10 +147,14 @@ sudo systemctl restart nominahn
 # Respaldos automáticos, relojes, SAP y recordatorios de evaluaciones. Se
 # reemplazan sólo las líneas marcadas: lo demás del crontab se respeta.
 log "Programando las tareas (crontab de $(id -un))"
-chmod 755 deploy/cron.sh
+chmod 755 deploy/cron.sh deploy/probar-restauracion.sh deploy/restaurar.sh
 {
   crontab -l 2>/dev/null | grep -v 'gestion360-tarea' || true
-  echo "*/5 * * * * $APP/deploy/cron.sh biometrico sap respaldos # gestion360-tarea"
+  echo "*/5 * * * * $APP/deploy/cron.sh biometrico sap # gestion360-tarea"
+  # Los respaldos en su propia línea (y su propio candado): uno largo no frena lo demás.
+  echo "*/15 * * * * $APP/deploy/cron.sh respaldos # gestion360-tarea"
+  # Cada domingo: restaura el último respaldo en una base aparte, lo revisa y la borra.
+  echo "0 3 * * 0 $APP/deploy/probar-restauracion.sh >/dev/null 2>&1 # gestion360-tarea"
   echo "15 6 * * * $APP/deploy/cron.sh evaluaciones # gestion360-tarea"
 } | crontab -
 crontab -l | grep 'gestion360-tarea' | sed 's/^/  /'

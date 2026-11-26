@@ -6,7 +6,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
+import { once } from "node:events";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 
@@ -127,12 +128,18 @@ export interface MiembroTar {
 /**
  * Recorre un TAR en flujo: nombre, tamaño y huella de cada miembro, y el contenido
  * de los que `capturar` pida (el manifiesto). Sirve para verificar un respaldo
- * recién hecho sin desempacarlo.
+ * recién hecho sin desempacarlo. Con `escribir`, además guarda en disco los miembros
+ * que devuelvan una ruta (restaurar: el volcado y los adjuntos), sin cargarlos en memoria.
  */
-export async function inspeccionarTar(entrada: AsyncIterable<Buffer | string>, capturar: (nombre: string) => boolean = () => false): Promise<MiembroTar[]> {
+export async function inspeccionarTar(
+  entrada: AsyncIterable<Buffer | string>,
+  capturar: (nombre: string) => boolean = () => false,
+  escribir: (nombre: string) => string | null = () => null,
+): Promise<MiembroTar[]> {
   const miembros: MiembroTar[] = [];
   let pendiente = Buffer.alloc(0);
-  let actual: { nombre: string; tamano: number; faltan: number; hash: ReturnType<typeof createHash>; partes: Buffer[] | null; relleno: number } | null = null;
+  let actual: { nombre: string; tamano: number; faltan: number; hash: ReturnType<typeof createHash>; partes: Buffer[] | null; relleno: number; salida: WriteStream | null } | null = null;
+  const cerrar = async (s: WriteStream | null) => { if (s) await new Promise<void>((ok, mal) => { s.once("error", mal); s.end(() => ok()); }); };
   let paxPath: string | null = null;
   let leyendoPax: { faltan: number; partes: Buffer[]; relleno: number } | null = null;
   let fin = false;
@@ -157,11 +164,13 @@ export async function inspeccionarTar(entrada: AsyncIterable<Buffer | string>, c
         const parte = pendiente.subarray(0, n);
         actual.hash.update(parte);
         actual.partes?.push(Buffer.from(parte));
+        if (actual.salida && parte.length && !actual.salida.write(parte)) await once(actual.salida, "drain");
         pendiente = pendiente.subarray(n);
         actual.faltan -= n;
         if (actual.faltan > 0) break;
         if (pendiente.length < actual.relleno) break;
         pendiente = pendiente.subarray(actual.relleno);
+        await cerrar(actual.salida);
         miembros.push({
           nombre: actual.nombre, tamano: actual.tamano, sha256: actual.hash.digest("hex"),
           ...(actual.partes ? { contenido: Buffer.concat(actual.partes) } : {}),
@@ -185,14 +194,19 @@ export async function inspeccionarTar(entrada: AsyncIterable<Buffer | string>, c
       const prefijo = texto(345, 155);
       const nombre = paxPath ?? (prefijo ? `${prefijo}/${texto(0, 100)}` : texto(0, 100));
       paxPath = null;
-      actual = { nombre, tamano, faltan: tamano, hash: createHash("sha256"), partes: capturar(nombre) ? [] : null, relleno: rell };
+      const ruta = tipo === "5" ? null : escribir(nombre);
+      actual = { nombre, tamano, faltan: tamano, hash: createHash("sha256"), partes: capturar(nombre) ? [] : null, relleno: rell, salida: ruta ? createWriteStream(ruta) : null };
       if (tamano === 0) {
+        await cerrar(actual.salida);
         miembros.push({ nombre, tamano: 0, sha256: actual.hash.digest("hex"), ...(actual.partes ? { contenido: Buffer.alloc(0) } : {}) });
         actual = null;
       }
     }
     if (fin) break;
   }
-  if (actual || leyendoPax) throw new Error("El archivo está incompleto: se cortó a mitad de un miembro.");
+  if (actual || leyendoPax) {
+    if (actual?.salida) actual.salida.destroy();
+    throw new Error("El archivo está incompleto: se cortó a mitad de un miembro.");
+  }
   return miembros;
 }

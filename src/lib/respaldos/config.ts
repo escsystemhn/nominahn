@@ -5,16 +5,24 @@
  */
 
 import { z } from "zod";
+import { PREFIJO_ARCHIVO, RETENCION_POR_OMISION, aConservar, esArchivoDeRespaldo, type RetencionGFS } from "./retencion";
 
+export { PREFIJO_ARCHIVO, esArchivoDeRespaldo };
 export const CLAVE_RESPALDOS = "RESPALDOS_CONFIG";
-/** Así empiezan los archivos de respaldo: la poda sólo toca los que empiezan así. */
-export const PREFIJO_ARCHIVO = "g360-nomina_";
+/** El resultado de la última prueba de restauración (la escribe `g360 probar-restauracion`). */
+export const CLAVE_PRUEBA_RESTAURACION = "RESPALDOS_PRUEBA_RESTAURACION";
+/** Cuándo se avisó por última vez de cada problema, para no repetir el correo cada 5 minutos. */
+export const CLAVE_ALERTAS = "RESPALDOS_ALERTAS";
+/**
+ * El archivo que identifica un disco extraíble preparado para un destino. Sin él (o con
+ * el de otro destino) no se escribe: la unidad no está conectada o es otro disco.
+ */
+export const MARCA_DESTINO = ".g360-destino";
 export const MAX_DESTINOS = 6;
-export const MAX_CONSERVAR = 365;
 /** Honduras no cambia de hora: UTC−6 todo el año. */
 const DESFASE_HN_MS = -6 * 3_600_000;
 
-export type TipoDestino = "LOCAL" | "RED" | "NUBE";
+export type TipoDestino = "LOCAL" | "EXTRAIBLE" | "RED" | "NUBE";
 export type ProveedorS3 = "AWS" | "B2" | "WASABI" | "DO" | "R2" | "OTRO";
 
 export const PROVEEDORES_S3: Record<ProveedorS3, { nombre: string; region: string; endpoint: (region: string) => string; estiloRuta: boolean; ayuda: string }> = {
@@ -27,13 +35,18 @@ export const PROVEEDORES_S3: Record<ProveedorS3, { nombre: string; region: strin
 };
 
 export interface DestinoLocal { id: string; nombre: string; activo: boolean; tipo: "LOCAL"; carpeta: string }
+/**
+ * Un disco que se conecta y se desconecta (USB, disco externo) o, en Linux, una carpeta
+ * de red montada. Lleva una marca (`MARCA_DESTINO`) y exige cifrado: se puede perder.
+ */
+export interface DestinoExtraible { id: string; nombre: string; activo: boolean; tipo: "EXTRAIBLE"; carpeta: string }
 export interface DestinoRed { id: string; nombre: string; activo: boolean; tipo: "RED"; ruta: string; usuario: string | null; clave: string | null }
 export interface DestinoNube {
   id: string; nombre: string; activo: boolean; tipo: "NUBE";
   proveedor: ProveedorS3; endpoint: string; region: string; bucket: string; prefijo: string;
   accessKeyId: string; secretAccessKey: string | null; estiloRuta: boolean;
 }
-export type Destino = DestinoLocal | DestinoRed | DestinoNube;
+export type Destino = DestinoLocal | DestinoExtraible | DestinoRed | DestinoNube;
 
 export interface ProgramacionRespaldo {
   activo: boolean;
@@ -48,8 +61,8 @@ export interface ProgramacionRespaldo {
 
 export interface ConfigRespaldos {
   automatico: ProgramacionRespaldo;
-  /** Cuántos respaldos se conservan en CADA destino. */
-  conservar: number;
+  /** Cuántos se conservan en CADA destino (2026-11-25: GFS; antes, «conservar N»). */
+  retencion: RetencionGFS;
   incluirAdjuntos: boolean;
   cifrar: boolean;
   /** Cifrada con CIFRADO_KEY al guardar. */
@@ -59,7 +72,7 @@ export interface ConfigRespaldos {
 
 export const CONFIG_POR_OMISION: ConfigRespaldos = {
   automatico: { activo: false, frecuencia: "DIARIA", hora: "01:30", diaSemana: 0, activadoEn: null },
-  conservar: 14,
+  retencion: RETENCION_POR_OMISION,
   incluirAdjuntos: true,
   cifrar: false,
   claveCifrado: null,
@@ -79,6 +92,10 @@ export const ESQUEMA_UNC = /^\\\\[^\\/]+[\\/][^\\/]+/;
 const zLocal = z.object({
   id: zId, nombre: zNombre, activo: z.boolean(), tipo: z.literal("LOCAL"),
   carpeta: z.string().trim().min(2).max(400).refine((c) => ESQUEMA_RUTA_WINDOWS.test(c) || c.startsWith("/"), "La carpeta debe ser una ruta completa, como D:\\Respaldos"),
+});
+const zExtraible = z.object({
+  id: zId, nombre: zNombre, activo: z.boolean(), tipo: z.literal("EXTRAIBLE"),
+  carpeta: z.string().trim().min(2).max(400).refine((c) => ESQUEMA_RUTA_WINDOWS.test(c) || c.startsWith("/"), "La carpeta debe ser una ruta completa, como E:\\Respaldos"),
 });
 const zRed = z.object({
   id: zId, nombre: zNombre, activo: z.boolean(), tipo: z.literal("RED"),
@@ -100,7 +117,7 @@ const zNube = z.object({
   secretAccessKey: zClaveOpcional,
   estiloRuta: z.boolean(),
 });
-export const esquemaDestino = z.discriminatedUnion("tipo", [zLocal, zRed, zNube]);
+export const esquemaDestino = z.discriminatedUnion("tipo", [zLocal, zExtraible, zRed, zNube]);
 
 export const esquemaConfig = z.object({
   automatico: z.object({
@@ -109,7 +126,12 @@ export const esquemaConfig = z.object({
     hora: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Hora inválida"),
     diaSemana: z.number().int().min(0).max(6),
   }),
-  conservar: z.number().int().min(1).max(MAX_CONSERVAR),
+  retencion: z.object({
+    diarios: z.number().int().min(1, "Conserve al menos el respaldo de un día").max(365),
+    semanales: z.number().int().min(0).max(104),
+    mensuales: z.number().int().min(0).max(120),
+    manuales: z.number().int().min(0).max(100),
+  }),
   incluirAdjuntos: z.boolean(),
   cifrar: z.boolean(),
   claveCifrado: zClaveOpcional,
@@ -125,17 +147,24 @@ export function normalizarConfig(guardado: unknown): ConfigRespaldos {
   }
   if (!v || typeof v !== "object") return structuredClone(CONFIG_POR_OMISION);
   const o = v as Partial<ConfigRespaldos>;
+  // Lo guardado antes del 2026-11-25 traía «conservar N»: pasa a la retención GFS de omisión,
+  // que nunca guarda menos días recientes que antes con el valor de omisión (14 → 7 días + 4
+  // semanas + 12 meses).
+  const { conservar: _antes, ...resto } = o as Partial<ConfigRespaldos> & { conservar?: number };
+  void _antes;
   return {
     ...CONFIG_POR_OMISION,
-    ...o,
-    automatico: { ...CONFIG_POR_OMISION.automatico, ...(o.automatico ?? {}) },
-    destinos: Array.isArray(o.destinos) ? o.destinos : [],
+    ...resto,
+    retencion: { ...RETENCION_POR_OMISION, ...(resto.retencion ?? {}) },
+    automatico: { ...CONFIG_POR_OMISION.automatico, ...(resto.automatico ?? {}) },
+    destinos: Array.isArray(resto.destinos) ? resto.destinos : [],
   };
 }
 
 /** Lo que ve la pantalla: sin ninguna clave, sólo si la hay. */
 export type DestinoPublico =
   | DestinoLocal
+  | DestinoExtraible
   | (Omit<DestinoRed, "clave"> & { tieneClave: boolean })
   | (Omit<DestinoNube, "secretAccessKey"> & { tieneClave: boolean });
 export interface ConfigPublica extends Omit<ConfigRespaldos, "claveCifrado" | "destinos"> {
@@ -178,6 +207,10 @@ export function erroresDeConfig(e: ConfigEntrada, anterior: ConfigRespaldos): st
   if (e.cifrar && !tendraClave) errores.push("Para cifrar hace falta la contraseña de cifrado.");
   if (e.destinos.some((d) => d.tipo === "NUBE" && d.activo) && !e.cifrar) {
     errores.push("Un respaldo que sale a la nube debe ir cifrado: active el cifrado.");
+  }
+  // Pedido de Edbin (2026-11-25): un disco que se desconecta se puede perder o lo pueden robar.
+  if (e.destinos.some((d) => d.tipo === "EXTRAIBLE" && d.activo) && !e.cifrar) {
+    errores.push("Un respaldo en un disco extraíble debe ir cifrado (se puede perder o lo pueden robar): active el cifrado.");
   }
   if (e.automatico.activo && !e.destinos.some((d) => d.activo)) errores.push("Para respaldar automáticamente hace falta al menos un destino activo.");
   return errores;
@@ -247,35 +280,63 @@ export function nombreArchivo(fecha: Date, tipo: "MANUAL" | "AUTOMATICO", cifrad
   return `${PREFIJO_ARCHIVO}${marca}_${tipo.toLowerCase()}.tar.gz${cifrado ? ".enc" : ""}`;
 }
 
-export const esArchivoDeRespaldo = (nombre: string) => nombre.startsWith(PREFIJO_ARCHIVO) && /\.tar\.gz(\.enc)?$/.test(nombre);
-
-/** Los que sobran al conservar `n`, del más viejo al más nuevo (el nombre lleva la fecha). */
-export function aPodar(nombres: readonly string[], conservar: number): string[] {
-  const propios = nombres.filter(esArchivoDeRespaldo).sort();
-  return propios.slice(0, Math.max(0, propios.length - conservar));
-}
-
 /**
- * Los respaldos que siguen en una carpeta de red, según el historial (del más nuevo al más viejo):
- * cada envío correcto deja sólo los `conservar` más recientes. Así no hay que conectarse al
- * recurso compartido para pintar el historial.
+ * Los respaldos que siguen en una carpeta de red, según el historial: los que llegaron a
+ * ese destino y la retención conserva. Así no hay que conectarse al recurso compartido
+ * para pintar el historial.
  */
 export function vigentesEnCarpeta(
   historial: readonly { archivo: string | null; destinos: unknown }[],
   destinoId: string,
-  conservar: number,
+  retencion: RetencionGFS,
 ): Set<string> {
-  const quedan = new Set<string>();
-  for (const h of historial) {
-    if (quedan.size >= conservar) break;
-    const llego = Array.isArray(h.destinos) && h.destinos.some((x) => x && typeof x === "object" && x.destinoId === destinoId && x.ok === true);
-    if (llego && h.archivo) quedan.add(h.archivo);
-  }
-  return quedan;
+  const llegaron = historial
+    .filter((h) => h.archivo && Array.isArray(h.destinos) && h.destinos.some((x) => x && typeof x === "object" && x.destinoId === destinoId && x.ok === true))
+    .map((h) => h.archivo as string);
+  return aConservar(llegaron, retencion);
 }
 
 /** La carpeta compartida de una ruta UNC: \\servidor\recurso. */
 export function recursoUnc(ruta: string): string {
   const partes = ruta.replace(/\//g, "\\").replace(/^\\\\/, "").split("\\").filter(Boolean);
   return `\\\\${partes[0]}\\${partes[1]}`;
+}
+
+// ─── Vigilancia (lo usan las alertas e Inicio) ───────────────────────────────
+
+const HORA = 3_600_000;
+const DIA = 24 * HORA;
+
+/** El resultado que deja `g360 probar-restauracion` (o el script de Linux). */
+export interface PruebaRestauracion {
+  ok: boolean;
+  fecha: string;
+  archivo: string | null;
+  detalle: string;
+  tablas?: number;
+  empleados?: number;
+  planillas?: number;
+  duracionMs?: number;
+}
+
+export function leerPrueba(valor: string | null | undefined): PruebaRestauracion | null {
+  if (!valor) return null;
+  try {
+    const p = JSON.parse(valor) as PruebaRestauracion;
+    return typeof p.ok === "boolean" && typeof p.fecha === "string" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Cuánto puede pasar sin un respaldo bueno antes de avisar: un día y dos horas, o una semana y un día. */
+export function umbralAtraso(c: ConfigRespaldos): number {
+  return c.automatico.frecuencia === "DIARIA" ? DIA + 2 * HORA : 8 * DIA;
+}
+
+/** ¿Está atrasado? Sólo con el automático encendido y después de su primer plazo. */
+export function estaAtrasado(c: ConfigRespaldos, ultimoBueno: Date | null, ahora: Date): boolean {
+  if (!c.automatico.activo) return false;
+  const desde = Math.max(ultimoBueno?.getTime() ?? 0, c.automatico.activadoEn ? new Date(c.automatico.activadoEn).getTime() : 0);
+  return ahora.getTime() - desde > umbralAtraso(c);
 }

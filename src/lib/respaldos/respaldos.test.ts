@@ -11,9 +11,10 @@ import { flujoTar, inspeccionarTar } from "./tar";
 import { cifradorOpenssl, descifradorOpenssl } from "./cifrado-openssl";
 import { firmarS3, urlS3 } from "./s3";
 import {
-  CONFIG_POR_OMISION, aPodar, configPublica, debeIntentar, erroresDeConfig, esquemaConfig, nombreArchivo, proximoProgramado, vigentesEnCarpeta,
+  CONFIG_POR_OMISION, configPublica, estaAtrasado, debeIntentar, erroresDeConfig, esquemaConfig, nombreArchivo, normalizarConfig, proximoProgramado, vigentesEnCarpeta,
   recursoUnc, tocaRespaldo, ultimoProgramado, type ConfigRespaldos,
 } from "./config";
+import { aConservar, aPodar, leerNombre, RETENCION_POR_OMISION } from "./retencion";
 
 const OPENSSL = "C:\\Program Files\\Git\\usr\\bin\\openssl.exe";
 const TAR = "C:\\Windows\\System32\\tar.exe";
@@ -146,8 +147,9 @@ describe("configuración y programación", () => {
   it("nombres de archivo con la hora de Honduras, y la poda sólo toca los propios, los más viejos", () => {
     expect(nombreArchivo(AHORA, "MANUAL", true)).toBe("g360-nomina_2026-11-13_150000_manual.tar.gz.enc");
     const nombres = ["g360-nomina_2026-11-10_013000_automatico.tar.gz", "otro.zip", "g360-nomina_2026-11-12_013000_automatico.tar.gz", "g360-nomina_2026-11-11_013000_automatico.tar.gz.enc"];
-    expect(aPodar(nombres, 2)).toEqual(["g360-nomina_2026-11-10_013000_automatico.tar.gz"]);
-    expect(aPodar(nombres, 5)).toEqual([]);
+    const solo2 = { diarios: 2, semanales: 0, mensuales: 0, manuales: 0 };
+    expect(aPodar(nombres, solo2)).toEqual(["g360-nomina_2026-11-10_013000_automatico.tar.gz"]);
+    expect(aPodar(nombres, RETENCION_POR_OMISION)).toEqual([]);
   });
 
   it("una carpeta de red conserva los últimos envíos correctos a ella, según el historial", () => {
@@ -160,8 +162,11 @@ describe("configuración y programación", () => {
       fila("b", { destinoId: "red", ok: true }), // ya podado
       fila("a", null as unknown as { destinoId: string; ok: boolean }),
     ];
-    expect([...vigentesEnCarpeta(historial, "red", 2)]).toEqual(["d", "c"]);
-    expect([...vigentesEnCarpeta(historial, "otra", 2)]).toEqual([]);
+    const a = (dia: string) => `g360-nomina_2026-11-${dia}_013000_automatico.tar.gz`;
+    const conNombres = historial.map((h) => ({ ...h, archivo: h.archivo ? a({ e: "15", d: "14", c: "13", b: "12", a: "11" }[h.archivo]!) : null }));
+    const dos = { diarios: 2, semanales: 0, mensuales: 0, manuales: 0 };
+    expect([...vigentesEnCarpeta(conNombres, "red", dos)].sort()).toEqual([a("13"), a("14")]);
+    expect([...vigentesEnCarpeta(conNombres, "otra", dos)]).toEqual([]);
   });
 
   it("la pantalla nunca recibe una clave", () => {
@@ -178,7 +183,7 @@ describe("configuración y programación", () => {
   });
 
   it("la nube exige cifrado y clave secreta; la contraseña de cifrado es larga", () => {
-    const base = { automatico: { activo: false, frecuencia: "DIARIA" as const, hora: "01:30", diaSemana: 0 }, conservar: 7, incluirAdjuntos: true };
+    const base = { automatico: { activo: false, frecuencia: "DIARIA" as const, hora: "01:30", diaSemana: 0 }, retencion: RETENCION_POR_OMISION, incluirAdjuntos: true };
     const nube = { id: "n", nombre: "B2", activo: true, tipo: "NUBE" as const, proveedor: "B2" as const, endpoint: "https://s3.us-west-004.backblazeb2.com", region: "us-west-004", bucket: "mi-bucket", prefijo: "nomina", accessKeyId: "key", estiloRuta: true };
     const e = esquemaConfig.parse({ ...base, cifrar: false, destinos: [{ ...nube, secretAccessKey: "s" }] });
     expect(e.destinos[0].tipo === "NUBE" && e.destinos[0].prefijo).toBe("nomina/");
@@ -202,5 +207,97 @@ describe("configuración y programación", () => {
 
   it("recurso de una ruta UNC", () => {
     expect(recursoUnc("\\\\nas01\\respaldos\\nomina\\2026")).toBe("\\\\nas01\\respaldos");
+  });
+});
+
+describe("extraer un respaldo para restaurarlo (2026-11-25)", () => {
+  it("saca a disco los miembros pedidos, sin tocar los demás, y con su huella", async () => {
+    const dir = tmp();
+    const grande = Buffer.alloc(300_000, 7);
+    writeFileSync(join(dir, "dump.bin"), grande);
+    const comprimido = join(dir, "r.tar.gz");
+    await pipeline(flujoTar([
+      { nombre: "manifiesto.json", contenido: Buffer.from('{"ok":true}') },
+      { nombre: "base/g360-nomina.dump", ruta: join(dir, "dump.bin") },
+      { nombre: "adjuntos/año 2026/contrato.pdf", contenido: Buffer.from("pdf") },
+    ]), createGzip(), createWriteStream(comprimido));
+    const fuera = join(dir, "fuera");
+    const { mkdirSync } = await import("node:fs");
+    const miembros = await inspeccionarTar(createReadStream(comprimido).pipe(createGunzip()), (n) => n === "manifiesto.json", (n) => {
+      if (n === "manifiesto.json") return null;
+      const ruta = join(fuera, ...n.split("/"));
+      mkdirSync(join(ruta, ".."), { recursive: true });
+      return ruta;
+    });
+    expect(miembros.map((m) => m.nombre)).toEqual(["manifiesto.json", "base/g360-nomina.dump", "adjuntos/año 2026/contrato.pdf"]);
+    expect(readFileSync(join(fuera, "base", "g360-nomina.dump")).equals(grande)).toBe(true);
+    expect(readFileSync(join(fuera, "adjuntos", "año 2026", "contrato.pdf"), "utf8")).toBe("pdf");
+    expect(existsSync(join(fuera, "manifiesto.json"))).toBe(false);
+    expect(miembros[0].contenido?.toString()).toBe('{"ok":true}');
+  });
+});
+
+describe("retención GFS (2026-11-25)", () => {
+  const auto = (dia: string, hora = "013000") => `g360-nomina_${dia}_${hora}_automatico.tar.gz.enc`;
+  const manual = (dia: string, hora = "150000") => `g360-nomina_${dia}_${hora}_manual.tar.gz.enc`;
+  // 400 días de automáticos diarios, del 2025-10-22 al 2026-11-25.
+  const dias = Array.from({ length: 400 }, (_, i) => new Date(Date.UTC(2026, 10, 25) - i * 86_400_000).toISOString().slice(0, 10));
+  const todos = dias.map((d) => auto(d));
+
+  it("7 días, 4 semanas y 12 meses: 7 + las semanas y meses que no caen en esos días", () => {
+    const queda = aConservar(todos, RETENCION_POR_OMISION);
+    const diarios = dias.slice(0, 7).map((d) => auto(d));
+    for (const n of diarios) expect(queda.has(n)).toBe(true);
+    // Semanas de lunes a domingo: el último de cada una (domingo), las 4 más recientes.
+    for (const d of ["2026-11-25", "2026-11-22", "2026-11-15", "2026-11-08"]) expect(queda.has(auto(d))).toBe(true);
+    // Meses: el último de cada uno, los 12 más recientes.
+    for (const d of ["2026-10-31", "2026-09-30", "2026-08-31", "2025-12-31"]) expect(queda.has(auto(d))).toBe(true);
+    expect(queda.has(auto("2025-11-30"))).toBe(false); // el mes 13 ya no
+    expect(queda.size).toBe(7 + 2 + 11); // las 2 semanas y el mes en curso que no son de los 7 días ya cuentan
+  });
+
+  it("los manuales van aparte: una tanda de «Respaldar ahora» no borra los automáticos", () => {
+    const muchosManuales = Array.from({ length: 20 }, (_, i) => manual("2026-11-25", String(100000 + i)));
+    const nombres = [...todos.slice(0, 10), ...muchosManuales];
+    const sobran = aPodar(nombres, RETENCION_POR_OMISION);
+    expect(sobran.filter((n) => n.includes("_manual")).length).toBe(15);
+    // Con o sin los manuales se podan los mismos automáticos (los 3 días más viejos de los 10).
+    expect(sobran.filter((n) => n.includes("_automatico"))).toEqual(aPodar(todos.slice(0, 10), RETENCION_POR_OMISION));
+    expect(sobran.filter((n) => n.includes("_automatico")).length).toBe(3);
+  });
+
+  it("siempre queda el más reciente, y lo que no se entiende no se borra", () => {
+    const nada = { diarios: 1, semanales: 0, mensuales: 0, manuales: 0 };
+    expect(aPodar([manual("2026-11-25"), auto("2026-11-20")], nada)).toEqual([]); // el manual es el más reciente
+    expect(aPodar(["g360-nomina_raro.tar.gz", "otro.zip"], nada)).toEqual([]);
+    expect(leerNombre("g360-nomina_2026-11-13_0130_automatico.tar.gz")).toMatchObject({ dia: "2026-11-13", tipo: "automatico" });
+  });
+
+  it("lo guardado con «conservar N» pasa a la retención de omisión", () => {
+    const viejo = normalizarConfig(JSON.stringify({ conservar: 14, cifrar: false, destinos: [] }));
+    expect(viejo.retencion).toEqual(RETENCION_POR_OMISION);
+    expect("conservar" in viejo).toBe(false);
+  });
+});
+
+describe("disco extraíble y alertas (2026-11-25)", () => {
+  const base = { automatico: { activo: false, frecuencia: "DIARIA" as const, hora: "01:30", diaSemana: 0 }, retencion: RETENCION_POR_OMISION, incluirAdjuntos: true };
+  const usb = { id: "u", nombre: "USB", activo: true, tipo: "EXTRAIBLE" as const, carpeta: "E:\\Respaldos" };
+
+  it("el disco extraíble exige cifrado", () => {
+    const e = esquemaConfig.parse({ ...base, cifrar: false, destinos: [usb] });
+    expect(erroresDeConfig(e, CONFIG_POR_OMISION)).toEqual(["Un respaldo en un disco extraíble debe ir cifrado (se puede perder o lo pueden robar): active el cifrado."]);
+    expect(erroresDeConfig(esquemaConfig.parse({ ...base, cifrar: true, claveCifrado: "una-clave-larga-1", destinos: [usb] }), CONFIG_POR_OMISION)).toEqual([]);
+    expect(() => esquemaConfig.parse({ ...base, cifrar: true, destinos: [{ ...usb, carpeta: "respaldos" }] })).toThrow(/ruta completa/);
+  });
+
+  it("atrasado: más de un día (o una semana) sin un respaldo bueno, con el automático encendido", () => {
+    const c = { ...CONFIG_POR_OMISION, automatico: { ...CONFIG_POR_OMISION.automatico, activo: true, activadoEn: "2026-11-01T00:00:00Z" } };
+    const ahora = new Date("2026-11-25T12:00:00Z");
+    expect(estaAtrasado(c, new Date("2026-11-24T14:00:00Z"), ahora)).toBe(false); // 22 h
+    expect(estaAtrasado(c, new Date("2026-11-24T08:00:00Z"), ahora)).toBe(true); // 28 h: el de hoy a la 1:30 no se hizo
+    expect(estaAtrasado({ ...c, automatico: { ...c.automatico, frecuencia: "SEMANAL" } }, new Date("2026-11-20T08:00:00Z"), ahora)).toBe(false);
+    expect(estaAtrasado({ ...c, automatico: { ...c.automatico, activo: false } }, null, ahora)).toBe(false);
+    expect(estaAtrasado({ ...c, automatico: { ...c.automatico, activadoEn: "2026-11-25T06:00:00Z" } }, null, ahora)).toBe(false); // recién encendido
   });
 });

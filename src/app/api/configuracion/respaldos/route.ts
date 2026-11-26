@@ -9,20 +9,22 @@ import { requerirPermiso } from "@/lib/auth/guard";
 import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody } from "@/lib/http/validar";
 import { cifradoDisponible } from "@/lib/seguridad/cifrado";
-import { configPublica, erroresDeConfig, esquemaConfig, proximoProgramado, CLAVE_RESPALDOS } from "@/lib/respaldos/config";
-import { guardarConfigRespaldos, leerConfigRespaldos, ubicarPostgres } from "@/lib/respaldos/respaldos-bd";
+import { configPublica, erroresDeConfig, esquemaConfig, leerPrueba, proximoProgramado, CLAVE_PRUEBA_RESTAURACION, CLAVE_RESPALDOS } from "@/lib/respaldos/config";
+import { guardarConfigRespaldos, leerConfigRespaldos, limpiarHuerfanos, ubicarPostgres } from "@/lib/respaldos/respaldos-bd";
 import { descargables } from "@/lib/respaldos/destinos";
 
 export async function GET() {
   const g = await requerirPermiso("configuracion.respaldos");
   if (!g.ok) return g.response;
-  const [config, historial] = await Promise.all([
+  await limpiarHuerfanos();
+  const [config, historial, prueba] = await Promise.all([
     leerConfigRespaldos(),
     prisma.respaldo.findMany({ orderBy: { createdAt: "desc" }, take: 30 }),
+    prisma.configuracionSistema.findUnique({ where: { clave: CLAVE_PRUEBA_RESTAURACION } }),
   ]);
   const pg = ubicarPostgres();
   // Los mismos destinos que mira la descarga (también los pausados: sus archivos siguen ahí).
-  const enDisco = await descargables(config.destinos, historial, config.conservar);
+  const enDisco = await descargables(config.destinos, historial, config.retencion);
   return NextResponse.json({
     config: configPublica(config),
     estado: {
@@ -32,6 +34,8 @@ export async function GET() {
       // La instalación de Windows prepara una carpeta en la que el servicio puede escribir.
       carpetaSugerida: process.env.RESPALDOS_DIR ?? null,
       proximo: config.automatico.activo ? proximoProgramado(config.automatico, new Date()).toISOString() : null,
+      // La deja la tarea semanal de la instalación (`g360 probar-restauracion`).
+      pruebaRestauracion: leerPrueba(prueba?.valor),
     },
     historial: historial.map((r) => ({
       ...r,
