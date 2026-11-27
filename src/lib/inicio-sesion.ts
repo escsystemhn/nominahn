@@ -8,7 +8,7 @@
  * equivocado es peor que ninguno.
  */
 
-export const VERSION = "2.0.2";
+export const VERSION = "2.0.3";
 
 /** Contacto verificado en esc-systemhn.com. */
 export const SOPORTE = {
@@ -24,6 +24,48 @@ export interface Novedad {
 }
 
 export const NOVEDADES: Record<string, Novedad[]> = {
+  "2.0.3": [
+    {
+      titulo: "Buscar al empleado escribiendo",
+      detalle: "En documentos, dotaciones, marcajes, incapacidades, evaluaciones, deducciones, liquidaciones y demás: nombre en cualquier orden o código, en vez de una lista larga.",
+      modulo: "General",
+    },
+    {
+      titulo: "Planillas por período",
+      detalle: "Generar el período de todas las sucursales, revisar, confirmar, aprobar y pagar varias a la vez, imprimir el período completo y ver qué falta en un tablero.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Formato por grupo",
+      detalle: "En Deducciones → Exportar: todo un grupo en un Excel, con una hoja quincenal y una mensual y las sucursales una debajo de otra. Se importa entero.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "Horas extra en el formato",
+      detalle: "El formato de captura puede llevar las horas extra del 25, 50, 75 y 100 % antes de las deducciones.",
+      modulo: "Deducciones",
+    },
+    {
+      titulo: "Comprobantes de varias planillas",
+      detalle: "Por correo o impresos en un solo PDF. Cada deducción con su nombre, como en la planilla, y el sueldo mensual bajo la identidad.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "La planilla en su orden",
+      detalle: "Ordenada por antigüedad u otro campo, y las columnas de deducción en el orden de la empresa, igual en pantalla e impresa.",
+      modulo: "Nómina",
+    },
+    {
+      titulo: "Respaldos más seguros",
+      detalle: "También a un disco USB, conservan diarios, semanales y mensuales, avisan por correo si fallan y cada domingo se prueba que se pueden restaurar.",
+      modulo: "Configuración",
+    },
+    {
+      titulo: "Relojes Hikvision",
+      detalle: "Probar la conexión con el reloj por la red y traer sus marcas.",
+      modulo: "Asistencia",
+    },
+  ],
   "2.0.2": [
     {
       titulo: "Formato de captura por sucursal",
