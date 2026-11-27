@@ -18,7 +18,8 @@ export function rutasSubida(subida: string) {
 
 export async function leerEstado(subida: string): Promise<EstadoSubida | null> {
   try {
-    const e = JSON.parse(await readFile(rutasSubida(subida).estado, "utf8"));
+    // turbopackIgnore: ruta de tiempo de ejecución; sin la marca se empaqueta todo el proyecto.
+    const e = JSON.parse(await readFile(/*turbopackIgnore: true*/ rutasSubida(subida).estado, "utf8"));
     return typeof e?.usuarioId === "string" && typeof e?.capacitacionId === "string" && Number.isInteger(e?.bytes) ? e : null;
   } catch {
     return null;

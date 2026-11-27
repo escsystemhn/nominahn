@@ -48,10 +48,12 @@ const RE_ARCHIVO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /** Ruta en disco. Sólo nombres UUID+extensión: un nombre con ruta no llega al disco. */
 export function rutaMaterial(archivo: string): string {
   if (archivo !== path.basename(archivo) || !RE_ARCHIVO.test(archivo)) throw new Error("Nombre de material inválido");
-  return path.join(directorioUploads(), "capacitaciones", archivo);
+  return path.join(/*turbopackIgnore: true*/ directorioUploads(), "capacitaciones", archivo);
 }
 
-export const directorioMaterial = () => path.join(directorioUploads(), "capacitaciones");
+// turbopackIgnore: la carpeta de subidas se conoce al ejecutar. Sin la marca, Turbopack empaqueta
+// en el instalador todo archivo bajo una carpeta «capacitaciones» (páginas y rutas incluidas).
+export const directorioMaterial = () => path.join(/*turbopackIgnore: true*/ directorioUploads(), "capacitaciones");
 
 // ─── Enlace firmado ──────────────────────────────────────────────────────────
 

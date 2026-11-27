@@ -291,19 +291,23 @@ async function ejecutarRespaldo(
 
     // 3. El archivo: tar → gzip → (cifrado).
     const nombre = nombreArchivo(creado, tipo, config.cifrar);
-    const archivo = join(tmp, nombre);
+    // `turbopackIgnore` (aquí y abajo): la ruta se arma en tiempo de ejecución. Sin la marca,
+    // Turbopack no puede acotarla y copia el proyecto ENTERO (src, docs…) al instalador.
+    const archivo = join(/*turbopackIgnore: true*/ tmp, nombre);
     const clave = config.cifrar ? descifrar(config.claveCifrado!) : null;
     if (clave) await pipeline(flujoTar(entradas), createGzip(), cifradorOpenssl(clave), createWriteStream(archivo));
     else await pipeline(flujoTar(entradas), createGzip(), createWriteStream(archivo));
 
     // 4. Se lee de vuelta antes de mandarlo a ningún lado.
-    const leer = clave ? createReadStream(archivo).pipe(descifradorOpenssl(clave)).pipe(createGunzip()) : createReadStream(archivo).pipe(createGunzip());
+    const leer = clave
+      ? createReadStream(/*turbopackIgnore: true*/ archivo).pipe(descifradorOpenssl(clave)).pipe(createGunzip())
+      : createReadStream(/*turbopackIgnore: true*/ archivo).pipe(createGunzip());
     const miembros = await inspeccionarTar(leer);
     const enArchivo = miembros.find((m) => m.nombre === "base/g360-nomina.dump");
     if (!enArchivo || enArchivo.sha256 !== dumpSha || miembros.length !== entradas.length) {
       throw new ErrorRespaldo("El archivo de respaldo no coincide con lo que se metió en él: no se envía.");
     }
-    const tamano = (await stat(archivo)).size;
+    const tamano = (await stat(/*turbopackIgnore: true*/ archivo)).size;
     const sha256 = await sha256De(archivo);
 
     // 5. A cada destino, uno tras otro; cada copia se verifica con la huella del original.
