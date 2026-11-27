@@ -3,7 +3,7 @@
   "config": {
     "env": {
       "G360_EDICION": "",
-      "G360_VERSION": "2.0.2",
+      "G360_VERSION": "2.0.3",
       "G360_SDL_URL": "",
       "G360_SDL_PRODUCTO": "NOMI",
       "G360_SDL_CLAVES": "{}"
@@ -114,7 +114,7 @@
     },
     "outputFileTracingRoot": "/home/runner/work/nominahn/nominahn",
     "allowedDevOrigins": [
-      "10.1.0.57"
+      "10.1.0.48"
     ],
     "enablePrerenderSourceMaps": true,
     "cacheComponents": false,

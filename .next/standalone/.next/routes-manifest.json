@@ -222,6 +222,14 @@
       "namedRegex": "^/api/configuracion/puestos/(?<nxtPid>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/api/configuracion/respaldos/[id]",
+      "regex": "^/api/configuracion/respaldos/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/configuracion/respaldos/(?<nxtPid>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/respaldos/[id]/descargar",
       "regex": "^/api/configuracion/respaldos/([^/]+?)/descargar(?:/)?$",
       "routeKeys": {
@@ -857,6 +865,12 @@
       "namedRegex": "^/api/configuracion/respaldos/ejecutar(?:/)?$"
     },
     {
+      "page": "/api/configuracion/respaldos/preparar-disco",
+      "regex": "^/api/configuracion/respaldos/preparar\\-disco(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/configuracion/respaldos/preparar\\-disco(?:/)?$"
+    },
+    {
       "page": "/api/configuracion/respaldos/probar",
       "regex": "^/api/configuracion/respaldos/probar(?:/)?$",
       "routeKeys": {},
@@ -1031,6 +1045,12 @@
       "namedRegex": "^/api/empleados(?:/)?$"
     },
     {
+      "page": "/api/empleados/buscar",
+      "regex": "^/api/empleados/buscar(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/empleados/buscar(?:/)?$"
+    },
+    {
       "page": "/api/estado",
       "regex": "^/api/estado(?:/)?$",
       "routeKeys": {},
@@ -1065,6 +1085,12 @@
       "regex": "^/api/exportar/deducciones/formato(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/exportar/deducciones/formato(?:/)?$"
+    },
+    {
+      "page": "/api/exportar/deducciones/formato-grupo",
+      "regex": "^/api/exportar/deducciones/formato\\-grupo(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/exportar/deducciones/formato\\-grupo(?:/)?$"
     },
     {
       "page": "/api/exportar/empleados",
@@ -1335,6 +1361,24 @@
       "regex": "^/api/planillas(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/planillas(?:/)?$"
+    },
+    {
+      "page": "/api/planillas/archivo-banco",
+      "regex": "^/api/planillas/archivo\\-banco(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/planillas/archivo\\-banco(?:/)?$"
+    },
+    {
+      "page": "/api/planillas/comprobantes",
+      "regex": "^/api/planillas/comprobantes(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/planillas/comprobantes(?:/)?$"
+    },
+    {
+      "page": "/api/planillas/periodo",
+      "regex": "^/api/planillas/periodo(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/planillas/periodo(?:/)?$"
     },
     {
       "page": "/api/politicas",

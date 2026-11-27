@@ -1,0 +1,3 @@
+module.exports=[6928,(e,l,r)=>{l.exports=e.x("exceljs-9798f6f4656d3162",()=>require("exceljs-9798f6f4656d3162"))},60429,e=>{"use strict";e.s(["f",0,function(e,l={}){let r=l.decimales??2,t=e.trim().replace(/^(HNL|L\.?)\s*/i,"").replace(/[\s  ]/g,"");if(""===t)return{ok:!0,valor:null};let o=t.lastIndexOf(","),s=t.lastIndexOf(".");if(o>=0&&s>=0){let e=o>s?",":".";t=t.split(","===e?".":",").join("").replace(e,".")}else if(o>=0){let e=t.split(",");t=2===e.length&&3!==e[1].length?e.join("."):e.join("")}return/^\d+(\.\d+)?$/.test(t)?(t.split(".")[1]??"").length>r?{ok:!1,error:`m\xe1ximo ${r} decimales`}:{ok:!0,valor:Number(t)}:{ok:!1,error:"escriba sólo el número, como 297.58"}}])}];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__1v0n1xiqznbtz._.js.map
