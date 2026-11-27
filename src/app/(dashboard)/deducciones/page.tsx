@@ -7,7 +7,7 @@ import { conAlcance, filtroPorEmpleado } from "@/lib/auth/alcance";
 import { cuotaDelPeriodo, esMontoDelPeriodo } from "@/lib/payroll/deducciones";
 import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import { aNumero } from "@/lib/payroll/money";
-import { rangoPeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
+import { TIPOS_PLANILLA, rangoPeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 import { etiquetasNiveles } from "@/lib/organizacion/estructura";
 import { jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import { hoyHN } from "@/lib/utils";
@@ -46,7 +46,7 @@ function serializeTipo<T extends {
 export default async function DeduccionesPage() {
   const usuario = await requerirPermisoPagina("deducciones.ver");
 
-  const [tipos, deduccionesEmpleados, conJerarquia] = await Promise.all([
+  const [tipos, deduccionesEmpleados, conJerarquia, porTipoPlanilla] = await Promise.all([
     prisma.tipoDeduccionConfig.findMany({ orderBy: { nombre: "asc" } }),
     prisma.deduccionEmpleado.findMany({
       // Las vigentes: un monto de una quincena pasada ya no se descuenta y sólo estorbaría.
@@ -67,18 +67,20 @@ export default async function DeduccionesPage() {
       take: 100,
     }),
     jerarquiaNominaHabilitada(prisma),
+    // Sólo cuántos hay de cada tipo de planilla, de los que cobran y del alcance. Antes se traía a
+    // cada empleado para los <select> de «Asignar a empleado» y «Registrar anticipo», que ahora
+    // buscan en el servidor (2026-11-27).
+    prisma.empleado.groupBy({
+      by: ["tipoPlanilla"],
+      where: conAlcance({ estado: { in: [...ESTADOS_QUE_COBRAN] } }, usuario),
+      _count: { _all: true },
+    }),
   ]);
 
-  const empleados = await prisma.empleado.findMany({
-    where: conAlcance({ estado: { in: [...ESTADOS_QUE_COBRAN] } }, usuario),
-    select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, tipoPlanilla: true },
-    orderBy: { primerApellido: "asc" },
-  });
-
   // El tipo de planilla de la mayoría: con él arrancan exportar e importar por período.
-  const cuantos = new Map<TipoPlanillaPeriodo, number>();
-  for (const e of empleados) cuantos.set(e.tipoPlanilla, (cuantos.get(e.tipoPlanilla) ?? 0) + 1);
-  const tipoPlanilla = [...cuantos].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "QUINCENAL";
+  const tipoPlanilla: TipoPlanillaPeriodo =
+    // A igual cantidad, en el orden de TIPOS_PLANILLA (quincenal primero): groupBy no garantiza orden.
+    [...porTipoPlanilla].sort((a, b) => b._count._all - a._count._all || TIPOS_PLANILLA.indexOf(a.tipoPlanilla) - TIPOS_PLANILLA.indexOf(b.tipoPlanilla))[0]?.tipoPlanilla ?? "QUINCENAL";
 
   const tiposSerializados = tipos.map(serializeTipo);
   const deduccionesSerializadas = deduccionesEmpleados.map((d) => ({
@@ -94,7 +96,6 @@ export default async function DeduccionesPage() {
     <DeduccionesClient
       tipos={tiposSerializados}
       deduccionesEmpleados={deduccionesSerializadas}
-      empleados={empleados.map((e) => ({ id: e.id, codigo: e.codigo, primerNombre: e.primerNombre, segundoNombre: e.segundoNombre, primerApellido: e.primerApellido, segundoApellido: e.segundoApellido }))}
       // El archivo por empleado son montos salariales: además del permiso de exportar, el de datos personales.
       puedeExportar={puede(usuario, "deducciones.exportar") && puede(usuario, "empleados.pii")}
       puedeImportar={puede(usuario, "deducciones.importar")}
@@ -108,11 +109,7 @@ export default async function DeduccionesPage() {
       // Negociación de prestaciones y adelantos de décimos: se pagan aparte y se rebajan de
       // la cesantía o del décimo. Los registra quien genera prestaciones.
       anticipos={
-        <AnticiposPrestacionPanel
-          key="anticipos"
-          empleados={empleados.map((e) => ({ id: e.id, codigo: e.codigo, primerNombre: e.primerNombre, segundoNombre: e.segundoNombre, primerApellido: e.primerApellido, segundoApellido: e.segundoApellido }))}
-          puedeRegistrar={puede(usuario, "prestaciones.generar")}
-        />
+        <AnticiposPrestacionPanel key="anticipos" puedeRegistrar={puede(usuario, "prestaciones.generar")} />
       }
     />
   );

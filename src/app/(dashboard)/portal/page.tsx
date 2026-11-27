@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 import PortalClient from "@/components/portal/PortalClient";
 
 export default async function PortalPage() {
-  const [posts, anuncios, contactos, empleados] = await Promise.all([
+  // Sin lista de empleados para «Autor»: la API publica a nombre del usuario de la sesión.
+  const [posts, anuncios, contactos] = await Promise.all([
     prisma.portalPost.findMany({
       where: { activo: true },
       include: { autor: { select: { primerNombre: true, primerApellido: true } } },
@@ -16,12 +17,7 @@ export default async function PortalPage() {
       take: 10,
     }),
     prisma.contactoRRHH.findMany({ where: { activo: true }, orderBy: { nombre: "asc" } }),
-    prisma.empleado.findMany({
-      where: { estado: "ACTIVO" },
-      select: { id: true, codigo: true, primerNombre: true, primerApellido: true },
-      take: 5,
-    }),
   ]);
 
-  return <PortalClient posts={posts} anuncios={anuncios} contactos={contactos} empleados={empleados} />;
+  return <PortalClient posts={posts} anuncios={anuncios} contactos={contactos} />;
 }

@@ -4,17 +4,10 @@
  * Traer a alguien de otra sucursal a este plan por unos días (traslado temporal). No
  * cambia su sucursal ni su planilla: sólo dónde trabaja esos días.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Campo } from "@/components/ui/ModalForm";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 import type { NivelesEstructura } from "@/lib/organizacion/estructura";
-
-interface Candidato {
-  id: string;
-  codigo: string;
-  nombre: string;
-  sucursal: string;
-  puesto: string;
-}
 
 interface Props {
   planId: string;
@@ -27,28 +20,11 @@ interface Props {
 }
 
 export default function TrasladoTemporalModal({ planId, desde, hasta, sucursales, niveles, onListo, onCerrar }: Props) {
-  const [candidatos, setCandidatos] = useState<Candidato[] | null>(null);
-  const [buscar, setBuscar] = useState("");
+  // El elegido en el buscador (para su tarjeta); `form.empleadoId` es lo que se envía.
+  const [empleado, setEmpleado] = useState<EmpleadoBuscado | null>(null);
   const [form, setForm] = useState({ empleadoId: "", sucursalDestinoId: sucursales[0]?.id ?? "", desde, hasta, motivo: "" });
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
-
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      const r = await fetch(`/api/horarios/traslados?planId=${encodeURIComponent(planId)}`);
-      const d = r.ok ? await r.json() : { candidatos: [] };
-      if (vivo) setCandidatos(d.candidatos);
-    })();
-    return () => {
-      vivo = false;
-    };
-  }, [planId]);
-
-  const visibles = useMemo(() => {
-    const q = buscar.trim().toLowerCase();
-    return (candidatos ?? []).filter((c) => !q || `${c.codigo} ${c.nombre} ${c.sucursal} ${c.puesto}`.toLowerCase().includes(q));
-  }, [candidatos, buscar]);
 
   async function guardar() {
     setError(null);
@@ -78,17 +54,21 @@ export default function TrasladoTemporalModal({ planId, desde, hasta, sucursales
           Registra un <b>traslado temporal</b>: esos días la persona aparece en este plan como personal del destino elegido
           y en su {niveles.sucursal.toLowerCase()} de origen queda «trasladada». Su {niveles.sucursal.toLowerCase()} y su planilla no cambian.
         </p>
-        <Campo etiqueta="Buscar">
-          <input className="input" placeholder={`Nombre, código, ${niveles.sucursal.toLowerCase()} o puesto`} value={buscar} onChange={(e) => setBuscar(e.target.value)} />
-        </Campo>
-        <Campo etiqueta="Empleado">
-          <select className="input" value={form.empleadoId} onChange={(e) => setForm({ ...form, empleadoId: e.target.value })} size={Math.min(8, Math.max(3, visibles.length))}>
-            {candidatos === null && <option disabled>Cargando…</option>}
-            {visibles.map((c) => (
-              <option key={c.id} value={c.id}>{c.codigo} · {c.nombre} — {c.puesto}, {c.sucursal}</option>
-            ))}
-          </select>
-        </Campo>
+        {/* Buscar en el servidor en vez de bajar a todos los candidatos (hasta mil) y filtrarlos
+            aquí. El contexto «traslado» aplica los filtros del plan: no dados de baja ni
+            suspendidos, con puesto, de otras sucursales e ingresados antes de que termine. Fuera
+            de <Campo>, que es un <label> y no puede contener al buscador. */}
+        <CampoEmpleado
+          etiqueta="Empleado"
+          para="traslado"
+          parametros={{ planId }}
+          vacio="Nadie coincide. Sólo se ofrece personal con puesto de fuera de este plan."
+          valor={empleado}
+          onCambio={(e) => {
+            setEmpleado(e);
+            setForm((f) => ({ ...f, empleadoId: e?.id ?? "" }));
+          }}
+        />
         <Campo etiqueta={`${niveles.sucursal} de destino`}>
           <select className="input" value={form.sucursalDestinoId} onChange={(e) => setForm({ ...form, sucursalDestinoId: e.target.value })}>
             {sucursales.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}

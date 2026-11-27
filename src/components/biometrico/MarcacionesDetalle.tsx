@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 
 interface EventoDetalle {
   id: string;
@@ -32,7 +33,6 @@ interface EventoDetalle {
 
 interface Props {
   dispositivos: { id: string; nombre: string }[];
-  empleados: { id: string; etiqueta: string }[];
 }
 
 const POR_PAGINA = 100;
@@ -62,7 +62,9 @@ function diaCalendario(iso: string) {
   }).format(new Date(iso));
 }
 
-export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
+export default function MarcacionesDetalle({ dispositivos }: Props) {
+  // El elegido en el buscador (para su tarjeta); el filtro que viaja es `filtros.empleadoId`.
+  const [empleado, setEmpleado] = useState<EmpleadoBuscado | null>(null);
   const [filtros, setFiltros] = useState({
     dispositivoId: "",
     empleadoId: "",
@@ -153,17 +155,20 @@ export default function MarcacionesDetalle({ dispositivos, empleados }: Props) {
             ))}
           </select>
 
-          <select
-            value={filtros.empleadoId}
-            onChange={(e) => filtrar("empleadoId", e.target.value)}
-            aria-label="Empleado"
-            className={`${campoClase} col-span-2`}
-          >
-            <option value="">Todos los empleados</option>
-            {empleados.map((e) => (
-              <option key={e.id} value={e.id}>{e.etiqueta}</option>
-            ))}
-          </select>
+          {/* Buscar en vez de una lista con todos los activos: con cientos no se encontraba a
+              nadie. Sin elegido (o con «Quitar») son todos. */}
+          <CampoEmpleado
+            etiqueta="Empleado"
+            etiquetaOculta
+            para="biometrico"
+            placeholder="Todos los empleados: escriba para filtrar"
+            className="col-span-2"
+            valor={empleado}
+            onCambio={(e) => {
+              setEmpleado(e);
+              filtrar("empleadoId", e?.id ?? "");
+            }}
+          />
 
           <select
             value={filtros.estado}

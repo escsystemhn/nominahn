@@ -10,7 +10,8 @@ import { useAvisos } from "@/components/ui/Avisos";
 import { Campo } from "@/components/ui/ModalForm";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import EstadoBadge from "@/components/ui/EstadoBadge";
-import { formatCurrency, formatDate, nombreCompleto } from "@/lib/utils";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 type Tipo = "NEGOCIACION_PRESTACIONES" | "ADELANTO_DECIMO_TERCERO" | "ADELANTO_DECIMO_CUARTO";
 
@@ -44,7 +45,6 @@ interface Anticipo {
 }
 
 interface Props {
-  empleados: Array<{ id: string; codigo: string; primerNombre: string; segundoNombre?: string | null; primerApellido: string; segundoApellido?: string | null }>;
   puedeRegistrar: boolean;
 }
 
@@ -55,15 +55,17 @@ function anioEnCurso(tipo: Tipo, fecha: string): number {
   return tipo === "ADELANTO_DECIMO_CUARTO" && m >= 7 ? a + 1 : a;
 }
 
-const VACIO = { empleadoId: "", tipo: "NEGOCIACION_PRESTACIONES" as Tipo, monto: "", fechaPago: hoy(), anioDecimo: "", periodoDesde: "", periodoHasta: "", referencia: "", observacion: "" };
+const VACIO = { tipo: "NEGOCIACION_PRESTACIONES" as Tipo, monto: "", fechaPago: hoy(), anioDecimo: "", periodoDesde: "", periodoHasta: "", referencia: "", observacion: "" };
 
-export default function AnticiposPrestacionPanel({ empleados, puedeRegistrar }: Props) {
+export default function AnticiposPrestacionPanel({ puedeRegistrar }: Props) {
   const { avisar } = useAvisos();
   const [filas, setFilas] = useState<Anticipo[] | null>(null);
   const [tipo, setTipo] = useState<"" | Tipo>("");
   const [estado, setEstado] = useState<"" | Anticipo["estado"]>("VIGENTE");
   const [abierto, setAbierto] = useState(false);
   const [form, setForm] = useState(VACIO);
+  // Aparte del formulario: el buscador entrega la tarjeta completa, y al servidor sólo va su id.
+  const [empleado, setEmpleado] = useState<EmpleadoBuscado | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
@@ -93,6 +95,7 @@ export default function AnticiposPrestacionPanel({ empleados, puedeRegistrar }: 
   }, [filas]);
 
   async function registrar() {
+    if (!empleado) return;
     setError(null);
     setGuardando(true);
     try {
@@ -101,7 +104,7 @@ export default function AnticiposPrestacionPanel({ empleados, puedeRegistrar }: 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          empleadoId: form.empleadoId,
+          empleadoId: empleado.id,
           tipo: form.tipo,
           monto: Number(form.monto),
           fechaPago: form.fechaPago,
@@ -157,7 +160,7 @@ export default function AnticiposPrestacionPanel({ empleados, puedeRegistrar }: 
           de ese <b>décimo</b> al calcularlo en Prestaciones.
         </p>
         {puedeRegistrar && (
-          <button className="btn btn-primary" onClick={() => { setForm({ ...VACIO, fechaPago: hoy() }); setError(null); setAbierto(true); }}>
+          <button className="btn btn-primary" onClick={() => { setForm({ ...VACIO, fechaPago: hoy() }); setEmpleado(null); setError(null); setAbierto(true); }}>
             Registrar anticipo
           </button>
         )}
@@ -243,12 +246,8 @@ export default function AnticiposPrestacionPanel({ empleados, puedeRegistrar }: 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Registrar anticipo">
           <div className="panel max-h-full w-full max-w-lg space-y-4 overflow-y-auto p-5 shadow-xl">
             <h3 className="text-base font-semibold text-gray-900">Registrar anticipo de prestaciones</h3>
-            <Campo etiqueta="Empleado">
-              <select className="input" value={form.empleadoId} onChange={(e) => setForm({ ...form, empleadoId: e.target.value })}>
-                <option value="">Seleccione…</option>
-                {empleados.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {nombreCompleto(e)}</option>)}
-              </select>
-            </Campo>
+            {/* Fuera de `Campo`: éste envuelve en un <label>, y el buscador tiene botones y una lista. */}
+            <CampoEmpleado etiqueta="Empleado" para="anticipos" valor={empleado} onCambio={setEmpleado} />
             <Campo etiqueta="Concepto">
               <select className="input" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value as Tipo, anioDecimo: "" })}>
                 {(Object.keys(ETIQUETA) as Tipo[]).map((t) => <option key={t} value={t}>{ETIQUETA[t]}</option>)}
@@ -296,7 +295,7 @@ export default function AnticiposPrestacionPanel({ empleados, puedeRegistrar }: 
             {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
             <div className="flex justify-end gap-2">
               <button className="btn btn-ghost" onClick={() => setAbierto(false)}>Cancelar</button>
-              <button className="btn btn-primary" disabled={guardando || !form.empleadoId || !(Number(form.monto) > 0) || !form.fechaPago} onClick={() => void registrar()}>
+              <button className="btn btn-primary" disabled={guardando || !empleado || !(Number(form.monto) > 0) || !form.fechaPago} onClick={() => void registrar()}>
                 {guardando ? "Guardando…" : "Registrar"}
               </button>
             </div>

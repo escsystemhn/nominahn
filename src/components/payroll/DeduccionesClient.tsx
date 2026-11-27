@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatCurrency, nombreCompleto } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import BarraDatos from "@/components/importacion/BarraDatos";
 import AsignarVarios from "@/components/payroll/AsignarVarios";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 import TipoDeduccionModal, { type TipoEditable } from "@/components/payroll/TipoDeduccionModal";
 import type { TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 import { etiquetaCategoria } from "@/lib/deducciones/tipos";
@@ -48,7 +49,6 @@ interface DeduccionEmpleado {
 interface Props {
   tipos: TipoDeduccion[];
   deduccionesEmpleados: DeduccionEmpleado[];
-  empleados: Array<{ id: string; codigo: string; primerNombre: string; segundoNombre?: string | null; primerApellido: string; segundoApellido?: string | null }>;
   /** Permisos ya resueltos en el servidor: aquí sólo deciden qué se dibuja. */
   puedeExportar: boolean;
   puedeImportar: boolean;
@@ -81,7 +81,6 @@ const ETIQUETA_MONTO: Record<FormaCobro, string> = {
 export default function DeduccionesClient({
   tipos,
   deduccionesEmpleados,
-  empleados,
   puedeExportar,
   puedeImportar,
   puedeAsignar: permiteAsignar,
@@ -103,8 +102,10 @@ export default function DeduccionesClient({
 
   const asignables = tipos.filter((t) => t.activo && !t.esLegal);
 
+  // El empleado va aparte del formulario: el buscador entrega la tarjeta completa, y sólo su id
+  // va en la ruta del POST.
+  const [empDed, setEmpDed] = useState<EmpleadoBuscado | null>(null);
   const [formEmp, setFormEmp] = useState({
-    empleadoId: "",
     tipoDeduccionId: "",
     forma: "UNA_VEZ" as FormaCobro,
     monto: "",
@@ -116,7 +117,7 @@ export default function DeduccionesClient({
   const montoAsignar = lecturaMonto.ok && lecturaMonto.valor !== null ? lecturaMonto.valor : 0;
   const cuotasAsignar = Number(formEmp.cuotasMeses);
   const puedeAsignar =
-    !!formEmp.empleadoId &&
+    !!empDed &&
     !!formEmp.tipoDeduccionId &&
     montoAsignar > 0 &&
     (formEmp.forma !== "CUOTAS" || (Number.isInteger(cuotasAsignar) && cuotasAsignar >= 1));
@@ -128,9 +129,10 @@ export default function DeduccionesClient({
   }
 
   async function asignarEmpleado() {
+    if (!empDed) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/empleados/" + formEmp.empleadoId + "/deducciones", {
+      const res = await fetch("/api/empleados/" + empDed.id + "/deducciones", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -195,7 +197,8 @@ export default function DeduccionesClient({
       {solicitudes}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      {/* En el celular las tres pestañas no caben: se desplazan de lado en vez de correr la página. */}
+      <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-gray-200">
         {(anticipos ? (["tipos", "empleados", "anticipos"] as const) : (["tipos", "empleados"] as const)).map((t) => (
           <button
             key={t}
@@ -335,18 +338,11 @@ export default function DeduccionesClient({
 
       {/* Modal asignar empleado */}
       {modalEmp && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="panel w-full max-w-md space-y-4 p-6 shadow-2xl">
+        // Con desplazamiento propio: la lista de resultados del buscador va dentro y alarga la ventana.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="panel max-h-full w-full max-w-md space-y-4 overflow-y-auto p-6 shadow-2xl">
             <h3 className="font-semibold text-gray-900">Asignar deducción a empleado</h3>
-            <div>
-              <label htmlFor="ded-7" className="mb-1 block text-sm font-medium text-gray-800">Empleado</label>
-              <select id="ded-7" value={formEmp.empleadoId} onChange={(e) => setFormEmp((f) => ({ ...f, empleadoId: e.target.value }))} className="input">
-                <option value="">Seleccione…</option>
-                {empleados.map((emp) => (
-                  <option key={emp.id} value={emp.id}>{nombreCompleto(emp)} ({emp.codigo})</option>
-                ))}
-              </select>
-            </div>
+            <CampoEmpleado etiqueta="Empleado" para="deducciones" valor={empDed} onCambio={setEmpDed} />
             <div>
               <label htmlFor="ded-8" className="mb-1 block text-sm font-medium text-gray-800">Tipo de deducción</label>
               <select id="ded-8" value={formEmp.tipoDeduccionId} onChange={(e) => elegirTipoEmp(e.target.value)} className="input">

@@ -18,6 +18,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAvisos } from "@/components/ui/Avisos";
 import EstadoVacio from "@/components/ui/EstadoVacio";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 
 export interface PinEnCuarentena {
   dispositivoId: string;
@@ -25,11 +26,6 @@ export interface PinEnCuarentena {
   marcas: number;
   primera: string | null;
   ultima: string | null;
-}
-
-export interface OpcionEmpleado {
-  id: string;
-  etiqueta: string;
 }
 
 export interface PinAsignado {
@@ -40,7 +36,6 @@ export interface PinAsignado {
 
 interface Props {
   cuarentena: PinEnCuarentena[];
-  empleados: OpcionEmpleado[];
   asignados: PinAsignado[];
   nombreDispositivo: (id: string) => string;
 }
@@ -50,16 +45,17 @@ function fecha(iso: string | null) {
   return new Date(iso).toLocaleString("es-HN", { dateStyle: "short", timeStyle: "short" });
 }
 
-export default function CuarentenaPines({ cuarentena, empleados, asignados, nombreDispositivo }: Props) {
+export default function CuarentenaPines({ cuarentena, asignados, nombreDispositivo }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
-  const [seleccion, setSeleccion] = useState<Record<string, string>>({});
+  /** El elegido en el buscador de cada fila, por «dispositivoId|pin». */
+  const [seleccion, setSeleccion] = useState<Record<string, EmpleadoBuscado | null>>({});
   const [guardando, setGuardando] = useState<string | null>(null);
 
   const clave = (p: PinEnCuarentena) => `${p.dispositivoId}|${p.pin}`;
 
   async function asignar(p: PinEnCuarentena) {
-    const empleadoId = seleccion[clave(p)];
+    const empleadoId = seleccion[clave(p)]?.id;
     if (!empleadoId) return;
 
     setGuardando(clave(p));
@@ -130,22 +126,22 @@ export default function CuarentenaPines({ cuarentena, empleados, asignados, nomb
                     <td data-etiqueta="Primera" className="text-gray-500 text-xs">{fecha(p.primera)}</td>
                     <td data-etiqueta="Última" className="text-gray-500 text-xs">{fecha(p.ultima)}</td>
                     <td data-accion>
-                      <div className="flex gap-2">
-                        <select
-                          value={seleccion[clave(p)] ?? ""}
-                          onChange={(e) =>
-                            setSeleccion((s) => ({ ...s, [clave(p)]: e.target.value }))
-                          }
-                          aria-label={`Empleado para el PIN ${p.pin}`}
-                          className="input flex-1 min-w-0"
-                        >
-                          <option value="">Seleccione empleado…</option>
-                          {empleados.map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.etiqueta}
-                            </option>
-                          ))}
-                        </select>
+                      {/* Un buscador por fila en vez de una lista con todos los activos: con
+                          cientos no se encontraba a nadie. `sinTotal`: con la primera
+                          sincronización hay un PIN por persona, y contar al abrir haría una
+                          consulta por fila. Arriba, no al centro: la lista de resultados
+                          alarga la celda. */}
+                      <div className="flex w-full items-start gap-2 text-left sm:min-w-72">
+                        <CampoEmpleado
+                          etiqueta={`Empleado para el PIN ${p.pin}`}
+                          etiquetaOculta
+                          para="biometrico"
+                          sinTotal
+                          placeholder="Buscar empleado: nombre o código"
+                          className="min-w-0 flex-1"
+                          valor={seleccion[clave(p)] ?? null}
+                          onCambio={(e) => setSeleccion((s) => ({ ...s, [clave(p)]: e }))}
+                        />
                         <button
                           onClick={() => asignar(p)}
                           disabled={!seleccion[clave(p)] || guardando === clave(p)}

@@ -16,7 +16,7 @@
  *   alcance de datos de quien mira: aparecen para que la rama no cuelgue en el
  *   aire, pero sin detalle. Sin ellos el árbol parecería roto.
  *
- * · REASIGNAR ES EXPLÍCITO, con un selector, no arrastrando. Arrastrar sobre un
+ * · REASIGNAR ES EXPLÍCITO, con un buscador, no arrastrando. Arrastrar sobre un
  *   árbol plegable es fácil de errar, y aquí un error cambia quién aprueba las
  *   vacaciones de alguien y quién lo evalúa.
  */
@@ -26,6 +26,7 @@ import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
 import FotoAvatar from "@/components/employees/FotoAvatar";
+import CampoEmpleado, { useEmpleadoElegido } from "@/components/employees/CampoEmpleado";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 
@@ -94,7 +95,7 @@ export default function OrganigramaClient({
     });
   }, []);
 
-  /** Todos los nodos en plano: alimenta la búsqueda y el selector de jefe. */
+  /** Todos los nodos en plano: alimenta la búsqueda y el jefe actual del diálogo. */
   const planos = useMemo(() => {
     const salida: Nodo[] = [];
     const pila = [...raices];
@@ -245,7 +246,7 @@ export default function OrganigramaClient({
       {reasignando && (
         <DialogoReasignar
           empleado={reasignando}
-          candidatos={planos.filter((n) => n.id !== reasignando.id && !n.contexto)}
+          jefeActual={planos.find((n) => n.id === reasignando.supervisorId) ?? null}
           onCerrar={() => setReasignando(null)}
         />
       )}
@@ -399,16 +400,27 @@ function Rama({
 
 function DialogoReasignar({
   empleado,
-  candidatos,
+  jefeActual,
   onCerrar,
 }: {
   empleado: Nodo;
-  candidatos: Nodo[];
+  /** El jefe de hoy si está en el árbol (puede ser un nodo de contexto, fuera del alcance). */
+  jefeActual: Nodo | null;
   onCerrar: () => void;
 }) {
-  const [nuevo, setNuevo] = useState<string>(empleado.supervisorId ?? "");
+  // El nuevo jefe se busca en el servidor (los que no están de baja, del alcance, menos el
+  // propio empleado). null = «Sin jefe».
+  const [nuevo, setNuevo] = useEmpleadoElegido("organigrama", empleado.supervisorId);
+  // Mientras no se toque el campo, el jefe es el de hoy: el buscador lo trae aparte y, si
+  // está fuera del alcance, no llega nunca. Sin esta marca, guardar antes de que llegue
+  // (o con uno de fuera del alcance) lo dejaría sin jefe sin que nadie lo pidiera.
+  const [tocado, setTocado] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const nuevoId = nuevo?.id ?? null;
+  const sinCambios = !tocado || nuevoId === empleado.supervisorId;
+  const esperandoActual = Boolean(empleado.supervisorId) && !nuevo && !tocado;
 
   async function guardar() {
     setGuardando(true);
@@ -417,7 +429,7 @@ function DialogoReasignar({
       const res = await fetch("/api/organigrama/reasignar", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ empleadoId: empleado.id, supervisorId: nuevo || null }),
+        body: JSON.stringify({ empleadoId: empleado.id, supervisorId: nuevoId }),
       });
       const datos = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(datos.error ?? "No se pudo cambiar el jefe.");
@@ -432,7 +444,8 @@ function DialogoReasignar({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="panel shadow-xl w-full max-w-md">
+      {/* Con desplazamiento propio: la lista de resultados del buscador va dentro y la alarga. */}
+      <div className="panel shadow-xl w-full max-w-md max-h-full overflow-y-auto">
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Cambiar jefe directo</h2>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -447,26 +460,52 @@ function DialogoReasignar({
             </div>
           )}
 
-          <label className="block">
-            <span className="block text-sm font-medium text-gray-800 mb-1">Nuevo jefe</span>
-            <select
-              value={nuevo}
-              onChange={(e) => setNuevo(e.target.value)}
-              className="input"
-            >
-              <option value="">Sin jefe (raíz del organigrama)</option>
-              {candidatos.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre}, {c.codigo}
-                  {c.puesto ? ` — ${c.puesto}` : ""}
-                </option>
-              ))}
-            </select>
-            <span className="block text-xs text-gray-500 mt-1">
-              No aparecen aquí quienes crearían un ciclo; si aun así elige uno, el servidor lo
-              rechaza y le dice por qué.
-            </span>
-          </label>
+          <CampoEmpleado
+            etiqueta="Nuevo jefe"
+            para="organigrama"
+            parametros={{ excluir: empleado.id }}
+            valor={nuevo}
+            onCambio={(e) => {
+              setNuevo(e);
+              setTocado(true);
+            }}
+            ayuda={
+              <div className="mt-1 space-y-1 text-xs text-gray-500">
+                {esperandoActual ? (
+                  // Sin la tarjeta del jefe actual no hay «Quitar»: el botón deja elegir «Sin jefe»
+                  // también cuando ese jefe está fuera del alcance (y el buscador no lo trae).
+                  <p data-jefe-actual>
+                    {jefeActual ? (
+                      <>
+                        Jefe actual: {jefeActual.nombre}, <span className="font-mono">{jefeActual.codigo}</span>
+                        {jefeActual.contexto ? " (fuera de su alcance)" : ""}.
+                      </>
+                    ) : (
+                      "Tiene un jefe asignado que no aparece en esta vista."
+                    )}{" "}
+                    Busque a otro sólo si quiere cambiarlo, o{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-blue-700 hover:underline"
+                      onClick={() => {
+                        setNuevo(null);
+                        setTocado(true);
+                      }}
+                    >
+                      déjelo sin jefe
+                    </button>
+                    .
+                  </p>
+                ) : (
+                  !nuevo && <p className="font-medium text-gray-700" data-sin-jefe>Sin jefe: queda en la raíz del organigrama.</p>
+                )}
+                <p>
+                  Si elige a alguien que depende de este empleado, directa o indirectamente, el
+                  servidor lo rechaza y le dice por qué: cerraría un ciclo.
+                </p>
+              </div>
+            }
+          />
 
           <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             Esto cambia quién aprueba sus permisos y quién lo evalúa como jefe directo. Queda
@@ -480,7 +519,7 @@ function DialogoReasignar({
           </button>
           <button
             onClick={guardar}
-            disabled={guardando}
+            disabled={guardando || sinCambios}
             className="btn btn-primary"
           >
             {guardando ? "Guardando…" : "Guardar"}

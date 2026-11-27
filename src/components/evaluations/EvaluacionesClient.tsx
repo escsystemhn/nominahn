@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAvisos } from "@/components/ui/Avisos";
-import { nombreCompleto } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
 import { Campo } from "@/components/ui/ModalForm";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 import { calificacionPonderada, estanTodosCalificados } from "@/lib/evaluaciones/calificacion";
 import { ETIQUETA_ORIGEN, type Aspecto, type AspectosEvaluacion } from "@/lib/evaluaciones/aspectos";
 
@@ -52,7 +52,6 @@ interface Evaluacion {
 
 interface Props {
   evaluaciones: Evaluacion[];
-  empleados: Array<{ id: string; codigo: string; primerNombre: string; segundoNombre?: string | null; primerApellido: string; segundoApellido?: string | null }>;
   permisos: { gestionar: boolean; cerrar: boolean; competencias: boolean };
 }
 
@@ -97,7 +96,7 @@ const numero = (v: string): number | null => {
   return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null;
 };
 
-export default function EvaluacionesClient({ evaluaciones, empleados, permisos }: Props) {
+export default function EvaluacionesClient({ evaluaciones, permisos }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
   const [tipoFiltro, setTipoFiltro] = useState("TODOS");
@@ -106,9 +105,13 @@ export default function EvaluacionesClient({ evaluaciones, empleados, permisos }
   const [abierto, setAbierto] = useState(false);
   const [editando, setEditando] = useState<Evaluacion | null>(null);
   const [form, setForm] = useState({ empleadoId: "", tipo: "DESEMPENO_MENSUAL", periodo: "", comentarios: "", fortalezas: "", mejoras: "", objetivos: "", potencial: "" });
+  // El elegido en el buscador (sólo en una nueva: al editar, el evaluado ya no cambia).
+  const [elegido, setElegido] = useState<EmpleadoBuscado | null>(null);
   const [filas, setFilas] = useState<Fila[]>([]);
   const [origen, setOrigen] = useState<AspectosEvaluacion["origen"] | null>(null);
   const [cargandoAspectos, setCargandoAspectos] = useState(false);
+  /** Número de la última carga de aspectos pedida (ver `cargarAspectos`). */
+  const ultimaCarga = useRef(0);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accionando, setAccionando] = useState<string | null>(null);
@@ -119,9 +122,13 @@ export default function EvaluacionesClient({ evaluaciones, empleados, permisos }
   const completa = estanTodosCalificados(puntuados);
 
   async function cargarAspectos(empleadoId: string, tipo: string, guardados: CriterioGuardado[]) {
+    // Con el buscador se cambia de empleado con «Cambiar» o «Quitar» mientras llegan los
+    // aspectos del anterior: sólo cuenta la última carga, para no calificar a uno con los de otro.
+    const carga = ++ultimaCarga.current;
     if (!empleadoId) {
       setFilas([]);
       setOrigen(null);
+      setCargandoAspectos(false);
       return;
     }
     setCargandoAspectos(true);
@@ -129,18 +136,20 @@ export default function EvaluacionesClient({ evaluaciones, empleados, permisos }
       const r = await fetch(`/api/evaluaciones/aspectos?empleadoId=${encodeURIComponent(empleadoId)}&tipo=${tipo}`);
       if (!r.ok) throw new Error();
       const d = (await r.json()) as AspectosEvaluacion;
+      if (carga !== ultimaCarga.current) return;
       setFilas(filasDe(d.aspectos, guardados));
       setOrigen(d.origen);
     } catch {
-      setError("No se pudieron cargar los aspectos a evaluar.");
+      if (carga === ultimaCarga.current) setError("No se pudieron cargar los aspectos a evaluar.");
     } finally {
-      setCargandoAspectos(false);
+      if (carga === ultimaCarga.current) setCargandoAspectos(false);
     }
   }
 
   function nueva() {
     setEditando(null);
     setForm({ empleadoId: "", tipo: "DESEMPENO_MENSUAL", periodo: "", comentarios: "", fortalezas: "", mejoras: "", objetivos: "", potencial: "" });
+    setElegido(null);
     setFilas([]);
     setOrigen(null);
     setError(null);
@@ -360,28 +369,34 @@ export default function EvaluacionesClient({ evaluaciones, empleados, permisos }
           <div className="panel max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">{editando ? "Editar evaluación" : "Nueva evaluación"}</h3>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <Campo etiqueta="Empleado">
-                  <select
-                    value={form.empleadoId}
-                    disabled={!!editando}
-                    onChange={(e) => {
-                      const empleadoId = e.target.value;
-                      setForm((f) => ({ ...f, empleadoId }));
-                      void cargarAspectos(empleadoId, form.tipo, []);
-                    }}
-                    className="input"
-                  >
-                    <option value="">Seleccione…</option>
-                    {editando && !empleados.some((e) => e.id === editando.empleado.id) && (
-                      <option value={editando.empleado.id}>{editando.empleado.primerNombre} {editando.empleado.primerApellido}</option>
-                    )}
-                    {empleados.map((emp) => (
-                      <option key={emp.id} value={emp.id}>{nombreCompleto(emp)}</option>
-                    ))}
-                  </select>
-                </Campo>
-              </div>
+              {editando ? (
+                // Al editar, el evaluado no cambia (la API no lo admite): se muestra, sin buscador.
+                <div className="col-span-2 text-sm" data-empleado-evaluado>
+                  <span className="font-medium text-gray-800">Empleado</span>
+                  <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="truncate font-medium text-gray-900">{editando.empleado.primerNombre} {editando.empleado.primerApellido}</p>
+                    <p className="truncate text-xs text-gray-500">
+                      <span className="font-mono">{editando.empleado.codigo}</span>
+                      {" · "}{editando.empleado.puesto ? `${editando.empleado.puesto.nombre} · ` : ""}{editando.empleado.sucursal.nombre}, {editando.empleado.departamento.nombre}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                // Los activos de su alcance, como la lista de antes; al elegir, sus aspectos a evaluar.
+                <CampoEmpleado
+                  etiqueta="Empleado"
+                  para="evaluaciones"
+                  className="col-span-2 block text-sm"
+                  valor={elegido}
+                  onCambio={(e) => {
+                    setElegido(e);
+                    const empleadoId = e?.id ?? "";
+                    setForm((f) => ({ ...f, empleadoId }));
+                    // Con «Quitar», sin empleado: cargarAspectos("") vacía los aspectos.
+                    void cargarAspectos(empleadoId, form.tipo, []);
+                  }}
+                />
+              )}
               <Campo etiqueta="Tipo">
                 <select
                   value={form.tipo}

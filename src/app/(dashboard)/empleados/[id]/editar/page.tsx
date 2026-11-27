@@ -69,15 +69,6 @@ export default async function EditarEmpleadoPage({
   // Fuera de su alcance responde igual que si no existiera (ver `alcanzaEmpleado`).
   if (!emp || !alcanzaEmpleado(usuario, emp)) notFound();
 
-  // Un empleado no puede supervisarse a sí mismo, así que se excluye de la lista
-  // (el API lo rechaza igualmente).
-  const supervisoresRaw = await prisma.empleado.findMany({
-    where: { estado: "ACTIVO", id: { not: id } },
-    select: { id: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true },
-    orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
-  });
-  const supervisores = supervisoresRaw.map((s) => ({ id: s.id, nombre: nombreCompleto(s) }));
-
   const empleado: EmpleadoEditable = {
     id: emp.id,
     primerNombre: emp.primerNombre,
@@ -110,6 +101,8 @@ export default async function EditarEmpleadoPage({
     sucursalId: emp.sucursalId,
     departamentoId: emp.departamentoId,
     puestoId: emp.puestoId ?? "",
+    // Sólo el id: el formulario trae sus datos y busca a otro en el servidor al escribir
+    // (`/api/empleados/buscar?para=supervisor`), en vez de cargar aquí a todos los activos.
     supervisorId: emp.supervisorId ?? "",
     centroCostoId: emp.centroCostoId ?? "",
     emailCorporativo: emp.emailCorporativo ?? "",
@@ -139,7 +132,6 @@ export default async function EditarEmpleadoPage({
         divisiones={divisiones}
         departamentos={departamentos.map((d) => ({ ...d, divisionId: conDivisiones ? d.divisionId : null }))}
         puestos={puestos}
-        supervisores={supervisores}
         centrosCosto={centrosCosto}
         tieneContratoVigente={contratosVigentes > 0}
         puedeCambiarAportes={puede(usuario, "configuracion.parametros")}

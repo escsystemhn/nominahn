@@ -1,22 +1,11 @@
-import { prisma } from "@/lib/prisma";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
-import { conAlcance } from "@/lib/auth/alcance";
-import { nombreCompleto } from "@/lib/utils";
 import IncapacidadesClient from "@/components/attendance/IncapacidadesClient";
 
 export const metadata = { title: "Incapacidades" };
 
 export default async function IncapacidadesPage() {
   const usuario = await requerirPermisoPagina("asistencia.incapacidades");
-  const empleados = await prisma.empleado.findMany({
-    where: conAlcance({ estado: { not: "INACTIVO" } }, usuario),
-    select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, genero: true },
-    orderBy: [{ primerApellido: "asc" }, { primerNombre: "asc" }],
-  });
-  return (
-    <IncapacidadesClient
-      empleados={empleados.map((e) => ({ id: e.id, codigo: e.codigo, nombre: nombreCompleto(e), femenino: /^f/i.test(e.genero ?? "") }))}
-      puedeReglas={puede(usuario, "configuracion.parametros")}
-    />
-  );
+  // Los empleados ya no se cargan aquí: los buscadores del registro y del filtro los piden a
+  // /api/empleados/buscar?para=incapacidades, con el mismo filtro (no dados de baja, alcance).
+  return <IncapacidadesClient puedeReglas={puede(usuario, "configuracion.parametros")} />;
 }

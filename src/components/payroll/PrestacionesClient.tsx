@@ -16,6 +16,7 @@ import ArchivoBanco from "@/components/payroll/ArchivoBanco";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import FranjaCifras from "@/components/ui/FranjaCifras";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { tienePermiso } from "@/lib/auth/permisos";
 import {
@@ -27,18 +28,9 @@ import {
 import { CAUSAS_TERMINACION, TIPOS_DECIMO, etiquetaCausa } from "@/lib/payroll/etiquetas-prestaciones";
 import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
-interface EmpleadoOpcion {
-  id: string;
-  codigo: string;
-  nombre: string;
-  fechaIngreso: string;
-  salarioBase: number;
-}
-
 interface Props {
   tabInicial: "liquidaciones" | "decimos";
   permisos: string[];
-  empleados: EmpleadoOpcion[];
   sucursales: { id: string; nombre: string }[];
   niveles: NivelesEstructura;
 }
@@ -103,7 +95,6 @@ const nombreDe = (e: Liquidacion["empleado"]) =>
 const hoy = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Tegucigalpa" });
 
 const formVacio = {
-  empleadoId: "",
   causa: "DESPIDO_INJUSTIFICADO",
   fechaSalida: "",
   preavisoOtorgado: false,
@@ -115,7 +106,7 @@ const formVacio = {
   saldoFondoReserva: "",
 };
 
-export default function PrestacionesClient({ tabInicial, permisos, empleados, sucursales, niveles }: Props) {
+export default function PrestacionesClient({ tabInicial, permisos, sucursales, niveles }: Props) {
   const { confirmar } = useAvisos();
   const [tab, setTab] = useState<"liquidaciones" | "decimos">(tabInicial);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -127,6 +118,9 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
   // ─── Liquidaciones ──────────────────────────────────────────────────────────
   const [liquidaciones, setLiquidaciones] = useState<Liquidacion[] | null>(null);
   const [form, setForm] = useState(formVacio);
+  // Aparte del formulario: el buscador («liquidaciones») entrega también su ingreso y salario
+  // base, para la nota bajo el campo, y su nombre, para confirmar al guardar.
+  const [empleado, setEmpleado] = useState<EmpleadoBuscado | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [simulacion, setSimulacion] = useState<Simulacion | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -157,8 +151,13 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
     setSimulacion(null);
   }
 
+  function elegirEmpleado(e: EmpleadoBuscado | null) {
+    setEmpleado(e);
+    setSimulacion(null);
+  }
+
   const cuerpoLiquidacion = (guardar: boolean) => ({
-    empleadoId: form.empleadoId,
+    empleadoId: empleado?.id ?? "",
     causa: form.causa,
     fechaSalida: form.fechaSalida,
     preavisoOtorgado: form.preavisoOtorgado,
@@ -173,7 +172,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
   });
 
   async function calcular() {
-    if (!form.empleadoId || !form.fechaSalida) {
+    if (!empleado || !form.fechaSalida) {
       setAviso({ ok: false, texto: "Elija el empleado y la fecha de salida." });
       return;
     }
@@ -192,10 +191,9 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
   }
 
   async function guardar() {
-    const emp = empleados.find((e) => e.id === form.empleadoId);
     if (!(await confirmar({
       titulo: "¿Guardar la liquidación?",
-      detalle: `Al guardar la liquidación, ${emp?.nombre ?? "el empleado"} queda inactivo y deja de entrar en las planillas.`,
+      detalle: `Al guardar la liquidación, ${empleado?.nombre ?? "el empleado"} queda inactivo y deja de entrar en las planillas.`,
       accion: "Guardar",
     }))) return;
     setOcupado(true);
@@ -205,6 +203,7 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
       if (!res.ok) throw new Error(d.error ?? "No se pudo guardar");
       setAviso({ ok: true, texto: `Liquidación guardada como borrador por ${formatCurrency(d.totalAPagar)}. Falta aprobarla.` });
       setForm(formVacio);
+      setEmpleado(null);
       setSimulacion(null);
       setMostrarForm(false);
       await cargarLiquidaciones();
@@ -273,8 +272,6 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
     };
   }, [decimos]);
 
-  const empSel = empleados.find((e) => e.id === form.empleadoId);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -321,20 +318,19 @@ export default function PrestacionesClient({ tabInicial, permisos, empleados, su
             <section className="panel space-y-4 p-6" aria-labelledby="nueva-liq">
               <h2 id="nueva-liq" className="text-base font-semibold text-gray-900">Nueva liquidación</h2>
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="liq-emp">Empleado</label>
-                  <select id="liq-emp" className="input" value={form.empleadoId} onChange={(e) => set("empleadoId", e.target.value)}>
-                    <option value="">Elegir</option>
-                    {empleados.map((e) => (
-                      <option key={e.id} value={e.id}>{e.nombre} ({e.codigo})</option>
-                    ))}
-                  </select>
-                  {empSel && (
+                {/* text-xs: el rótulo del mismo tamaño que los demás de este formulario. */}
+                <CampoEmpleado
+                  etiqueta="Empleado"
+                  para="liquidaciones"
+                  valor={empleado}
+                  onCambio={elegirEmpleado}
+                  className="block text-xs sm:col-span-2"
+                  ayuda={empleado?.fechaIngreso && empleado.salarioBase !== undefined && (
                     <p className="mt-1 text-xs text-gray-500">
-                      Ingresó el {formatDate(empSel.fechaIngreso)}. Salario base {formatCurrency(empSel.salarioBase)}.
+                      Ingresó el {formatDate(empleado.fechaIngreso)}. Salario base {formatCurrency(empleado.salarioBase)}.
                     </p>
                   )}
-                </div>
+                />
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="liq-fecha">Fecha de salida</label>
                   <input id="liq-fecha" type="date" className="input" value={form.fechaSalida} max={hoy()} onChange={(e) => set("fechaSalida", e.target.value)} />

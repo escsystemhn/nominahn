@@ -6,6 +6,7 @@ import { useAvisos } from "@/components/ui/Avisos";
 import { nombreCompleto } from "@/lib/utils";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 import type { NivelesEstructura } from "@/lib/organizacion/estructura";
 
 // Date cuando lo pasa el server component; string ISO cuando viene del JSON de
@@ -39,14 +40,6 @@ interface Marcaje {
 
 interface Props {
   marcajes: Marcaje[];
-  empleados: Array<{
-    id: string;
-    codigo: string;
-    primerNombre: string;
-    segundoNombre?: string | null;
-    primerApellido: string;
-    segundoApellido?: string | null;
-  }>;
   sucursales: Array<{ id: string; nombre: string }>;
   fecha: string;
   sucursalId: string;
@@ -60,11 +53,13 @@ const FUENTE_MARCAJE: Record<string, string> = {
   PLANTILLA: "Plantilla de Excel",
 };
 
-export default function AsistenciaClient({ marcajes, empleados, sucursales, fecha, sucursalId, niveles }: Props) {
+export default function AsistenciaClient({ marcajes, sucursales, fecha, sucursalId, niveles }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState<null | "registro">(null);
+  // El elegido en el buscador (para su tarjeta); `form.empleadoId` es lo que se envía.
+  const [empleado, setEmpleado] = useState<EmpleadoBuscado | null>(null);
   const [form, setForm] = useState({
     empleadoId: "",
     horaEntrada: "",
@@ -221,24 +216,25 @@ export default function AsistenciaClient({ marcajes, empleados, sucursales, fech
 
       {/* Modal registro manual */}
       {modal === "registro" && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="panel w-full max-w-md space-y-4 p-6 shadow-2xl">
+        // Con desplazamiento propio: la lista de resultados del buscador va dentro de la
+        // ventana y, en una pantalla baja, la alargaría por debajo del borde.
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="panel max-h-full w-full max-w-md space-y-4 overflow-y-auto p-6 shadow-2xl">
             <h3 className="font-semibold text-gray-900">Registrar marcaje manual</h3>
 
-            <div>
-              <label htmlFor="marcaje-empleado" className="mb-1 block text-sm font-medium text-gray-800">Empleado</label>
-              <select
-                id="marcaje-empleado"
-                value={form.empleadoId}
-                onChange={(e) => setForm((f) => ({ ...f, empleadoId: e.target.value }))}
-                className="input"
-              >
-                <option value="">Seleccione…</option>
-                {empleados.map((emp) => (
-                  <option key={emp.id} value={emp.id}>{nombreCompleto(emp)} ({emp.codigo})</option>
-                ))}
-              </select>
-            </div>
+            {/* Buscar en vez de una lista con todos los activos: con cientos no se encontraba a
+                nadie. El contexto «asistencia» ofrece los mismos (activos, de su alcance y de la
+                sucursal que se está viendo, si hay filtro). */}
+            <CampoEmpleado
+              etiqueta="Empleado"
+              para="asistencia"
+              parametros={{ sucursalId }}
+              valor={empleado}
+              onCambio={(e) => {
+                setEmpleado(e);
+                setForm((f) => ({ ...f, empleadoId: e?.id ?? "" }));
+              }}
+            />
 
             <div className="flex items-center gap-2">
               <input

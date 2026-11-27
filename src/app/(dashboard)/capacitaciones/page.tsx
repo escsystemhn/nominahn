@@ -1,23 +1,10 @@
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
-import { conAlcance } from "@/lib/auth/alcance";
-import { prisma } from "@/lib/prisma";
-import { nombreCompleto } from "@/lib/utils";
 import CapacitacionesClient from "@/components/employees/CapacitacionesClient";
 
 export default async function CapacitacionesPage() {
   const usuario = await requerirPermisoPagina("talento.capacitaciones");
 
-  const empleados = await prisma.empleado.findMany({
-    where: conAlcance({ estado: "ACTIVO" }, usuario),
-    select: { id: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true, codigo: true },
-    orderBy: { primerApellido: "asc" },
-  });
-  const empleadosOpts = empleados.map((e) => ({ id: e.id, nombre: `${e.codigo}, ${nombreCompleto(e)}` }));
-
-  return (
-    <CapacitacionesClient
-      empleados={empleadosOpts}
-      puedeGestionar={puede(usuario, "talento.capacitaciones_gestionar")}
-    />
-  );
+  // El empleado a inscribir se busca en el servidor al escribir
+  // (`/api/empleados/buscar?para=capacitaciones`): ya no se cargan todos aquí.
+  return <CapacitacionesClient puedeGestionar={puede(usuario, "talento.capacitaciones_gestionar")} />;
 }

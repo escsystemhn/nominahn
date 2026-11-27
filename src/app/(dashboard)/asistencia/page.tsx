@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { conAlcance, filtroPorEmpleado, filtroSucursales } from "@/lib/auth/alcance";
+import { filtroPorEmpleado, filtroSucursales } from "@/lib/auth/alcance";
 import { formatDate, hoyHN, fechaCalendario } from "@/lib/utils";
 import { requerirPermisoPagina, puede } from "@/lib/auth/guard";
 import AsistenciaClient from "@/components/attendance/AsistenciaClient";
@@ -26,7 +26,7 @@ export default async function AsistenciaPage({
   // El cliente necesita el AAAA-MM-DD para el input type=date.
   const fechaStr = fecha.toISOString().split("T")[0];
 
-  const [marcajes, empleados, sucursales, jerarquia] = await Promise.all([
+  const [marcajes, sucursales, jerarquia] = await Promise.all([
     prisma.marcaje.findMany({
       where: {
         fecha,
@@ -62,11 +62,8 @@ export default async function AsistenciaPage({
         horasFeriado: Number(m.horasFeriado),
       }))
     ),
-    prisma.empleado.findMany({
-      where: conAlcance({ estado: "ACTIVO", ...(sp.sucursalId ? { sucursalId: sp.sucursalId } : {}) }, usuario),
-      select: { id: true, codigo: true, primerNombre: true, segundoNombre: true, primerApellido: true, segundoApellido: true },
-      orderBy: { primerApellido: "asc" },
-    }),
+    // Los empleados del marcaje manual ya no se cargan aquí: el buscador los pide a
+    // /api/empleados/buscar?para=asistencia, con el mismo filtro (activos, alcance, sucursal).
     prisma.sucursal.findMany({ where: filtroSucursales(usuario), select: { id: true, nombre: true }, orderBy: { nombre: "asc" } }),
     jerarquiaNominaHabilitada(prisma),
   ]);
@@ -111,7 +108,6 @@ export default async function AsistenciaPage({
 
       <AsistenciaClient
         marcajes={marcajes}
-        empleados={empleados}
         sucursales={sucursales}
         fecha={fechaStr}
         sucursalId={sp.sucursalId ?? ""}

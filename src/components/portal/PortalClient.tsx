@@ -17,33 +17,38 @@ type FechaSerializable = Date | string;
 interface Post { id: string; titulo: string; contenido: string; categoria: string; destacado: boolean; createdAt: FechaSerializable; autor: { primerNombre: string; primerApellido: string }; }
 interface Anuncio { id: string; titulo: string; contenido: string; urgente: boolean; createdAt: FechaSerializable; autor: { primerNombre: string; primerApellido: string }; }
 interface ContactoRRHH { id: string; nombre: string; cargo: string; email: string | null; telefono: string | null; extension: string | null; }
-interface Empleado { id: string; codigo: string; primerNombre: string; primerApellido: string; }
 
 interface Props {
   posts: Post[];
   anuncios: Anuncio[];
   contactos: ContactoRRHH[];
-  empleados: Empleado[];
 }
 
-export default function PortalClient({ posts, anuncios, contactos, empleados }: Props) {
+export default function PortalClient({ posts, anuncios, contactos }: Props) {
   const router = useRouter();
   const { avisar } = useAvisos();
   const [tab, setTab] = useState<"blog" | "anuncios" | "documentos" | "contactos">("anuncios");
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState<null | "post" | "anuncio" | "contacto">(null);
   const [form, setForm] = useState({ titulo: "", contenido: "", urgente: false, nombre: "", cargo: "", email: "", telefono: "" });
-  const [autorId, setAutorId] = useState(empleados[0]?.id ?? "");
 
+  // Sin «Autor»: la API publica siempre a nombre del empleado vinculado al usuario de la
+  // sesión (no acepta otro, para que nadie publique en nombre ajeno). El selector de antes
+  // no servía de nada: se elegía a alguien y salía igual a nombre de quien publicaba.
   async function crearPost() {
     setLoading(true);
     try {
       const res = await fetch("/api/portal/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titulo: form.titulo, contenido: form.contenido, categoria: modal === "anuncio" ? "ANUNCIO" : "BLOG", autorId, urgente: form.urgente }),
+        body: JSON.stringify({ titulo: form.titulo, contenido: form.contenido, categoria: modal === "anuncio" ? "ANUNCIO" : "BLOG", urgente: form.urgente }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        // Lo que dice la API (por ejemplo, «Su usuario no está vinculado a un empleado»).
+        const d = await res.json().catch(() => ({}));
+        avisar.error(typeof d.error === "string" ? d.error : "No se pudo publicar. Intente nuevamente.");
+        return;
+      }
       setModal(null);
       router.refresh();
     } catch {
@@ -219,16 +224,10 @@ export default function PortalClient({ posts, anuncios, contactos, empleados }: 
             <Campo etiqueta="Contenido">
               <textarea value={form.contenido} onChange={(e) => setForm((f) => ({ ...f, contenido: e.target.value }))} rows={4} className="input" />
             </Campo>
-            <Campo etiqueta="Autor">
-              <select value={autorId} onChange={(e) => setAutorId(e.target.value)} className="input">
-                {empleados.map((emp) => (
-                  <option key={emp.id} value={emp.id}>{emp.primerNombre} {emp.primerApellido}</option>
-                ))}
-              </select>
-            </Campo>
+            <p className="text-sm text-gray-500">Se publica a su nombre.</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setModal(null)} className="btn btn-ghost">Cancelar</button>
-              <button onClick={crearPost} disabled={loading || !form.titulo || !autorId} className="btn btn-primary">
+              <button onClick={crearPost} disabled={loading || !form.titulo} className="btn btn-primary">
                 {loading ? "Publicando…" : "Publicar"}
               </button>
             </div>

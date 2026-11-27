@@ -8,7 +8,6 @@ import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import CuarentenaPines, {
   type PinEnCuarentena,
-  type OpcionEmpleado,
   type PinAsignado,
 } from "./CuarentenaPines";
 import MarcacionesDetalle from "./MarcacionesDetalle";
@@ -51,7 +50,6 @@ interface Props {
   dispositivos: Dispositivo[];
   sucursales: Sucursal[];
   cuarentena: PinEnCuarentena[];
-  empleados: OpcionEmpleado[];
   asignados: PinAsignado[];
   niveles: NivelesEstructura;
 }
@@ -70,7 +68,6 @@ export default function BiometricoClient({
   dispositivos,
   sucursales,
   cuarentena,
-  empleados,
   asignados,
   niveles,
 }: Props) {
@@ -266,7 +263,6 @@ export default function BiometricoClient({
       {pestana === "pines" && (
         <CuarentenaPines
           cuarentena={cuarentena}
-          empleados={empleados}
           asignados={asignados}
           nombreDispositivo={nombreDispositivo}
         />
@@ -275,7 +271,6 @@ export default function BiometricoClient({
       {pestana === "marcaciones" && (
         <MarcacionesDetalle
           dispositivos={dispositivos.map((d) => ({ id: d.id, nombre: d.nombre }))}
-          empleados={empleados}
         />
       )}
 

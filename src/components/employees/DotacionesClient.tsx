@@ -7,6 +7,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import { Campo } from "@/components/ui/ModalForm";
+import CampoEmpleado, { type EmpleadoBuscado } from "./CampoEmpleado";
 
 interface Articulo {
   id: string;
@@ -31,7 +32,6 @@ interface Asignacion {
 }
 
 interface Props {
-  empleados: { id: string; nombre: string }[];
   articulos: Articulo[];
   puedeGestionar: boolean;
 }
@@ -64,7 +64,7 @@ async function obtenerPorVencer(d: number): Promise<Asignacion[]> {
   return res.ok ? await res.json() : [];
 }
 
-export default function DotacionesClient({ empleados, articulos: articulosIniciales, puedeGestionar }: Props) {
+export default function DotacionesClient({ articulos: articulosIniciales, puedeGestionar }: Props) {
   const { avisar } = useAvisos();
   const [tab, setTab] = useState<"asignaciones" | "catalogo" | "porvencer">("asignaciones");
   const [articulos, setArticulos] = useState<Articulo[]>(articulosIniciales);
@@ -74,7 +74,9 @@ export default function DotacionesClient({ empleados, articulos: articulosInicia
   // Arranca en true: el efecto de carga inicial lo baja al recibir los datos.
   const [loading, setLoading] = useState(true);
 
-  const [fAsig, setFAsig] = useState({ empleadoId: "", articuloId: "", cantidad: 1, talla: "", fechaEntrega: "", observacion: "" });
+  // El empleado va aparte: el buscador entrega la tarjeta completa, y al servidor sólo su id.
+  const [empAsig, setEmpAsig] = useState<EmpleadoBuscado | null>(null);
+  const [fAsig, setFAsig] = useState({ articuloId: "", cantidad: 1, talla: "", fechaEntrega: "", observacion: "" });
   const [fArt, setFArt] = useState({ nombre: "", categoria: "UNIFORME", descripcion: "", requiereTalla: false, vidaUtilMeses: "" });
   const [msg, setMsg] = useState("");
 
@@ -120,14 +122,15 @@ export default function DotacionesClient({ empleados, articulos: articulosInicia
   async function asignar(e: React.FormEvent) {
     e.preventDefault();
     setMsg("");
-    if (!fAsig.empleadoId || !fAsig.articuloId) { setMsg("Seleccione empleado y artículo."); return; }
+    if (!empAsig || !fAsig.articuloId) { setMsg("Seleccione empleado y artículo."); return; }
     const res = await fetch("/api/dotaciones/asignaciones", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fAsig),
+      body: JSON.stringify({ ...fAsig, empleadoId: empAsig.id }),
     });
     if (!res.ok) { setMsg((await res.json().catch(() => ({}))).error ?? "No se pudo asignar."); return; }
-    setFAsig({ empleadoId: "", articuloId: "", cantidad: 1, talla: "", fechaEntrega: "", observacion: "" });
+    setEmpAsig(null);
+    setFAsig({ articuloId: "", cantidad: 1, talla: "", fechaEntrega: "", observacion: "" });
     await cargarAsignaciones();
   }
 
@@ -183,12 +186,8 @@ export default function DotacionesClient({ empleados, articulos: articulosInicia
           {puedeGestionar && (
             <form onSubmit={asignar} className="panel h-fit space-y-3 p-5">
               <h2 className="font-semibold text-gray-900">Asignar artículo</h2>
-              <Campo etiqueta="Empleado">
-                <select value={fAsig.empleadoId} onChange={(e) => setFAsig({ ...fAsig, empleadoId: e.target.value })} className="input">
-                  <option value="">Seleccione…</option>
-                  {empleados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
-              </Campo>
+              {/* Fuera de `Campo`: éste envuelve en un <label>, y el buscador tiene botones y una lista. */}
+              <CampoEmpleado etiqueta="Empleado" para="dotaciones" valor={empAsig} onCambio={setEmpAsig} />
               <Campo etiqueta="Artículo">
                 <select value={fAsig.articuloId} onChange={(e) => setFAsig({ ...fAsig, articuloId: e.target.value })} className="input">
                   <option value="">Seleccione…</option>

@@ -8,6 +8,7 @@ import EstadoBadge, { type Tono } from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
 import FranjaCifras from "@/components/ui/FranjaCifras";
 import { Campo } from "@/components/ui/ModalForm";
+import CampoEmpleado, { type EmpleadoBuscado } from "./CampoEmpleado";
 import MaterialCapacitacionPanel from "./MaterialCapacitacionPanel";
 
 interface Capacitacion {
@@ -36,7 +37,6 @@ interface Participante {
 }
 
 interface Props {
-  empleados: { id: string; nombre: string }[];
   puedeGestionar: boolean;
 }
 
@@ -63,7 +63,7 @@ async function obtenerParticipantes(id: string): Promise<Participante[]> {
   return c.participantes ?? [];
 }
 
-export default function CapacitacionesClient({ empleados, puedeGestionar }: Props) {
+export default function CapacitacionesClient({ puedeGestionar }: Props) {
   const { avisar } = useAvisos();
   const [lista, setLista] = useState<Capacitacion[]>([]);
   const [sel, setSel] = useState<string | null>(null);
@@ -73,7 +73,8 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
   const [msg, setMsg] = useState("");
 
   const [f, setF] = useState({ nombre: "", tipo: "INTERNA", proveedor: "", fechaInicio: "", fechaFin: "", costoPresupuestado: "", descripcion: "" });
-  const [nuevoEmp, setNuevoEmp] = useState("");
+  // El empleado a inscribir, del buscador (que ya no ofrece a los inscritos en el programa).
+  const [nuevoEmp, setNuevoEmp] = useState<EmpleadoBuscado | null>(null);
   const [dni, setDni] = useState("");
 
   // Refresco manual tras una mutación: se invoca desde manejadores de eventos,
@@ -131,11 +132,11 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
   }
 
   async function inscribir(porDni = false) {
-    if (!sel || (porDni ? !dni.trim() : !nuevoEmp)) return;
-    const cuerpo = porDni ? { identidad: dni.trim() } : { empleadoId: nuevoEmp };
+    const cuerpo = porDni ? (dni.trim() ? { identidad: dni.trim() } : null) : (nuevoEmp ? { empleadoId: nuevoEmp.id } : null);
+    if (!sel || !cuerpo) return;
     const res = await fetch(`/api/capacitaciones/${sel}/participantes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
     if (!res.ok) { avisar.error((await res.json().catch(() => ({}))).error ?? "No se pudo inscribir."); return; }
-    setNuevoEmp(""); setDni(""); await cargarDetalle(sel); await cargar();
+    setNuevoEmp(null); setDni(""); await cargarDetalle(sel); await cargar();
   }
 
   // Se corresponde con `schemaCalificar` del endpoint: los tres campos son
@@ -149,7 +150,6 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
   }
 
   const capSel = lista.find((c) => c.id === sel);
-  const empDisponibles = empleados.filter((e) => !participantes.some((p) => p.empleadoId === e.id));
 
   return (
     <div className="space-y-6">
@@ -207,7 +207,15 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
                 const real = Number(c.costoReal ?? 0), pres = Number(c.costoPresupuestado);
                 const est = estadoBadge[c.estado];
                 return (
-                  <li key={c.id} className={`cursor-pointer px-5 py-3 hover:bg-gray-50 ${sel === c.id ? "bg-blue-50" : ""}`} onClick={() => setSel(c.id)}>
+                  <li
+                    key={c.id}
+                    className={`cursor-pointer px-5 py-3 hover:bg-gray-50 ${sel === c.id ? "bg-blue-50" : ""}`}
+                    onClick={() => {
+                      // El elegido para otro programa puede estar ya inscrito en este: se suelta.
+                      if (c.id !== sel) setNuevoEmp(null);
+                      setSel(c.id);
+                    }}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium text-gray-900">{c.nombre}</p>
@@ -249,12 +257,21 @@ export default function CapacitacionesClient({ empleados, puedeGestionar }: Prop
                 </div>
               )}
               {puedeGestionar && (
-                <div className="flex gap-2 border-b border-gray-100 pb-3">
-                  <select aria-label="Inscribir empleado" className="input flex-1" value={nuevoEmp} onChange={(e) => setNuevoEmp(e.target.value)}>
-                    <option value="">Inscribir empleado…</option>
-                    {empDisponibles.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                  </select>
-                  <button onClick={() => void inscribir()} className="btn btn-secondary">Inscribir</button>
+                <div className="flex items-start gap-2 border-b border-gray-100 pb-3">
+                  {/* Los activos de su alcance que todavía no están en este programa: el servidor
+                      los excluye con `capacitacionId`, como antes la lista quitaba a los inscritos. */}
+                  <CampoEmpleado
+                    etiqueta="Inscribir empleado"
+                    etiquetaOculta
+                    para="capacitaciones"
+                    parametros={{ capacitacionId: sel }}
+                    className="min-w-0 flex-1 text-sm"
+                    placeholder="Inscribir empleado: nombre, apellido o código"
+                    vacio="Ningún empleado sin inscribir coincide."
+                    valor={nuevoEmp}
+                    onCambio={setNuevoEmp}
+                  />
+                  <button onClick={() => void inscribir()} className="btn btn-secondary" disabled={!nuevoEmp}>Inscribir</button>
                 </div>
               )}
               {puedeGestionar && (

@@ -14,6 +14,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { useAvisos } from "@/components/ui/Avisos";
 import EstadoBadge from "@/components/ui/EstadoBadge";
 import EstadoVacio from "@/components/ui/EstadoVacio";
+import CampoEmpleado, { type EmpleadoBuscado } from "@/components/employees/CampoEmpleado";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   ETIQUETA_TIPO_INCAPACIDAD,
@@ -22,8 +23,6 @@ import {
   type ReglasIncapacidad,
   type TipoIncapacidad,
 } from "@/lib/asistencia/incapacidades";
-
-interface Empleado { id: string; codigo: string; nombre: string; femenino: boolean }
 
 interface Incapacidad {
   id: string;
@@ -59,11 +58,15 @@ const mesActual = () => new Date().toLocaleDateString("en-CA", { timeZone: "Amer
 
 const formVacio = { empleadoId: "", tipo: "ENFERMEDAD_COMUN" as TipoIncapacidad, emisor: "IHSS", fechaInicio: "", fechaFin: "", numeroCertificado: "", prorrogaDeId: "", observacion: "" };
 
-export default function IncapacidadesClient({ empleados, puedeReglas }: { empleados: Empleado[]; puedeReglas: boolean }) {
+export default function IncapacidadesClient({ puedeReglas }: { puedeReglas: boolean }) {
   const { pedirMotivo } = useAvisos();
   const [lista, setLista] = useState<Incapacidad[] | null>(null);
   const [reglas, setReglas] = useState<ReglasIncapacidad | null>(null);
   const [filtro, setFiltro] = useState({ empleadoId: "", mes: mesActual() });
+  // Los elegidos en los buscadores (para su tarjeta y, en el registro, el sexo); los ids que
+  // se envían y filtran siguen en `form.empleadoId` y `filtro.empleadoId`.
+  const [empleadoForm, setEmpleadoForm] = useState<EmpleadoBuscado | null>(null);
+  const [empleadoFiltro, setEmpleadoFiltro] = useState<EmpleadoBuscado | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [form, setForm] = useState(formVacio);
   const [archivo, setArchivo] = useState<File | null>(null);
@@ -126,6 +129,11 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
 
   async function registrar(e: React.FormEvent) {
     e.preventDefault();
+    // El buscador no es un <select required>: sin empleado, el navegador ya no lo impide.
+    if (!form.empleadoId) {
+      setAviso({ ok: false, texto: "Elija al empleado de la incapacidad." });
+      return;
+    }
     setEnviando(true);
     setAviso(null);
     try {
@@ -147,6 +155,7 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
       if (!res.ok) throw new Error(d.error ?? "No se pudo registrar");
       setAviso({ ok: true, texto: `Incapacidad registrada: ${d.dias} días, ${d.diasPatrono} a cargo del patrono.${d.avisos?.length ? ` ${d.avisos.join(" ")}` : ""}` });
       setForm(formVacio);
+      setEmpleadoForm(null);
       setArchivo(null);
       setMostrarForm(false);
       await cargar();
@@ -172,8 +181,6 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
     await cargar();
   }
 
-  const empSel = empleados.find((e) => e.id === form.empleadoId);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -190,17 +197,29 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
         <form onSubmit={registrar} className="panel space-y-4 p-6" aria-labelledby="inc-nueva">
           <h2 id="inc-nueva" className="text-base font-semibold text-gray-900">Registrar incapacidad</h2>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="inc-emp">Empleado</label>
-              <select id="inc-emp" className="input" value={form.empleadoId} onChange={(e) => setForm((x) => ({ ...x, empleadoId: e.target.value, prorrogaDeId: "" }))} required>
-                <option value="">Elegir</option>
-                {empleados.map((e) => <option key={e.id} value={e.id}>{e.nombre} ({e.codigo})</option>)}
-              </select>
-            </div>
+            {/* Buscar en vez de una lista con todos: con cientos no se encontraba a nadie. El
+                contexto «incapacidades» ofrece los mismos (no dados de baja, de su alcance) y dice
+                si es empleada, para la de maternidad. */}
+            <CampoEmpleado
+              etiqueta="Empleado"
+              para="incapacidades"
+              className="block text-xs sm:col-span-2"
+              valor={empleadoForm}
+              onCambio={(e) => {
+                setEmpleadoForm(e);
+                setForm((x) => ({
+                  ...x,
+                  empleadoId: e?.id ?? "",
+                  prorrogaDeId: "",
+                  // La de maternidad no se ofrece a un empleado: que no quede elegida sin verse.
+                  tipo: x.tipo === "MATERNIDAD" && e && !e.femenino ? formVacio.tipo : x.tipo,
+                }));
+              }}
+            />
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="inc-tipo">Tipo</label>
               <select id="inc-tipo" className="input" value={form.tipo} onChange={(e) => setForm((x) => ({ ...x, tipo: e.target.value as TipoIncapacidad }))}>
-                {TIPOS.filter(([t]) => t !== "MATERNIDAD" || !empSel || empSel.femenino).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {TIPOS.filter(([t]) => t !== "MATERNIDAD" || !empleadoForm || empleadoForm.femenino).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
             <div>
@@ -244,23 +263,33 @@ export default function IncapacidadesClient({ empleados, puedeReglas }: { emplea
               {form.prorrogaDeId && " Como es prórroga, no reinicia los días del patrono."}
             </p>
           )}
-          <div className="flex justify-end"><button type="submit" className="btn btn-primary" disabled={enviando}>{enviando ? "Registrando…" : "Registrar"}</button></div>
+          <div className="flex items-center justify-end gap-3">
+            {!form.empleadoId && <span className="text-xs text-gray-500">Elija primero al empleado.</span>}
+            <button type="submit" className="btn btn-primary" disabled={enviando || !form.empleadoId}>{enviando ? "Registrando…" : "Registrar"}</button>
+          </div>
         </form>
       )}
 
-      <section className="panel flex flex-wrap items-end gap-3 p-4" aria-label="Filtros">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="flt-emp">Empleado</label>
-          <select id="flt-emp" className="input" value={filtro.empleadoId} onChange={(e) => setFiltro((x) => ({ ...x, empleadoId: e.target.value }))}>
-            <option value="">Todos</option>
-            {empleados.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-          </select>
-        </div>
+      {/* Arriba y no abajo: el buscador lleva una línea de estado bajo la caja, y alineados
+          por abajo su caja quedaba más alta que la del mes. */}
+      <section className="panel flex flex-wrap items-start gap-3 p-4" aria-label="Filtros">
+        {/* Sin elegido (o con «Quitar») son todos. */}
+        <CampoEmpleado
+          etiqueta="Empleado"
+          para="incapacidades"
+          placeholder="Todos: escriba para filtrar"
+          className="block w-full text-xs sm:w-80"
+          valor={empleadoFiltro}
+          onCambio={(e) => {
+            setEmpleadoFiltro(e);
+            setFiltro((x) => ({ ...x, empleadoId: e?.id ?? "" }));
+          }}
+        />
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="flt-mes">Mes</label>
           <input id="flt-mes" type="month" className="input" value={filtro.mes} onChange={(e) => setFiltro((x) => ({ ...x, mes: e.target.value }))} />
         </div>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFiltro((x) => ({ ...x, mes: "" }))}>Ver todas</button>
+        <button type="button" className="btn btn-ghost btn-sm mt-6" onClick={() => setFiltro((x) => ({ ...x, mes: "" }))}>Ver todas</button>
       </section>
 
       <section className="panel overflow-hidden" aria-label="Incapacidades registradas">

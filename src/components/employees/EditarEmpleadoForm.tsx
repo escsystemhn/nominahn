@@ -12,6 +12,7 @@ import { montoComoTexto } from "@/lib/formato/monto-texto";
 import { etiquetasNiveles, type NivelesEstructura } from "@/lib/organizacion/estructura";
 import FlechasEmpleado, { type DestinoFlecha } from "./FlechasEmpleado";
 import EditorFotoEmpleado from "./EditorFotoEmpleado";
+import CampoEmpleado, { useEmpleadoElegido } from "./CampoEmpleado";
 
 const OBLIGATORIO = "Este dato es obligatorio.";
 const ELEGIR = "Elija una opción.";
@@ -81,7 +82,6 @@ interface Props {
   niveles?: NivelesEstructura;
   departamentos: Array<{ id: string; nombre: string; sucursalId: string; divisionId: string | null }>;
   puestos: Array<{ id: string; nombre: string; departamentoId: string; activo: boolean }>;
-  supervisores: Array<{ id: string; nombre: string }>;
   centrosCosto: Array<{ id: string; codigo: string; nombre: string }>;
   /** Con uno vigente, el tipo cambia registrando un contrato nuevo, no aquí. */
   tieneContratoVigente: boolean;
@@ -133,7 +133,6 @@ export default function EditarEmpleadoForm({
   divisiones,
   departamentos,
   puestos,
-  supervisores,
   centrosCosto,
   tieneContratoVigente,
   puedeCambiarAportes,
@@ -184,6 +183,12 @@ export default function EditarEmpleadoForm({
   const departamentoId = useWatch({ control, name: "departamentoId" });
   const salarioBase = useWatch({ control, name: "salarioBase" });
   const estado = useWatch({ control, name: "estado" });
+  // Supervisor con el buscador (activos de toda la empresa, menos este empleado), en vez de
+  // un <select> con todos. El campo del formulario sigue siendo el id: es lo que compara
+  // `cambio()` y lo que viaja. Aquí vive también el elegido, para que no se pierda al
+  // cambiar de pestaña (la de datos laborales se desmonta).
+  const supervisorId = useWatch({ control, name: "supervisorId" });
+  const [supervisor, setSupervisor] = useEmpleadoElegido("supervisor", valoresIniciales.supervisorId);
   const divisionesSucursal = divisiones.filter((v) => v.sucursalId === sucursalId);
   const deptsFiltrados = departamentos.filter((d) =>
     (!sucursalId || d.sucursalId === sucursalId) && (!divisionId || d.divisionId === divisionId)
@@ -513,14 +518,28 @@ export default function EditarEmpleadoForm({
                 ))}
               </select>
             </Field>
-            <Field label="Supervisor" error={errors.supervisorId?.message}>
-              <select {...register("supervisorId")} className={fieldClass}>
-                <option value="">Sin supervisor</option>
-                {supervisores.map((s) => (
-                  <option key={s.id} value={s.id}>{s.nombre}</option>
-                ))}
-              </select>
-            </Field>
+            {/* Sin `Field`: envuelve en un <label>, y el buscador tiene botones y una lista. */}
+            <CampoEmpleado
+              etiqueta="Supervisor"
+              para="supervisor"
+              parametros={{ excluir: id }}
+              valor={supervisor}
+              onCambio={(e) => {
+                setSupervisor(e);
+                // «Quitar» deja el id vacío: `CAMPOS_ANULABLES` lo envía como null (sin supervisor).
+                setValue("supervisorId", e?.id ?? "", { shouldDirty: true });
+              }}
+              ayuda={
+                errors.supervisorId?.message ? (
+                  <p className="text-xs text-red-700 mt-0.5">{errors.supervisorId.message}</p>
+                ) : !supervisorId ? (
+                  <p className="mt-1 text-xs text-gray-500" data-sin-supervisor>Sin supervisor.</p>
+                ) : !supervisor ? (
+                  // El id ya está en el formulario; sólo faltan sus datos para mostrarlo.
+                  <p className="mt-1 text-xs text-gray-500">Cargando el supervisor actual…</p>
+                ) : null
+              }
+            />
             <Field
               label="Centro de costo"
               error={errors.centroCostoId?.message}

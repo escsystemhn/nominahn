@@ -16,8 +16,7 @@ import EstadoVacio from "@/components/ui/EstadoVacio";
 import { formatDateTime } from "@/lib/utils";
 import { etiquetaVariable, type VariableDoc } from "@/lib/documentos/plantillas";
 import TextoDocumento from "./TextoDocumento";
-
-interface Empleado { id: string; codigo: string; nombre: string; activo: boolean }
+import CampoEmpleado, { rutaBuscarEmpleado, useEmpleadoElegido, type EmpleadoBuscado } from "./CampoEmpleado";
 
 interface Plantilla {
   id: string;
@@ -62,14 +61,14 @@ const TIPOS: { v: Plantilla["tipo"]; l: string }[] = [
 const nombreEmp = (e: Emitido["empleado"]) => [e.primerNombre, e.segundoNombre, e.primerApellido, e.segundoApellido].filter(Boolean).join(" ");
 
 interface Props {
-  empleados: Empleado[];
   puedeEmitir: boolean;
   puedePlantillas: boolean;
+  /** El id que llega en la dirección (`?empleadoId=`, desde la ficha): ya elegido al emitir. */
   empleadoInicial: string;
   tabInicial?: Tab;
 }
 
-export default function DocumentosClient({ empleados, puedeEmitir, puedePlantillas, empleadoInicial, tabInicial }: Props) {
+export default function DocumentosClient({ puedeEmitir, puedePlantillas, empleadoInicial, tabInicial }: Props) {
   const [tab, setTab] = useState<Tab>(tabInicial ?? (puedeEmitir ? "emitir" : "plantillas"));
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [variables, setVariables] = useState<{ grupo: string; variables: VariableDoc[] }[]>([]);
@@ -123,7 +122,7 @@ export default function DocumentosClient({ empleados, puedeEmitir, puedePlantill
       )}
 
       {tab === "emitir" && puedeEmitir && (
-        <Emitir empleados={empleados} plantillas={plantillas.filter((p) => p.activo)} empleadoInicial={empleadoInicial} firmanteVacio={!firmante.nombre} onAviso={setAviso} />
+        <Emitir plantillas={plantillas.filter((p) => p.activo)} empleadoInicial={empleadoInicial} firmanteVacio={!firmante.nombre} onAviso={setAviso} />
       )}
       {tab === "historial" && puedeEmitir && <Historial onAviso={setAviso} />}
       {tab === "plantillas" && puedePlantillas && (
@@ -131,7 +130,6 @@ export default function DocumentosClient({ empleados, puedeEmitir, puedePlantill
           plantillas={plantillas}
           variables={variables}
           firmante={firmante}
-          empleados={empleados}
           onCambio={cargarPlantillas}
           onAviso={setAviso}
         />
@@ -143,15 +141,17 @@ export default function DocumentosClient({ empleados, puedeEmitir, puedePlantill
 // ─── Emitir ───────────────────────────────────────────────────────────────────
 
 function Emitir({
-  empleados, plantillas, empleadoInicial, firmanteVacio, onAviso,
+  plantillas, empleadoInicial, firmanteVacio, onAviso,
 }: {
-  empleados: Empleado[];
   plantillas: Plantilla[];
   empleadoInicial: string;
   firmanteVacio: boolean;
   onAviso: (a: { ok: boolean; texto: string } | null) => void;
 }) {
-  const [empleadoId, setEmpleadoId] = useState(empleadoInicial);
+  // El de la dirección se trae por su id para mostrar su tarjeta. «documentos» ofrece también a
+  // los dados de baja: la constancia de trabajo se suele pedir al salir.
+  const [empleado, setEmpleado] = useEmpleadoElegido("documentos", empleadoInicial);
+  const empleadoId = empleado?.id ?? "";
   const [plantillaId, setPlantillaId] = useState("");
   const [destinatario, setDestinatario] = useState("");
   const [vista, setVista] = useState<Vista | null>(null);
@@ -207,13 +207,14 @@ function Emitir({
             Falta el firmante por el patrono. Configúrelo en «Plantillas y firmante» para que aparezca en los documentos.
           </p>
         )}
-        <div>
-          <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="doc-emp">Empleado</label>
-          <select id="doc-emp" className="input" value={empleadoId} onChange={(e) => { setEmpleadoId(e.target.value); setVista(null); }}>
-            <option value="">Elegir</option>
-            {empleados.map((e) => <option key={e.id} value={e.id}>{e.nombre} ({e.codigo}){e.activo ? "" : ", inactivo"}</option>)}
-          </select>
-        </div>
+        {/* text-xs: el rótulo del mismo tamaño que los de «Documento» y «Dirigido a». */}
+        <CampoEmpleado
+          etiqueta="Empleado"
+          para="documentos"
+          valor={empleado}
+          onCambio={(e) => { setEmpleado(e); setVista(null); }}
+          className="block text-xs"
+        />
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="doc-pl">Documento</label>
           <select id="doc-pl" className="input" value={plantillaSel} onChange={(e) => { setPlantillaId(e.target.value); setVista(null); }}>
@@ -340,12 +341,11 @@ const plantillaNueva = (): Omit<Plantilla, "id" | "codigo" | "esSistema" | "upda
 });
 
 function Plantillas({
-  plantillas, variables, firmante, empleados, onCambio, onAviso,
+  plantillas, variables, firmante, onCambio, onAviso,
 }: {
   plantillas: Plantilla[];
   variables: { grupo: string; variables: VariableDoc[] }[];
   firmante: Firmante;
-  empleados: Empleado[];
   onCambio: () => Promise<void>;
   onAviso: (a: { ok: boolean; texto: string } | null) => void;
 }) {
@@ -353,7 +353,7 @@ function Plantillas({
   const [selId, setSelId] = useState<string | "nueva">(plantillas[0]?.id ?? "nueva");
   const sel = plantillas.find((p) => p.id === selId) ?? null;
   const [edicion, setEdicion] = useState(sel ? { ...sel } : { ...plantillaNueva(), id: "", codigo: "", esSistema: false, updatedAt: "" });
-  const [empPrueba, setEmpPrueba] = useState(empleados.find((e) => e.activo)?.id ?? "");
+  const [empPrueba, setEmpPrueba] = useState<EmpleadoBuscado | null>(null);
   const [vista, setVista] = useState<Vista | null>(null);
   const [fForm, setFForm] = useState(firmante);
   const [guardando, setGuardando] = useState(false);
@@ -363,6 +363,23 @@ function Plantillas({
     const t = setTimeout(() => setFForm(firmante), 0);
     return () => clearTimeout(t);
   }, [firmante]);
+
+  // Como con la lista de antes, arranca con el primero que no está de baja, para que
+  // «Vista previa» funcione sin elegir a nadie. Si ya se eligió a alguien, se respeta.
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      try {
+        const r = await fetch(rutaBuscarEmpleado("documentos-prueba"));
+        const d = r.ok ? await r.json() : null;
+        const primero = (d?.empleados?.[0] as EmpleadoBuscado | undefined) ?? null;
+        if (vivo && primero) setEmpPrueba((actual) => actual ?? primero);
+      } catch {
+        // Sin respuesta: queda por elegir en el buscador.
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
 
   function elegir(id: string | "nueva") {
     setSelId(id);
@@ -393,7 +410,7 @@ function Plantillas({
     const res = await fetch("/api/documentos/vista-previa", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ empleadoId: empPrueba, contenido: edicion.contenido, titulo: edicion.titulo }),
+      body: JSON.stringify({ empleadoId: empPrueba.id, contenido: edicion.contenido, titulo: edicion.titulo }),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) onAviso({ ok: false, texto: d.error ?? "No se pudo probar" });
@@ -515,13 +532,15 @@ function Plantillas({
           </div>
 
           <div className="flex flex-wrap items-end justify-between gap-3 border-t border-gray-100 pt-4">
-            <div className="flex items-end gap-2">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700" htmlFor="pl-prueba">Probar con</label>
-                <select id="pl-prueba" className="input" value={empPrueba} onChange={(e) => setEmpPrueba(e.target.value)}>
-                  {empleados.filter((e) => e.activo).map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </select>
-              </div>
+            <div className="flex min-w-0 flex-wrap items-end gap-2">
+              {/* Ancho fijo: el buscador ocupa todo lo que le dan, y aquí comparte la fila con los botones. */}
+              <CampoEmpleado
+                etiqueta="Probar con"
+                para="documentos-prueba"
+                valor={empPrueba}
+                onCambio={setEmpPrueba}
+                className="block w-72 max-w-full text-xs"
+              />
               <button type="button" className="btn btn-secondary" onClick={() => void probar()} disabled={!empPrueba || !edicion.contenido.trim()}>Vista previa</button>
             </div>
             <div className="flex gap-2">

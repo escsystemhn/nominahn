@@ -33,11 +33,40 @@ export interface EmpleadoBuscado {
   correo: string | null;
   /** Marca de la foto; null = sus iniciales. */
   foto: number | null;
+  /** Dado de baja: sólo aparece donde la pantalla los admite (documentos, liquidaciones…). */
+  inactivo?: boolean;
+  /** Sólo en incapacidades: la de maternidad sólo se ofrece a las empleadas. */
+  femenino?: boolean;
+  /** Sólo en liquidaciones: AAAA-MM-DD y salario base, para la nota bajo el campo. */
+  fechaIngreso?: string;
+  salarioBase?: number;
 }
 
 const ESPERA_MS = 200;
 
 const detalle = (e: EmpleadoBuscado) => [e.puesto, e.departamento, e.lugar].filter(Boolean).join(" · ");
+
+/** La ruta con un parámetro más, tenga o no ya los suyos (`?para=documentos`). */
+export const conParametro = (endpoint: string, clave: string, valor: string) =>
+  `${endpoint}${endpoint.includes("?") ? "&" : "?"}${clave}=${encodeURIComponent(valor)}`;
+
+/**
+ * El empleado de un id ya conocido (el del registro que se edita, o el que llega en la
+ * dirección con `?empleado=`), con los mismos datos que muestra el buscador.
+ */
+export async function empleadoPorId(endpoint: string, id: string): Promise<EmpleadoBuscado | null> {
+  try {
+    const r = await fetch(conParametro(endpoint, "id", id));
+    const d = r.ok ? await r.json() : null;
+    return (d?.empleados?.[0] as EmpleadoBuscado | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function Inactivo() {
+  return <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 align-middle text-[11px] font-medium text-gray-600">Inactivo</span>;
+}
 
 function Resaltado({ texto, palabras }: { texto: string; palabras: string[] }) {
   return (
@@ -57,6 +86,7 @@ export default function BuscadorEmpleado({
   sugerencia,
   placeholder = "Nombre, apellido o código",
   vacio = "Ningún empleado coincide.",
+  sinTotal = false,
 }: {
   /** Id del rótulo visible del campo (aria-labelledby). */
   etiquetaId: string;
@@ -68,6 +98,11 @@ export default function BuscadorEmpleado({
   placeholder?: string;
   /** Lo que se dice cuando nada coincide. */
   vacio?: string;
+  /**
+   * No consultar el total al abrir (sólo al escribir): para muchos buscadores en la misma
+   * pantalla, como uno por fila, que si no harían una consulta cada uno.
+   */
+  sinTotal?: boolean;
 }) {
   const id = useId();
   const idLista = `${id}-lista`;
@@ -75,6 +110,14 @@ export default function BuscadorEmpleado({
   const entrada = useRef<HTMLInputElement>(null);
   const [abierto, setAbierto] = useState(!valor);
   const [texto, setTexto] = useState("");
+  // Si el elegido cambia desde fuera (llega el del registro que se edita, o el formulario se
+  // vacía al guardar), se muestra la tarjeta o el buscador según corresponda.
+  const [elegidoVisto, setElegidoVisto] = useState(valor?.id ?? null);
+  if ((valor?.id ?? null) !== elegidoVisto) {
+    setElegidoVisto(valor?.id ?? null);
+    setAbierto(!valor);
+    setTexto("");
+  }
   /** Los resultados y la búsqueda a la que responden. */
   const [lote, setLote] = useState<{ consulta: string | null; empleados: EmpleadoBuscado[]; total: number | null }>({ consulta: null, empleados: [], total: null });
   const [activo, setActivo] = useState(0);
@@ -89,7 +132,7 @@ export default function BuscadorEmpleado({
   const fresco = lote.consulta === consulta;
   const resultados = fresco ? lote.empleados : [];
   const total = fresco ? lote.total : null;
-  const cargando = abierto && !fresco && !fallo;
+  const cargando = abierto && !fresco && !fallo && !(sinTotal && !consulta);
 
   function elegir(e: EmpleadoBuscado) {
     enterPendiente.current = false;
@@ -105,11 +148,11 @@ export default function BuscadorEmpleado({
   });
 
   useEffect(() => {
-    if (!abierto) return;
+    if (!abierto || (sinTotal && !consulta)) return;
     const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`${endpoint}?q=${encodeURIComponent(consulta)}`, { signal: ctrl.signal });
+        const r = await fetch(conParametro(endpoint, "q", consulta), { signal: ctrl.signal });
         const d = r.ok ? await r.json() : null;
         const empleados: EmpleadoBuscado[] = d?.empleados ?? [];
         setFallo(!d);
@@ -124,7 +167,7 @@ export default function BuscadorEmpleado({
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [abierto, consulta, endpoint]);
+  }, [abierto, consulta, endpoint, sinTotal]);
 
   useEffect(() => {
     if (abierto) document.getElementById(idOpcion(activo))?.scrollIntoView({ block: "nearest" });
@@ -161,7 +204,7 @@ export default function BuscadorEmpleado({
       <div className="flex items-center gap-3 rounded-lg border border-gray-300 bg-white px-3 py-2" data-empleado-elegido aria-labelledby={etiquetaId} role="group">
         <FotoAvatar empleadoId={valor.id} version={valor.foto} nombre={valor.nombre} tamano="sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-gray-900">{valor.nombre}</p>
+          <p className="truncate text-sm font-medium text-gray-900">{valor.nombre}{valor.inactivo && <Inactivo />}</p>
           <p className="truncate text-xs text-gray-500">
             <span className="font-mono">{valor.codigo}</span>
             {detalle(valor) && <> · {detalle(valor)}</>}
@@ -253,7 +296,7 @@ export default function BuscadorEmpleado({
               >
                 <FotoAvatar empleadoId={e.id} version={e.foto} nombre={e.nombre} tamano="sm" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-gray-900"><Resaltado texto={e.nombre} palabras={palabras} /></p>
+                  <p className="truncate text-sm text-gray-900"><Resaltado texto={e.nombre} palabras={palabras} />{e.inactivo && <Inactivo />}</p>
                   <p className="truncate text-xs text-gray-500">
                     <span className="font-mono"><Resaltado texto={e.codigo} palabras={palabras} /></span>
                     {detalle(e) && <> · {detalle(e)}</>}
