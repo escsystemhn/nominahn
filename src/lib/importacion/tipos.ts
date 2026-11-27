@@ -46,6 +46,8 @@ export interface Incidencia {
   columna?: string;
   severidad: Severidad;
   mensaje: string;
+  /** La hoja, en un libro con varias (el formato por grupo): las líneas se repiten entre hojas. */
+  hoja?: string;
 }
 
 /**
@@ -71,6 +73,8 @@ export interface FilaPrevisualizada {
   referencia: string;
   /** Descripción corta de lo que cambia, para las filas de actualización. */
   cambios?: string[];
+  /** La hoja, en un libro con varias (el formato por grupo). */
+  hoja?: string;
 }
 
 /** Lo que devuelve la fase de validación. */

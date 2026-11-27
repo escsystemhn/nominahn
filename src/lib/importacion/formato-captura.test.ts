@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
 import { money, type Money } from "@/lib/payroll/money";
 import { periodoDeNombreArchivo } from "@/lib/payroll/periodos-planilla";
-import { columnasDelFormato, construirFormato, encabezadoDosLineas, nombreArchivoFormato, type DatosFormato } from "@/lib/importacion/formato-captura";
+import { columnasDelFormato, construirFormato, construirFormatoGrupo, encabezadoDosLineas, nombreArchivoFormato, nombreArchivoGrupo, periodoDeHojaGrupo, type DatosFormato, type DatosFormatoGrupo } from "@/lib/importacion/formato-captura";
 import { validarMontos, type ContextoMontos, type EstadoCelda, type OperacionHorasExtra, type OperacionMonto, type TipoColumna } from "@/lib/importacion/montos-periodo";
 import type { ClaveRecargo, HorasFijadas, HorasPorRecargo } from "@/lib/payroll/horas-extra-periodo";
-import { xlsxATexto } from "@/lib/importacion/xlsx";
+import { leerArchivoDeMontos, xlsxATexto } from "@/lib/importacion/xlsx";
 
 const PERIODO = { tipo: "QUINCENAL" as const, desde: "2026-12-01", hasta: "2026-12-15" };
 const T = (id: string, codigo: string, nombre: string, categoria: string): TipoColumna => ({ id, codigo, nombre, categoria });
@@ -216,5 +216,169 @@ describe("el formato con las horas extra", () => {
     const r = validarMontos(lectura.texto, contexto({ fijadas: FIJADAS, marcajes: MARCAJES }), () => true);
     expect(r.incidencias.map((i) => `${i.severidad}: ${i.mensaje}`)).toEqual([expect.stringMatching(/^AVISO: 010001 queda con 61 h extra en 15 días: pasa de 4 por día/)]);
     expect(r.operaciones).toHaveLength(1);
+  });
+});
+
+// ─── El formato por grupo (pedido del 2026-11-27) ───────────────────────────
+
+const Q = periodoDeHojaGrupo("QUINCENAL", "2026-12", 1);
+const M = periodoDeHojaGrupo("MENSUAL", "2026-12", 1);
+const GRUPO_EMP = {
+  ...EMPLEADOS,
+  e4: { id: "e4", codigo: "020004", nombre: "Bertha Lidia Mejia" },
+  e5: { id: "e5", codigo: "010500", nombre: "Carlos Mensual Rivera" },
+};
+const HOY_GRUPO: Record<string, number> = { ...HOY, "e4|audi": 100, "e5|afp": 1200 };
+const montoGrupo = (e: string, t: string) => (HOY_GRUPO[`${e}|${t}`] ? money(HOY_GRUPO[`${e}|${t}`]) : null);
+
+function datosGrupo(o: Partial<DatosFormatoGrupo> = {}): DatosFormatoGrupo {
+  return {
+    grupo: "Grupo PAGSA", etiquetaSucursal: "Sucursal", columnas: COLUMNAS, conHoras: false,
+    hojas: [
+      {
+        periodo: Q, monto: montoGrupo,
+        secciones: [
+          { nombre: "Pagsa SPS", departamentos: [{ nombre: "Administracion", empleados: [GRUPO_EMP.e1, GRUPO_EMP.e2] }, { nombre: "Ventas", empleados: [GRUPO_EMP.e3] }] },
+          { nombre: "Audi Tegus", departamentos: [{ nombre: "Taller", empleados: [GRUPO_EMP.e4] }] },
+          { nombre: "Sin nadie", departamentos: [{ nombre: "Vacío", empleados: [] }] },
+        ],
+      },
+      { periodo: M, monto: montoGrupo, secciones: [{ nombre: "Pagsa SPS", departamentos: [{ nombre: "Gerencia", empleados: [GRUPO_EMP.e5] }] }] },
+    ],
+    ...o,
+  };
+}
+
+/** El contexto de un período: e5 cobra mensual, los demás quincenal. */
+function contextoDe(periodo: typeof Q): ContextoMontos {
+  const estados = new Map<string, EstadoCelda>(
+    Object.entries(HOY_GRUPO).map(([k, v]) => [k, { novedad: null, cadaPlanilla: money(v) as Money, otros: money(0) }]),
+  );
+  const empleados = new Map(Object.values(GRUPO_EMP).map((e) => [e.codigo.toLowerCase(), {
+    id: e.id, codigo: e.codigo, nombre: e.nombre, sucursalId: "s", departamentoId: "d",
+    tipoPlanilla: (e.id === "e5" ? "MENSUAL" : "QUINCENAL") as "MENSUAL" | "QUINCENAL", cobra: true,
+  }]));
+  return { periodo, tipos: COLUMNAS, noImportables: new Map(), empleados, estados, planillas: new Map(), horas: null };
+}
+
+async function hojasDelLibro(bytes: Uint8Array) {
+  const lectura = await leerArchivoDeMontos("deducciones_grupo_Grupo-PAGSA_2026-12_1a-quincena.xlsx", bytes);
+  if (!lectura.ok) throw new Error(lectura.error);
+  if (!lectura.hojas) throw new Error("se esperaba el libro por grupo");
+  return lectura.hojas;
+}
+
+describe("el formato por grupo", () => {
+  it("la hoja quincenal es de la quincena elegida y la mensual, del mes completo", () => {
+    expect(Q).toEqual({ tipo: "QUINCENAL", desde: "2026-12-01", hasta: "2026-12-15" });
+    expect(periodoDeHojaGrupo("QUINCENAL", "2026-02", 2)).toEqual({ tipo: "QUINCENAL", desde: "2026-02-16", hasta: "2026-02-28" });
+    expect(M).toEqual({ tipo: "MENSUAL", desde: "2026-12-01", hasta: "2026-12-31" });
+    expect(periodoDeHojaGrupo("MENSUAL", "2026-12", 2)).toEqual(M);
+  });
+
+  it("el nombre del archivo lleva el grupo y la quincena, pero no la forma de un solo período", () => {
+    const n = nombreArchivoGrupo("Grupo PAGSA / Ñ", "2026-12", 2);
+    expect(n).toBe("deducciones_grupo_Grupo-PAGSA-N_2026-12_2a-quincena.xlsx");
+    expect(periodoDeNombreArchivo(n)).toBeNull();
+  });
+
+  it("una hoja por planilla, con las sucursales una debajo de otra y el total del grupo al final", async () => {
+    const libro = await leerLibro(await construirFormatoGrupo(datosGrupo()));
+    expect(libro.worksheets.map((w) => `${w.name}:${w.state}`)).toEqual(["Quincenal:visible", "Mensual:visible", "Instrucciones:visible", "g360-periodos:veryHidden"]);
+    const q = libro.getWorksheet("Quincenal")!;
+    const texto = (r: number, c: number) => String(q.getCell(r, c).value ?? "");
+    const formula = (r: number, c: number) => (q.getCell(r, c).value as { formula: string }).formula;
+    expect(texto(1, 1)).toBe("GRUPO PAGSA");
+    expect(texto(2, 1)).toBe("Planilla quincenal: 1.ª quincena de diciembre de 2026, del 01/12/2026 al 15/12/2026");
+    expect(texto(3, 1)).toBe("Deducciones por sucursal, una debajo de otra.");
+    expect([texto(8, 1), texto(8, 2)]).toEqual(["", "Sucursal: PAGSA SPS"]);
+    expect([texto(9, 1), texto(9, 2), texto(10, 1), texto(11, 1)]).toEqual(["Depto. 01", "ADMINISTRACION", "010001", "010114"]);
+    expect(formula(12, 3)).toBe("SUBTOTAL(9,C10:C11)");
+    expect([texto(14, 1), texto(15, 1), texto(16, 2)]).toEqual(["Depto. 02", "010003", "Total Depto. 02"]);
+    expect(texto(18, 2)).toBe("Total PAGSA SPS");
+    expect(formula(18, 3)).toBe("SUBTOTAL(9,C9:C17)");
+    // La segunda sucursal, después de una fila en blanco; los departamentos se numeran de nuevo.
+    expect([texto(20, 2), texto(21, 1), texto(21, 2), texto(22, 1)]).toEqual(["Sucursal: AUDI TEGUS", "Depto. 01", "TALLER", "020004"]);
+    expect(texto(25, 2)).toBe("Total AUDI TEGUS");
+    expect(formula(25, 4)).toBe("SUBTOTAL(9,D21:D24)");
+    // La sucursal sin nadie no sale; el total del grupo suma todo sin contar los subtotales.
+    expect(texto(27, 2)).toBe("Total GRUPO PAGSA");
+    expect(formula(27, 4)).toBe("SUBTOTAL(9,D8:D26)");
+    expect(q.rowCount).toBe(27);
+    expect(q.getCell(10, 4).value).toBe(500);
+    expect(q.getCell(22, 4).value).toBe(100);
+    expect(q.getCell(22, 4).protection?.locked).toBe(false);
+    expect(q.getCell(20, 2).protection?.locked).not.toBe(false);
+    expect((q as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection?.sheet).toBe(true);
+
+    const m = libro.getWorksheet("Mensual")!;
+    expect(String(m.getCell(2, 1).value)).toBe("Planilla mensual: Diciembre de 2026, del 01/12/2026 al 31/12/2026");
+    expect([String(m.getCell(8, 2).value), String(m.getCell(10, 1).value), String(m.getCell(13, 2).value), String(m.getCell(15, 2).value)])
+      .toEqual(["Sucursal: PAGSA SPS", "010500", "Total PAGSA SPS", "Total GRUPO PAGSA"]);
+    expect(m.getCell(10, 7).value).toBe(1200);
+  });
+
+  it("el lector devuelve cada hoja con su período, según la hoja oculta", async () => {
+    const hojas = await hojasDelLibro(await construirFormatoGrupo(datosGrupo()));
+    expect(hojas.map((h) => `${h.nombre}|${h.periodo.tipo}|${h.periodo.desde}|${h.periodo.hasta}`)).toEqual([
+      "Quincenal|QUINCENAL|2026-12-01|2026-12-15",
+      "Mensual|MENSUAL|2026-12-01|2026-12-31",
+    ]);
+    // Un archivo de una sola hoja sigue leyéndose como siempre.
+    const una = await leerArchivoDeMontos("x.xlsx", await construirFormato(datos()));
+    expect(una.ok && una.texto !== undefined && !una.hojas).toBe(true);
+  });
+
+  it("descargado y subido sin tocarlo, no cambia nada en ninguna hoja", async () => {
+    for (const h of await hojasDelLibro(await construirFormatoGrupo(datosGrupo()))) {
+      const r = validarMontos(h.texto, contextoDe(h.periodo), () => true);
+      expect(r.columnasDesconocidas).toEqual([]);
+      expect(r.incidencias).toEqual([]);
+      expect(r.operaciones).toEqual([]);
+      expect(r.sinCambio).toBe(h.nombre === "Quincenal" ? 5 : 1);
+    }
+  });
+
+  it("lo escrito en la hoja mensual va al mes y lo de la quincenal, a la quincena", async () => {
+    const libro = await leerLibro(await construirFormatoGrupo(datosGrupo()));
+    libro.getWorksheet("Quincenal")!.getCell(22, 4).value = 150;  // 020004, Coop. AUDI: de 100 a 150
+    libro.getWorksheet("Mensual")!.getCell(10, 6).value = 400;    // 010500, Vales: nuevo
+    // Como al guardar en Excel: las fórmulas de los totales llevan su resultado.
+    for (const [hoja, r, c] of [["Quincenal", 25, 4], ["Quincenal", 27, 4], ["Mensual", 13, 6], ["Mensual", 15, 6]] as const) {
+      const celda = libro.getWorksheet(hoja)!.getCell(r, c);
+      celda.value = { formula: (celda.value as { formula: string }).formula, result: 1 };
+    }
+    const hojas = await hojasDelLibro(new Uint8Array(await libro.xlsx.writeBuffer()));
+    const ops = hojas.map((h) => {
+      const r = validarMontos(h.texto, contextoDe(h.periodo), () => true);
+      expect(r.incidencias).toEqual([]);
+      return (r.operaciones as OperacionMonto[]).map((o) => `${h.periodo.tipo}|${o.empleadoId}|${o.tipoDeduccionId}|${o.monto}`);
+    });
+    expect(ops).toEqual([["QUINCENAL|e4|audi|150.00"], ["MENSUAL|e5|vales|400.00"]]);
+  });
+
+  it("con horas extra, las dos hojas las llevan antes de las deducciones", async () => {
+    const libro = await leerLibro(await construirFormatoGrupo(datosGrupo({
+      conHoras: true,
+      hojas: datosGrupo().hojas.map((h) => ({ ...h, horas: horasHoy })),
+    })));
+    for (const nombre of ["Quincenal", "Mensual"]) {
+      const hoja = libro.getWorksheet(nombre)!;
+      expect(String(hoja.getCell(3, 1).value)).toBe("Horas extra y deducciones por sucursal, una debajo de otra.");
+      expect(String(hoja.getCell(6, 3).value)).toBe("Horas extra");
+    }
+    expect(libro.getWorksheet("Quincenal")!.getCell(10, 3).value).toBe(6); // 010001: 6 h al 25 % de los marcajes
+  });
+
+  it("sin una de sus hojas, o con la de períodos dañada, el libro no se lee", async () => {
+    const libro = await leerLibro(await construirFormatoGrupo(datosGrupo()));
+    libro.removeWorksheet(libro.getWorksheet("Mensual")!.id);
+    const sinHoja = await leerArchivoDeMontos("g.xlsx", new Uint8Array(await libro.xlsx.writeBuffer()));
+    expect(sinHoja).toEqual({ ok: false, error: "Falta la hoja «Mensual» del formato por grupo: no la borre ni le cambie el nombre." });
+
+    const otro = await leerLibro(await construirFormatoGrupo(datosGrupo()));
+    otro.getWorksheet("g360-periodos")!.getCell(2, 3).value = "2026-13-01";
+    const danado = await leerArchivoDeMontos("g.xlsx", new Uint8Array(await otro.xlsx.writeBuffer()));
+    expect(danado.ok).toBe(false);
   });
 });

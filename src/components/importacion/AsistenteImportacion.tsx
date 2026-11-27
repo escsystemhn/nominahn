@@ -288,6 +288,9 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
                         Los montos se aplican sólo <span className="font-medium">{frasePeriodo(periodo, "a")}</span>. Cada celda es lo que se
                         descuenta de ese tipo en el período: escribir otro monto lo reemplaza sólo en ese período, una celda vacía no descuenta
                         nada y lo que no cambie no se toca. Antes de aplicar verá qué cambia.
+                        <span className="mt-1 block text-xs text-gray-500" data-nota-formato-grupo>
+                          ¿Sube el formato por grupo? Cada hoja (Quincenal, Mensual) se aplica a su propio período; el que elija aquí no se usa.
+                        </span>
                       </p>
                     )}
                   {montosDelPeriodo?.puedeDescargar && !errorPeriodo && (
@@ -536,8 +539,12 @@ export default function AsistenteImportacion({ recurso, titulo, ayuda, montosDel
                       </thead>
                       <tbody>
                         {informe.filas.map((fila, i) => (
-                          <tr key={`${fila.linea}-${i}`}>
-                            <td className="font-mono text-xs text-gray-500">{fila.linea}</td>
+                          <tr key={`${fila.hoja ?? ""}-${fila.linea}-${i}`}>
+                            <td className="font-mono text-xs text-gray-500">
+                              {/* En el libro por grupo las líneas se repiten entre hojas: la hoja va encima. */}
+                              {fila.hoja && <span className="block font-sans text-[11px] text-gray-500">{fila.hoja}</span>}
+                              {fila.linea}
+                            </td>
                             <td>
                               <EtiquetaAccion accion={fila.accion} porPeriodo={porPeriodo} />
                             </td>
@@ -647,7 +654,7 @@ function ListaIncidencias({
   tono,
 }: {
   titulo: string;
-  incidencias: Array<{ linea: number; columna?: string; mensaje: string }>;
+  incidencias: Array<{ linea: number; columna?: string; mensaje: string; hoja?: string }>;
   tono: "rojo" | "ambar";
 }) {
   // Se muestran las primeras y se resume el resto: una lista de 400 errores no
@@ -658,8 +665,8 @@ function ListaIncidencias({
       <p className="font-medium mb-2">{titulo}</p>
       <ul className="space-y-1 max-h-52 overflow-y-auto">
         {incidencias.slice(0, VISIBLES).map((inc, i) => (
-          <li key={`${inc.linea}-${i}`} className="text-xs">
-            <span className="font-mono opacity-70">Línea {inc.linea}</span>
+          <li key={`${inc.hoja ?? ""}-${inc.linea}-${i}`} className="text-xs">
+            <span className="font-mono opacity-70">{inc.hoja ? `${inc.hoja}, línea ${inc.linea}` : `Línea ${inc.linea}`}</span>
             {inc.columna && <span className="font-medium">, {inc.columna}</span>}
             <span>: {inc.mensaje}</span>
           </li>

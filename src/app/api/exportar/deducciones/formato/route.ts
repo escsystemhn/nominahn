@@ -21,7 +21,17 @@ import { audit, getClientInfo } from "@/lib/audit";
 import { parsearBody, zId } from "@/lib/http/validar";
 import { cabecerasXlsx } from "@/lib/importacion/xlsx";
 import { cargarDeduccionesDelPeriodo, cargarTiposMatriz, estadosDelPeriodo, etiquetaTipo, totalDeCelda } from "@/lib/importacion/montos-periodo";
-import { columnasDelFormato, construirFormato, guardarFormato, leerFormatoGuardado, nombreArchivoFormato, type DepartamentoFormato } from "@/lib/importacion/formato-captura";
+import {
+  MAX_EMPLEADOS_FORMATO as MAX_EMPLEADOS,
+  SIN_PII_FORMATO as SIN_PII,
+  columnasDelFormato,
+  construirFormato,
+  guardarFormato,
+  leerFormatoGuardado,
+  nombreArchivoFormato,
+  porCodigoYNombre,
+  type DepartamentoFormato,
+} from "@/lib/importacion/formato-captura";
 import { divisionesHabilitadas, jerarquiaNominaHabilitada } from "@/lib/organizacion/estructura-bd";
 import { horasEnCelda } from "@/lib/payroll/horas-extra-periodo";
 import { cargarHorasDelPeriodo } from "@/lib/payroll/horas-extra-periodo-bd";
@@ -30,9 +40,7 @@ import { ESTADOS_QUE_COBRAN } from "@/lib/payroll/elegibles";
 import { TIPOS_PLANILLA, errorDePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 import { nombreCompleto } from "@/lib/utils";
 
-const MAX_EMPLEADOS = 5_000;
 const zTipo = z.enum(TIPOS_PLANILLA as [TipoPlanillaPeriodo, ...TipoPlanillaPeriodo[]]);
-const SIN_PII = "El formato lleva los montos que se descuentan a cada empleado: para descargarlo hace falta también el permiso de datos personales y salariales.";
 
 const schema = z.object({
   tipoPlanilla: zTipo,
@@ -46,9 +54,6 @@ const schema = z.object({
   horasExtra: z.boolean().default(false),
   recordar: z.boolean().default(false),
 });
-
-const porCodigoYNombre = <T extends { codigo: string | null; nombre: string }>(a: T, b: T) =>
-  (a.codigo ?? "￿").localeCompare(b.codigo ?? "￿", "es") || a.nombre.localeCompare(b.nombre, "es");
 
 export async function GET(req: NextRequest) {
   const g = await requerirPermiso("deducciones.exportar");

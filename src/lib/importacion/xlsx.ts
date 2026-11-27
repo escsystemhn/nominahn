@@ -12,6 +12,7 @@ import { celdaCsv } from "@/lib/reportes/formato";
 import { decodificar } from "./csv";
 import { MAX_FILAS_ARCHIVO } from "./lote";
 import type { ColumnaCsv } from "./tipos";
+import { TIPOS_PLANILLA, errorDePeriodo, type PeriodoPlanilla, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 
 /** Para `leerArchivo`: un .xls antiguo es otro formato que no sabemos leer. */
 export const ACEPTA_PLANTILLA = {
@@ -81,8 +82,8 @@ export function textoDeCelda(valor: ExcelJS.CellValue): string {
   return "";
 }
 
-/** Primera hoja, o la llamada «Datos» si la persona movió las pestañas de la plantilla. */
-export async function xlsxATexto(bytes: Uint8Array): Promise<LecturaArchivo> {
+/** El libro cargado en memoria, con el tope de tamaño descomprimido. */
+async function cargarLibroXlsx(bytes: Uint8Array): Promise<{ ok: true; libro: ExcelJS.Workbook } | { ok: false; error: string }> {
   const tamano = tamanoDescomprimido(bytes);
   if (tamano === null) return { ok: false, error: ERROR_LECTURA };
   if (tamano > MAX_DESCOMPRIMIDO) return { ok: false, error: "El archivo de Excel es demasiado grande. Divídalo, por ejemplo por sucursal." };
@@ -93,9 +94,24 @@ export async function xlsxATexto(bytes: Uint8Array): Promise<LecturaArchivo> {
   } catch {
     return { ok: false, error: ERROR_LECTURA };
   }
+  return { ok: true, libro };
+}
 
+/** Primera hoja, o la llamada «Datos» si la persona movió las pestañas de la plantilla. */
+export async function xlsxATexto(bytes: Uint8Array): Promise<LecturaArchivo> {
+  const c = await cargarLibroXlsx(bytes);
+  if (!c.ok) return c;
+  return hojaPrincipal(c.libro);
+}
+
+function hojaPrincipal(libro: ExcelJS.Workbook): LecturaArchivo {
   const hoja = libro.getWorksheet("Datos") ?? libro.worksheets[0];
   if (!hoja) return { ok: false, error: "El archivo de Excel no tiene hojas." };
+  return hojaATexto(hoja);
+}
+
+/** Una hoja como texto CSV: cada fila conserva su número, aunque haya filas en blanco. */
+function hojaATexto(hoja: ExcelJS.Worksheet): LecturaArchivo {
   if (hoja.rowCount - 1 > MAX_FILAS_ARCHIVO) {
     return { ok: false, error: `El archivo trae ${hoja.rowCount - 1} filas y el máximo por lote es ${MAX_FILAS_ARCHIVO}. Divídalo, por ejemplo por sucursal.` };
   }
@@ -117,6 +133,61 @@ export async function xlsxATexto(bytes: Uint8Array): Promise<LecturaArchivo> {
 
 export async function textoDeArchivo(nombre: string, bytes: Uint8Array): Promise<LecturaArchivo> {
   return /\.xlsx$/i.test(nombre) ? xlsxATexto(bytes) : { ok: true, texto: decodificar(bytes) };
+}
+
+// ─── LIBRO CON VARIOS PERÍODOS (formato por grupo) ──────────────────────────────
+//
+// El formato por grupo (2026-11-27) trae una hoja por frecuencia (Quincenal, Mensual),
+// cada una de su período. Qué período es cada hoja lo dice una hoja MUY oculta, que la
+// persona no ve ni puede mostrar desde Excel: no depende del título, que se lee pero
+// podría tocarse.
+
+/** La hoja oculta del formato por grupo: hoja | tipo | desde | hasta. */
+export const HOJA_PERIODOS = "g360-periodos";
+
+export interface HojaDePeriodo {
+  /** El nombre de la pestaña: «Quincenal», «Mensual». */
+  nombre: string;
+  periodo: PeriodoPlanilla;
+  texto: string;
+}
+
+/** Un archivo de montos: una sola hoja (lo de siempre) o el libro por grupo, con varias. */
+export type LecturaMontos =
+  | { ok: true; texto: string; hojas?: undefined }
+  | { ok: true; hojas: HojaDePeriodo[]; texto?: undefined }
+  | { ok: false; error: string };
+
+const LIBRO_DANADO = "La hoja de períodos del libro está dañada: vuelva a descargar el formato por grupo.";
+
+/** El libro por grupo hoja por hoja, con su período; cualquier otro archivo, como siempre. */
+export async function leerArchivoDeMontos(nombre: string, bytes: Uint8Array): Promise<LecturaMontos> {
+  if (!/\.xlsx$/i.test(nombre)) return { ok: true, texto: decodificar(bytes) };
+  const c = await cargarLibroXlsx(bytes);
+  if (!c.ok) return c;
+  const control = c.libro.getWorksheet(HOJA_PERIODOS);
+  if (!control) return hojaPrincipal(c.libro);
+
+  const hojas: HojaDePeriodo[] = [];
+  let filas = 0;
+  for (let r = 2; r <= control.rowCount; r++) {
+    const [nombreHoja, tipo, desde, hasta] = [1, 2, 3, 4].map((col) => textoDeCelda(control.getRow(r).getCell(col).value).trim());
+    if (!nombreHoja && !tipo) continue;
+    const periodo = { tipo: tipo as TipoPlanillaPeriodo, desde, hasta };
+    if (!TIPOS_PLANILLA.includes(periodo.tipo) || errorDePeriodo(periodo)) return { ok: false, error: LIBRO_DANADO };
+    if (hojas.some((h) => h.nombre === nombreHoja)) return { ok: false, error: LIBRO_DANADO };
+    const hoja = c.libro.getWorksheet(nombreHoja);
+    if (!hoja) return { ok: false, error: `Falta la hoja «${nombreHoja}» del formato por grupo: no la borre ni le cambie el nombre.` };
+    const lectura = hojaATexto(hoja);
+    if (!lectura.ok) return lectura;
+    filas += hoja.rowCount;
+    hojas.push({ nombre: nombreHoja, periodo, texto: lectura.texto });
+  }
+  if (!hojas.length) return { ok: false, error: LIBRO_DANADO };
+  if (filas > MAX_FILAS_ARCHIVO) {
+    return { ok: false, error: `El libro trae ${filas} filas entre sus hojas y el máximo por lote es ${MAX_FILAS_ARCHIVO}. Descárguelo con menos frecuencias.` };
+  }
+  return { ok: true, hojas };
 }
 
 const COLUMNAS_NUMERO = new Set(["monto", "salario_base", "diurnas", "mixtas", "nocturnas", "feriado", "saldo"]);

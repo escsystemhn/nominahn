@@ -14,13 +14,16 @@
  * archivo trae una columna por tipo de deducción con lo que se descuenta en ese
  * período (`tipoPlanilla`, `desde` y `hasta` van en la lista y en el POST). Arranca en el
  * FORMATO POR SUCURSAL (`FormatoCaptura`): los empleados por departamento, como la planilla de
- * la empresa, para llenar a mano; la lista de empleados marcados queda como segunda opción.
+ * la empresa, para llenar a mano. Segunda opción, el FORMATO POR GRUPO (`FormatoGrupo`,
+ * 2026-11-27): todo un grupo en un libro, una hoja quincenal y una mensual. Al final, la
+ * lista de empleados marcados.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { Campo, Modal } from "@/components/ui/ModalForm";
 import SelectorPeriodo, { periodoInicial } from "@/components/payroll/SelectorPeriodo";
 import FormatoCaptura from "@/components/payroll/FormatoCaptura";
+import FormatoGrupo from "@/components/payroll/FormatoGrupo";
 import { claveNombre } from "@/lib/organizacion/puestos";
 import { frasePeriodo, errorDePeriodo, type TipoPlanillaPeriodo } from "@/lib/payroll/periodos-planilla";
 import type { RecursoImportacion } from "@/lib/importacion/tipos";
@@ -91,8 +94,8 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
   const errorPeriodo = c.conPeriodo ? errorDePeriodo(periodo) : null;
   // Deducciones: el formato por sucursal para llenar a mano, o la lista de empleados marcados.
   const conFormato = recurso === "deducciones";
-  const [variante, setVariante] = useState<"formato" | "lista">(conFormato ? "formato" : "lista");
-  const enFormato = conFormato && variante === "formato";
+  const [variante, setVariante] = useState<"formato" | "grupo" | "lista">(conFormato ? "formato" : "lista");
+  const enFormato = conFormato && (variante === "formato" || variante === "grupo");
 
   const q = new URLSearchParams({ lista: "1" });
   for (const [k, v] of Object.entries(filtros ?? {})) if (v) q.set(k, v);
@@ -187,6 +190,7 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
       <legend className="sr-only">Qué archivo</legend>
       {([
         ["formato", "Formato por sucursal", "Para llenar a mano: los empleados por departamento, como su planilla, con subtotales."],
+        ["grupo", "Formato por grupo", "Todo un grupo en un Excel: una hoja quincenal y una mensual, con las sucursales una debajo de otra."],
         ["lista", "Lista de empleados", "Los empleados que marque, uno por fila. También en CSV."],
       ] as const).map(([valor, etiqueta, detalle]) => (
         <label key={valor} className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${variante === valor ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:bg-gray-50"}`}>
@@ -199,6 +203,9 @@ export default function ExportarSeleccion({ recurso, filtros, incluyePII, tipoPl
       ))}
     </fieldset>
   );
+  if (enFormato && variante === "grupo") {
+    return <FormatoGrupo fechaInicial={periodo.desde} encabezado={selectorVariante} onCerrar={onCerrar} />;
+  }
   if (enFormato) {
     return <FormatoCaptura titulo="Exportar deducciones" periodo={periodo} onPeriodo={cambiarPeriodo} encabezado={selectorVariante} onCerrar={onCerrar} />;
   }
